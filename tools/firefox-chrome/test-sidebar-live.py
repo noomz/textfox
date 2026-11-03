@@ -16,7 +16,7 @@ from ff_inspect import connect
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def check(nova, rtl, high_contrast):
+def check(nova, rtl, high_contrast, position_start):
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0))
         port = sock.getsockname()[1]
@@ -27,6 +27,7 @@ def check(nova, rtl, high_contrast):
                  'toolkit.legacyUserProfileCustomizations.stylesheets': True,
                  'browser.shell.checkDefaultBrowser': False,
                  'intl.l10n.pseudo': 'bidi' if rtl else '',
+                 'sidebar.position_start': position_start,
                  'ui.useAccessibilityTheme': 1 if high_contrast else 0}
         (profile / 'user.js').write_text(''.join(
             f'user_pref({json.dumps(k)}, {json.dumps(v)});\n' for k, v in prefs.items()))
@@ -56,6 +57,7 @@ def check(nova, rtl, high_contrast):
                 return {display:style.display, visibility:style.visibility, width:rect.width,
                         height:rect.height, focused:document.activeElement === splitter,
                         direction:getComputedStyle(document.documentElement).direction,
+                        positionStart:Services.prefs.getBoolPref('sidebar.position_start'),
                         prefersContrast:matchMedia('(prefers-contrast)').matches,
                         forcedColors:matchMedia('(forced-colors: active)').matches};
                 """, sandbox='system')
@@ -64,12 +66,13 @@ def check(nova, rtl, high_contrast):
                 raise RuntimeError('sidebar resize control is not visible')
             if not result['focused']:
                 raise RuntimeError('sidebar resize control cannot receive focus')
-            if result['direction'] != ('rtl' if rtl else 'ltr'):
-                raise RuntimeError('requested document direction not active')
+            if result['direction'] != ('rtl' if rtl else 'ltr') or result['positionStart'] != position_start:
+                raise RuntimeError('requested document direction or sidebar position not active')
             if result['prefersContrast'] != high_contrast:
                 raise RuntimeError('requested prefers-contrast state not active')
             before = m.execute_script("return document.getElementById('sidebar-box').getBoundingClientRect().width", sandbox='system')
-            m.find_element('id', 'sidebar-splitter').send_keys(Keys.ARROW_LEFT if rtl else Keys.ARROW_RIGHT)
+            expand_right = position_start != rtl
+            m.find_element('id', 'sidebar-splitter').send_keys(Keys.ARROW_RIGHT if expand_right else Keys.ARROW_LEFT)
             deadline = time.monotonic() + 5
             while True:
                 after = m.execute_script("return document.getElementById('sidebar-box').getBoundingClientRect().width", sandbox='system')
@@ -78,7 +81,7 @@ def check(nova, rtl, high_contrast):
                 if time.monotonic() >= deadline:
                     raise RuntimeError(f'expand arrow did not expand sidebar: {before} -> {after}')
                 time.sleep(.1)
-            m.find_element('id', 'sidebar-splitter').send_keys(Keys.ARROW_RIGHT if rtl else Keys.ARROW_LEFT)
+            m.find_element('id', 'sidebar-splitter').send_keys(Keys.ARROW_LEFT if expand_right else Keys.ARROW_RIGHT)
             deadline = time.monotonic() + 5
             while True:
                 shrunk = m.execute_script("return document.getElementById('sidebar-box').getBoundingClientRect().width", sandbox='system')
@@ -87,17 +90,22 @@ def check(nova, rtl, high_contrast):
                 if time.monotonic() >= deadline:
                     raise RuntimeError(f'shrink arrow did not shrink sidebar: {after} -> {shrunk}')
                 time.sleep(.1)
-            focus = m.execute_script("""
-                const splitter = document.getElementById('sidebar-splitter');
-                const s = getComputedStyle(splitter);
-                return {focusVisible:splitter.matches(':focus-visible'), outlineStyle:s.outlineStyle,
-                        outlineWidth:s.outlineWidth, outlineColor:s.outlineColor};
-                """, sandbox='system')
-            print(json.dumps({'nova': nova, 'rtl': rtl, 'highContrast': high_contrast, 'sidebarWidthBefore': before,
+            deadline = time.monotonic() + 5
+            while True:
+                focus = m.execute_script("""
+                    const splitter = document.getElementById('sidebar-splitter');
+                    const s = getComputedStyle(splitter);
+                    return {focusVisible:splitter.matches(':focus-visible'), outlineStyle:s.outlineStyle,
+                            outlineWidth:s.outlineWidth, outlineColor:s.outlineColor};
+                    """, sandbox='system')
+                if focus['focusVisible'] and focus['outlineStyle'] != 'none' and focus['outlineWidth'] != '0px':
+                    break
+                if time.monotonic() >= deadline:
+                    raise RuntimeError(f'keyboard-focused splitter has no computed focus outline: {focus}')
+                time.sleep(.1)
+            print(json.dumps({'nova': nova, 'rtl': rtl, 'highContrast': high_contrast, 'positionStart':position_start, 'sidebarWidthBefore': before,
                               'sidebarWidthExpanded': after, 'sidebarWidthShrunk': shrunk,
                               'focus': focus}), flush=True)
-            if not focus['focusVisible'] or focus['outlineStyle'] == 'none' or focus['outlineWidth'] == '0px':
-                raise RuntimeError('keyboard-focused splitter has no computed focus outline')
         finally:
             try:
                 if m:
@@ -115,4 +123,5 @@ if __name__ == '__main__':
     for nova in (False, True):
         for rtl in (False, True):
             for high_contrast in (False, True):
-                check(nova, rtl, high_contrast)
+                for position_start in (False, True):
+                    check(nova, rtl, high_contrast, position_start)
