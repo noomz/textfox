@@ -9,6 +9,8 @@ import subprocess
 import tempfile
 import time
 
+from marionette_driver.keys import Keys
+
 from ff_inspect import connect
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -32,7 +34,7 @@ def check(nova):
         env['MOZ_REMOTE_ALLOW_SYSTEM_ACCESS'] = '1'
         process = subprocess.Popen(['firefox', '--marionette', '-remote-allow-system-access',
                                     '--new-instance', '--profile', str(profile),
-                                    '--private-window', 'about:blank'], env=env,
+                                    '--private-window', 'about:privatebrowsing'], env=env,
                                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         m = None
         try:
@@ -66,6 +68,20 @@ def check(nova):
             if (result['borderWidth'] != '3px' or result['borderStyle'] != 'solid'
                     or result['borderColor'] != 'rgb(19, 83, 137)' or result['separatorWidth'] != '0px'):
                 raise RuntimeError('private URL bar does not preserve configured result borders')
+            if m.execute_script('return gBrowser.selectedBrowser.currentURI.spec', sandbox='system') == 'about:blank':
+                raise RuntimeError('navigation fixture already at destination')
+            m.actions.sequence('key', 'keyboard').send_keys(Keys.ESCAPE).perform()
+            m.actions.sequence('key', 'keyboard').key_down(Keys.CONTROL).key_down('l').key_up('l').key_up(Keys.CONTROL).perform()
+            field = m.find_element('id', 'urlbar-input')
+            field.send_keys('about:blank', Keys.ENTER)
+            deadline = time.monotonic() + 15
+            while not m.execute_script("return gBrowser.selectedBrowser.currentURI.spec === 'about:blank'", sandbox='system'):
+                if time.monotonic() >= deadline:
+                    raise RuntimeError('private URL bar navigation did not complete')
+                time.sleep(.1)
+            if not m.execute_script('return PrivateBrowsingUtils.isWindowPrivate(window)', sandbox='system'):
+                raise RuntimeError('navigation left private window')
+            print(json.dumps({'nova':nova, 'privateNavigation':'about:blank'}), flush=True)
         finally:
             try:
                 if m:

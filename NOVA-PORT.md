@@ -164,7 +164,7 @@ Run `MOZ_HEADLESS=1 "$HOME/.cache/textfox-firefox-live/venv/bin/python" tools/fi
 
 ## Private-window URL bar
 
-`tools/firefox-chrome/test-private-window-live.py` starts a private Firefox window in a disposable profile, verifies its private state and Nova preference, opens URL bar results, and checks configured accent, border width and result separator. It passed in headless Firefox 159.0 build `20261022150525` with browser Nova both off and on. Search suggestions may make network requests. This covers computed borders and initialized results only, not private-browsing guarantees, navigation, focus, contrast, other components or delivery paths. T2 and T4 remain open.
+`tools/firefox-chrome/test-private-window-live.py` starts a private Firefox window in a disposable profile, verifies its private state and Nova preference, opens URL bar results, and checks configured accent, border width and result separator. It passed in headless Firefox 159.0 build `20261022150525` with browser Nova both off and on. Search suggestions may make network requests. A follow-up used Ctrl+L to navigate from a different starting page to `about:blank` and verified the window remained private in both states. This covers computed borders, initialized results and one local navigation, not private-browsing guarantees, painted focus, contrast, other components or delivery paths. T2 and T4 remain open.
 
 Run `MOZ_HEADLESS=1 "$HOME/.cache/textfox-firefox-live/venv/bin/python" tools/firefox-chrome/test-private-window-live.py`.
 
