@@ -44,6 +44,8 @@ def viewport_crop(rect, viewport):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--width', type=int, default=1280)
+    parser.add_argument('--height', type=int, default=800)
+    parser.add_argument('--scroll', type=int, default=0)
     parser.add_argument('--rtl', action='store_true')
     parser.add_argument('--font-size', type=int, default=14)
     parser.add_argument('--long-logo', action='store_true')
@@ -79,7 +81,7 @@ def main():
         m = None
         try:
             m = connect(port)
-            m.set_window_rect(width=args.width, height=800)
+            m.set_window_rect(width=args.width, height=args.height)
             m.set_context('chrome')
             metadata = m.execute_script("return {profile:Services.dirsvc.get('ProfD', Ci.nsIFile).path, version:Services.appinfo.version, build:Services.appinfo.appBuildID, browserNova:Services.prefs.getBoolPref('browser.nova.enabled'), newtabNova:Services.prefs.getBoolPref('browser.newtabpage.activity-stream.nova.enabled')}", sandbox='system')
             if (process.poll() is not None or Path(metadata['profile']).resolve() != profile.resolve()
@@ -170,6 +172,18 @@ def main():
             full_difference = difference(control, changed, full_crop)
             end_crop = viewport_crop(geometry['endSidebar'], geometry)
             start_crop = viewport_crop(geometry['startSidebar'], geometry)
+            scroll = m.execute_script("""
+                if (arguments[0] > 0) {
+                  const fixture = document.createElement('div');
+                  fixture.style.blockSize = '1600px';
+                  document.body.appendChild(fixture);
+                }
+                window.scrollTo(0, arguments[0]);
+                const r = document.querySelector('.nova-enabled .search-inner-wrapper').getBoundingClientRect();
+                return {requested:arguments[0], actual:scrollY, searchTop:r.top,
+                        wrapperPosition:getComputedStyle(document.querySelector('.nova-enabled .search-wrapper')).position,
+                        viewportHeight:innerHeight, pageHeight:document.documentElement.scrollHeight};
+                """, script_args=[args.scroll])
             m.find_element('css selector', '.nova-enabled content-search-handoff-ui').click()
             m.set_context('chrome')
             deadline = time.monotonic() + 5
@@ -178,7 +192,7 @@ def main():
                     raise RuntimeError('search click did not focus URL bar')
                 time.sleep(.1)
             print(json.dumps({'firefox': metadata, 'requestedWidth': args.width, 'fontSize': args.font_size,
-                              'longLogo': args.long_logo, 'searchClickFocusedUrlbar': True,
+                              'longLogo': args.long_logo, 'searchClickFocusedUrlbar': True, 'scroll': scroll,
                               'experiment': args.experiment, 'experimentWrap': args.experiment_wrap,
                               'interventionVisible': full_difference != 0,
                               'search': geometry, 'crop': crop,
