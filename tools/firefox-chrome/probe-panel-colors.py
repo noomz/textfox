@@ -14,7 +14,7 @@ from ff_inspect import connect
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def check(nova):
+def check(nova, color_preference):
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0))
         port = sock.getsockname()[1]
@@ -26,7 +26,8 @@ def check(nova):
             '--tf-border-width: 5px; --tf-rounding: 7px; }\n')
         prefs = {'marionette.port': port, 'browser.nova.enabled': nova,
                  'toolkit.legacyUserProfileCustomizations.stylesheets': True,
-                 'browser.shell.checkDefaultBrowser': False}
+                 'browser.shell.checkDefaultBrowser': False,
+                 'browser.display.document_color_use': color_preference}
         (profile / 'user.js').write_text(''.join(
             f'user_pref({json.dumps(k)}, {json.dumps(v)});\n' for k, v in prefs.items()))
         env = os.environ.copy()
@@ -38,9 +39,10 @@ def check(nova):
         try:
             m = connect(port)
             m.set_context('chrome')
-            metadata = m.execute_script("return {profile:Services.dirsvc.get('ProfD', Ci.nsIFile).path, version:Services.appinfo.version, build:Services.appinfo.appBuildID, nova:Services.prefs.getBoolPref('browser.nova.enabled')}", sandbox='system')
-            if process.poll() is not None or Path(metadata['profile']).resolve() != profile.resolve() or metadata['nova'] != nova:
-                raise RuntimeError('unexpected Firefox process, profile, or Nova preference')
+            metadata = m.execute_script("return {profile:Services.dirsvc.get('ProfD', Ci.nsIFile).path, version:Services.appinfo.version, build:Services.appinfo.appBuildID, nova:Services.prefs.getBoolPref('browser.nova.enabled'), documentColorUse:Services.prefs.getIntPref('browser.display.document_color_use')}", sandbox='system')
+            if (process.poll() is not None or Path(metadata['profile']).resolve() != profile.resolve()
+                    or metadata['nova'] != nova or metadata['documentColorUse'] != color_preference):
+                raise RuntimeError('unexpected Firefox process, profile, or preferences')
             m.execute_script('PanelUI.show()', sandbox='system')
             deadline = time.monotonic() + 20
             while not m.execute_script("return document.getElementById('appMenu-popup').state == 'open'", sandbox='system'):
@@ -52,8 +54,11 @@ def check(nova):
                 const slot = panel.shadowRoot?.querySelector('slot[part="content"]');
                 if (!slot) throw new Error('app menu content slot not found');
                 const s = getComputedStyle(slot);
+                const root = getComputedStyle(document.documentElement);
+                const properties = ['--lwt-text-color', '--toolbar-color', '--panel-text-color', '--tf-bg'];
                 return {background:s.backgroundColor, color:s.color, border:s.border,
-                        radius:s.borderRadius, forcedColors:matchMedia('(forced-colors: active)').matches};
+                        radius:s.borderRadius, forcedColors:matchMedia('(forced-colors: active)').matches,
+                        rootProperties:Object.fromEntries(properties.map(p => [p, root.getPropertyValue(p).trim()]))};
                 """, sandbox='system')
             override = m.execute_script("""
                 const panel = document.getElementById('appMenu-popup');
@@ -77,4 +82,5 @@ def check(nova):
 
 if __name__ == '__main__':
     for nova in (False, True):
-        check(nova)
+        for color_preference in (0, 2):
+            check(nova, color_preference)
