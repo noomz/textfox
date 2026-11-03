@@ -31,7 +31,7 @@ def contrast(background, foreground):
     return (max(a, b) + .05) / (min(a, b) + .05)
 
 
-def check(nova, dark, source):
+def check(nova, dark, source, forced):
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0))
         port = sock.getsockname()[1]
@@ -49,7 +49,8 @@ def check(nova, dark, source):
             archive.writestr('manifest.json', json.dumps(manifest))
         prefs = {'marionette.port': port, 'browser.nova.enabled': nova, 'sidebar.verticalTabs': False,
                  'toolkit.legacyUserProfileCustomizations.stylesheets': True,
-                 'browser.shell.checkDefaultBrowser': False}
+                 'browser.shell.checkDefaultBrowser': False,
+                 'ui.useAccessibilityTheme': 1 if forced else 0}
         (profile / 'user.js').write_text(''.join(
             f'user_pref({json.dumps(k)}, {json.dumps(v)});\n' for k, v in prefs.items()))
         env = os.environ.copy()
@@ -87,6 +88,8 @@ def check(nova, dark, source):
                     '--tab-background-color-selected', '--tab-background-color-hover',
                     '--tab-text-color-selected'];
                 return {background:bg.backgroundColor, color:text.color,
+                        prefersContrast:matchMedia('(prefers-contrast)').matches,
+                        forcedColors:matchMedia('(forced-colors: active)').matches,
                         targetSelected:bg.getPropertyValue('--tab-selected-bgcolor').trim(),
                         props:Object.fromEntries(names.map(n => [n, root.getPropertyValue(n).trim()]))};
                 """
@@ -105,7 +108,9 @@ def check(nova, dark, source):
                 bg.style.setProperty('--tab-selected-bgcolor', 'var(--tab-background-color-selected)', 'important');
                 """, sandbox='system')
             after = m.execute_script(js, sandbox='system')
-            print(json.dumps({'firefox': meta, 'dark': dark, 'before': before, 'hover':hover, 'after': after,
+            if before['prefersContrast'] != forced:
+                raise RuntimeError('requested contrast preference state not active')
+            print(json.dumps({'firefox': meta, 'dark': dark, 'forced':forced, 'before': before, 'hover':hover, 'after': after,
                               'computedSelectedContrast':contrast(before['background'], before['color']),
                               'computedHoverContrast':contrast(hover['background'], hover['color'])}), flush=True)
         finally:
@@ -124,7 +129,8 @@ def check(nova, dark, source):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--source', type=Path, default=ROOT)
+    parser.add_argument('--high-contrast', action='store_true')
     args = parser.parse_args()
     for nova in (False, True):
         for dark in (False, True):
-            check(nova, dark, args.source)
+            check(nova, dark, args.source, args.high_contrast)
