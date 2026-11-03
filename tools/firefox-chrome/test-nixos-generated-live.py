@@ -26,6 +26,7 @@ def main():
     parser.add_argument('--forced-colors', action='store_true')
     parser.add_argument('--wallpaper', action='store_true')
     parser.add_argument('--newtab-classic', action='store_true')
+    parser.add_argument('--browser-nova', action='store_true')
     args = parser.parse_args()
     if not re.fullmatch(r'/nix/store/[a-zA-Z0-9._/-]+', args.nixpkgs_path):
         parser.error('nixpkgs_path must be a literal /nix/store path')
@@ -84,7 +85,7 @@ def main():
         (chrome / 'browser.css').write_text(':root { --tf-import-browser-sentinel: imported; }\n')
         (chrome / 'userChrome.css').write_text('@import url("control.css");\n' + (chrome / 'userChrome.css').read_text())
         (chrome / 'control.css').write_text(':root { --tf-import-control-sentinel: imported; }\n')
-        prefs = {'marionette.port': port, 'browser.nova.enabled': False,
+        prefs = {'marionette.port': port, 'browser.nova.enabled': args.browser_nova,
                  'browser.newtabpage.activity-stream.nova.enabled': not args.newtab_classic,
                  'browser.newtabpage.activity-stream.testing.shouldInitializeFeeds': True,
                  'browser.newtabpage.activity-stream.widgets.enabled': True,
@@ -107,7 +108,7 @@ def main():
             m.set_context('chrome')
             meta = m.execute_script("return {profile:Services.dirsvc.get('ProfD',Ci.nsIFile).path,version:Services.appinfo.version,build:Services.appinfo.appBuildID,nova:Services.prefs.getBoolPref('browser.nova.enabled'),newtabNova:Services.prefs.getBoolPref('browser.newtabpage.activity-stream.nova.enabled')}", sandbox='system')
             if (process.poll() is not None or Path(meta['profile']).resolve() != profile.resolve()
-                    or meta['nova'] or meta['newtabNova'] != (not args.newtab_classic)):
+                    or meta['nova'] != args.browser_nova or meta['newtabNova'] != (not args.newtab_classic)):
                 raise RuntimeError('unexpected Firefox process, profile, or Nova preference')
             deadline = time.monotonic() + 20
             while not m.execute_script('return gBrowserInit.delayedStartupFinished', sandbox='system'):
