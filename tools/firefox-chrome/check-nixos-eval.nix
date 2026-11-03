@@ -25,6 +25,10 @@ let
       {
         textfox.enable = true;
         textfox.config.border.width = "7px";
+        textfox.config.newtabLogo = ''
+          say "hi"\path
+          1next
+        '';
         system.stateVersion = "26.05";
       }
     ];
@@ -35,6 +39,8 @@ let
 in
 assert builtins.length matches == 1;
 assert lib.hasInfix "--tf-border-width: 7px;" evaluated.config.textfox.configCss;
+assert lib.hasInfix ''--tf-newtab-logo: "say \"hi\"\\path\A 1next\A ";''
+  evaluated.config.textfox.configCss;
 assert lib.hasInfix ''pref("browser.nova.enabled", false);''
   (builtins.head matches).passthru.capturedPrefs;
 assert lib.hasInfix "refusing to replace an existing profile chrome directory"
@@ -43,4 +49,5 @@ assert lib.hasInfix "refusing to replace an existing profile chrome directory"
   inherit (pkgs.firefox-unwrapped) version;
   autoconfigDrv = (builtins.head matches).drvPath;
   configuredBorder = evaluated.config.textfox.config.border.width;
+  generatedCss = evaluated.config.textfox.configCss;
 }

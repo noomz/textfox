@@ -53,7 +53,7 @@ in
           / /_/  __/>  </ /_/ __/ /_/ />  <
           \__/\___/_/|_|\__/_/  \____/_/|_|
         '';
-        apply = p: replaceStrings [ "\n" "\\" ] [ "\\A" "\\\\" ] p;
+        apply = p: replaceStrings [ "\n" "\\" "\"" ] [ "\\A " "\\\\" "\\\"" ] p;
         description = "ASCII logo used for new tab page";
       };
 
