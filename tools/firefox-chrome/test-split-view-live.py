@@ -90,6 +90,25 @@ def check(nova, themed):
                 time.sleep(.1)
             print(json.dumps({'nova': nova, 'themed': themed, 'firstPanelBefore': before['width'],
                               'firstPanelAfter': after, 'after': measured}), flush=True)
+            bars = m.execute_async_script("""
+                const done = arguments[arguments.length - 1];
+                const split = gBrowser.selectedTab.splitview;
+                Promise.all(split.tabs.map(tab => gBrowser.getFindBar(tab))).then(bars => {
+                  bars.forEach(bar => bar.open());
+                  const state = () => bars.map(bar => {
+                    const s=getComputedStyle(bar), r=bar.getBoundingClientRect();
+                    return {hidden:bar.hidden, display:s.display, width:r.width, height:r.height};
+                  });
+                  const before=state();
+                  split.reverseTabs();
+                  requestAnimationFrame(() => requestAnimationFrame(() => done({count:bars.length, before, after:state()})));
+                }, e => done({error:String(e)}));
+                """, sandbox='system')
+            print(json.dumps({'nova': nova, 'themed': themed, 'findbars': bars}), flush=True)
+            if (bars.get('count') != 2 or any(len(bars.get(stage, [])) != 2 for stage in ('before', 'after'))
+                    or any(bar['hidden'] or bar['display'] == 'none' or bar['width'] <= 0 or bar['height'] <= 0
+                           for stage in ('before', 'after') for bar in bars.get(stage, []))):
+                raise RuntimeError(f'findbars did not remain visible in both split panels: {bars}')
         finally:
             try:
                 if m:
