@@ -31,14 +31,14 @@ def contrast(background, foreground):
     return (max(a, b) + .05) / (min(a, b) + .05)
 
 
-def check(nova, dark, source, forced):
+def check(nova, dark, source, forced, mismatch):
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0))
         port = sock.getsockname()[1]
     with tempfile.TemporaryDirectory(prefix='tf-tab-colors-') as directory:
         profile = Path(directory)
         shutil.copytree(source / 'chrome', profile / 'chrome')
-        bg = 'rgb(23, 47, 71)' if dark else 'rgb(232, 240, 248)'
+        bg = 'rgb(23, 47, 71)' if dark != mismatch else 'rgb(232, 240, 248)'
         (profile / 'chrome' / 'config.css').write_text(f':root {{ --tf-bg: {bg}; --tf-display-horizontal-tabs: block; }}\n')
         theme = profile / 'probe-theme.xpi'
         manifest = {'manifest_version': 2, 'name': 'textfox tab probe', 'version': '1.0',
@@ -110,7 +110,7 @@ def check(nova, dark, source, forced):
             after = m.execute_script(js, sandbox='system')
             if before['prefersContrast'] != forced:
                 raise RuntimeError('requested contrast preference state not active')
-            print(json.dumps({'firefox': meta, 'dark': dark, 'forced':forced, 'before': before, 'hover':hover, 'after': after,
+            print(json.dumps({'firefox': meta, 'dark': dark, 'forced':forced, 'mismatch':mismatch, 'before': before, 'hover':hover, 'after': after,
                               'computedSelectedContrast':contrast(before['background'], before['color']),
                               'computedHoverContrast':contrast(hover['background'], hover['color'])}), flush=True)
         finally:
@@ -130,7 +130,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--source', type=Path, default=ROOT)
     parser.add_argument('--high-contrast', action='store_true')
+    parser.add_argument('--mismatch', action='store_true')
     args = parser.parse_args()
     for nova in (False, True):
         for dark in (False, True):
-            check(nova, dark, args.source, args.high_contrast)
+            check(nova, dark, args.source, args.high_contrast, args.mismatch)
