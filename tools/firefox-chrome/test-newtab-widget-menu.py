@@ -76,10 +76,13 @@ def check(browser_nova, newtab_nova, themed, forced_colors, rtl):
             state = m.execute_script("""
                 const active = document.activeElement, inner=active?.shadowRoot?.activeElement;
                 const s=inner && getComputedStyle(inner);
+                const menu=[...document.querySelectorAll('[role=menu]')].find(e => e.getClientRects().length);
+                const ms=menu && getComputedStyle(menu);
                 return {active:active?.outerHTML.slice(0, 700),
                         shadowActive:inner?.outerHTML.slice(0, 700),
                         focusVisible:inner?.matches(':focus-visible'),
-                        outlineStyle:s?.outlineStyle, outlineWidth:s?.outlineWidth};
+                        outlineStyle:s?.outlineStyle, outlineWidth:s?.outlineWidth,
+                        menuBackground:ms?.backgroundColor, menuColor:ms?.color};
                 """)
             print(json.dumps({'firefox': meta, 'themed': themed, 'focus': state}), flush=True)
             expected = 'newtab-widget-section-menu-hide-all' if newtab_nova else 'newtab-widget-timer-menu-notifications'
