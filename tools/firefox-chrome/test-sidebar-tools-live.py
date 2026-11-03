@@ -14,7 +14,7 @@ from ff_inspect import connect
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def check(nova, display):
+def check(nova, display, vertical):
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0))
         port = sock.getsockname()[1]
@@ -23,7 +23,8 @@ def check(nova, display):
         shutil.copytree(ROOT / 'chrome', profile / 'chrome')
         (profile / 'chrome' / 'config.css').write_text(f':root {{ --tf-display-sidebar-tools: {display}; }}\n')
         prefs = {'marionette.port': port, 'browser.nova.enabled': nova,
-                 'sidebar.revamp': True, 'sidebar.verticalTabs': True,
+                 'sidebar.revamp': True, 'sidebar.verticalTabs': vertical,
+                 'sidebar.visibility': 'always-show',
                  'toolkit.legacyUserProfileCustomizations.stylesheets': True,
                  'browser.shell.checkDefaultBrowser': False}
         (profile / 'user.js').write_text(''.join(
@@ -39,8 +40,15 @@ def check(nova, display):
             m.set_context('chrome')
             metadata = m.execute_script("return {profile:Services.dirsvc.get('ProfD', Ci.nsIFile).path, version:Services.appinfo.version, build:Services.appinfo.appBuildID, nova:Services.prefs.getBoolPref('browser.nova.enabled'), verticalTabs:Services.prefs.getBoolPref('sidebar.verticalTabs'), revamp:Services.prefs.getBoolPref('sidebar.revamp')}", sandbox='system')
             if (process.poll() is not None or Path(metadata['profile']).resolve() != profile.resolve()
-                    or metadata['nova'] != nova or not metadata['verticalTabs'] or not metadata['revamp']):
+                    or metadata['nova'] != nova or metadata['verticalTabs'] != vertical or not metadata['revamp']):
                 raise RuntimeError('unexpected Firefox process, profile, or preferences')
+            ready = m.execute_async_script("""
+                const done=arguments[arguments.length-1];
+                SidebarController.promiseInitialized.then(() => SidebarController.updateUIState({hidden:false, launcherExpanded:true}))
+                  .then(() => done(true), e => done(String(e)));
+                """, sandbox='system')
+            if ready is not True:
+                raise RuntimeError(f'sidebar state initialization failed: {ready}')
             deadline = time.monotonic() + 20
             while not m.execute_script("return !!document.querySelector('sidebar-main')?.shadowRoot?.querySelector('.buttons-wrapper')", sandbox='system'):
                 if time.monotonic() >= deadline:
@@ -71,13 +79,13 @@ def check(nova, display):
                 raise RuntimeError('configured sidebar tools are not visible')
             if display == 'none' and (result['width'] != 0 or result['height'] != 0):
                 raise RuntimeError('hidden sidebar tools still occupy space')
-            if not result['splitter']:
+            if vertical and not result['splitter']:
                 raise RuntimeError('sidebar tools splitter fixture is missing')
-            if display == 'flex' and (result['splitter']['display'] == 'none' or result['splitter']['height'] <= 0):
+            if vertical and display == 'flex' and (result['splitter']['display'] == 'none' or result['splitter']['height'] <= 0):
                 raise RuntimeError('visible sidebar tools have no resize splitter')
-            if display == 'none' and result['splitter']['display'] != 'none':
+            if vertical and display == 'none' and result['splitter']['display'] != 'none':
                 raise RuntimeError('hidden sidebar tools still show resize splitter')
-            if display == 'flex':
+            if vertical and display == 'flex':
                 collapsed = m.execute_async_script("""
                     const done = arguments[arguments.length - 1];
                     SidebarController.updateUIState({launcherExpanded:false}).then(() => done(true), e => done(String(e)));
@@ -131,4 +139,5 @@ def check(nova, display):
 if __name__ == '__main__':
     for nova in (False, True):
         for display in ('flex', 'none'):
-            check(nova, display)
+            for vertical in (False, True):
+                check(nova, display, vertical)
