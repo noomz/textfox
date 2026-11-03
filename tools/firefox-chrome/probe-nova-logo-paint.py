@@ -48,6 +48,7 @@ def main():
     parser.add_argument('--font-size', type=int, default=14)
     parser.add_argument('--long-logo', action='store_true')
     parser.add_argument('--experiment', action='store_true')
+    parser.add_argument('--experiment-wrap', action='store_true')
     args = parser.parse_args()
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0))
@@ -89,12 +90,13 @@ def main():
                     raise RuntimeError('Nova new-tab did not initialize')
                 time.sleep(.25)
             time.sleep(2)
-            if args.experiment:
+            if args.experiment or args.experiment_wrap:
                 m.execute_script("""
                     const style = document.createElement('style');
-                    style.textContent = '.container.nova-enabled { grid-template-rows: auto var(--row-height) !important; } .nova-enabled .sidebar-inline-start { grid-row: 1 !important; } .nova-enabled .wordmark { height: auto !important; }';
+                    style.textContent = `.container.nova-enabled { grid-template-rows: ${arguments[0] ? 'minmax(var(--row-height), auto)' : 'auto'} var(--row-height) !important; } .nova-enabled .sidebar-inline-start { grid-row: 1 !important; } .nova-enabled .wordmark { height: auto !important; }`;
+                    if (arguments[0]) style.textContent += '.nova-enabled .wordmark { max-inline-size: calc(100cqi - var(--side-col-width) - 3 * var(--space-xlarge)) !important; } .nova-enabled .wordmark::before { overflow-wrap: anywhere !important; }';
                     document.head.appendChild(style);
-                    """)
+                    """, script_args=[args.experiment_wrap])
             geometry = m.execute_script("""
                 const r = document.querySelector('.nova-enabled .search-inner-wrapper').getBoundingClientRect();
                 const logo = document.querySelector('.nova-enabled .wordmark');
@@ -114,6 +116,10 @@ def main():
                         endSidebar:{x:end.x, y:end.y, width:end.width, height:end.height},
                         startSidebar:{x:start.x, y:start.y, width:start.width, height:start.height},
                         logoDisplay:getComputedStyle(logo).display, pseudoContent:ps.content, parents,
+                        sideControls:[...document.querySelectorAll('.container.nova-enabled > aside :is(button, a, input, moz-button)')].filter(e => e.getClientRects().length).map(e => {
+                          const b=e.getBoundingClientRect(); return {tag:e.localName, class:e.className,
+                            x:b.x, y:b.y, width:b.width, height:b.height};
+                        }),
                         gridChildren:[...document.querySelector('.container.nova-enabled').children].map(e => {
                           const s = getComputedStyle(e), b = e.getBoundingClientRect();
                           return {tag:e.localName, class:e.className, display:s.display, gridRow:s.gridRow,
@@ -159,7 +165,8 @@ def main():
                 time.sleep(.1)
             print(json.dumps({'firefox': metadata, 'requestedWidth': args.width, 'fontSize': args.font_size,
                               'longLogo': args.long_logo, 'searchClickFocusedUrlbar': True,
-                              'experiment': args.experiment, 'interventionVisible': full_difference != 0,
+                              'experiment': args.experiment, 'experimentWrap': args.experiment_wrap,
+                              'interventionVisible': full_difference != 0,
                               'search': geometry, 'crop': crop,
                               'controlDifference': difference(first, control, crop),
                               'logoTransparentDifference': difference(control, changed, crop),
