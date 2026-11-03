@@ -8,8 +8,8 @@ import re
 import shutil
 import socket
 import subprocess
-import tempfile
 import sys
+import tempfile
 import time
 
 from ff_inspect import connect
@@ -78,9 +78,14 @@ def main():
     css = json.loads(subprocess.check_output(['nix', 'eval', '--offline', '--impure', '--json', '--expr', expression], cwd=ROOT, text=True, timeout=120))
     manual_meta, manual = inspect(None)
     nix_meta, generated = inspect(css)
+    defined = set(re.findall(r'(--tf-[\w-]+)\s*:', (ROOT / 'chrome/defaults.css').read_text()))
+    configured = set(re.findall(r'(--tf-[\w-]+)\s*:', css))
+    missing = sorted(defined - configured)
+    extra = sorted(configured - defined)
     differences = {key:{'manual':manual[key], 'nix':generated[key]} for key in manual if manual[key] != generated[key]}
-    print(json.dumps({'manualFirefox':manual_meta, 'nixFirefox':nix_meta, 'differences':differences}, indent=2))
-    if differences:
+    print(json.dumps({'manualFirefox':manual_meta, 'nixFirefox':nix_meta, 'missing':missing, 'extra':extra,
+                      'differences':differences}, indent=2))
+    if differences or missing or extra:
         sys.exit(1)
 
 
