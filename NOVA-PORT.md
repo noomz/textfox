@@ -112,6 +112,12 @@ A separate disposable headless app-menu probe opened `#appMenu-popup` in vanilla
 
 A parallel URL bar no-results investigation stopped before producing findings when `jev-guard` blocked a scout's command. The guard was not bypassed. Reassess the blocked command and investigate safely before retrying; do not change guard configuration as a workaround. No tracked code changes remained from these investigations. T1 through T4 remain incomplete, and Nova support remains unclaimed.
 
+## Manual and Nix default configuration
+
+`tools/firefox-chrome/check-config-defaults.py` evaluates Nix defaults and compares every `--tf-*` default against the manual CSS in two disposable Firefox profiles, including computed new-tab logo pseudo-content. The check first failed because Nix's default logo differed in spacing, characters and trailing newline from `chrome/defaults.css`. The Nix default now matches the manual logo; the comparison passed on headless Firefox 159.0 build `20261022150525`. The probe uses cached nixpkgs and disposable new-tab feeds that may make network requests. It compares computed defaults, not full option behavior, home-manager installation or actual NixOS activation. Existing V4 and V9 cover this class; a §B entry requires approval under the spec backprop protocol. T6 remains open.
+
+Run `MOZ_HEADLESS=1 "$HOME/.cache/textfox-firefox-live/venv/bin/python" tools/firefox-chrome/check-config-defaults.py /nix/store/771lrblshx04rd5hgbg69pxkfzm9ncqh-source`, substituting an available nixpkgs source.
+
 ## Nix icon URL generation
 
 Auditing every icon URL in the built Nix CSS found `chrome://global/skin/icons/close.svg` corrupted into a URL containing the Nix store path. The wrapper's `sed` pattern `./icons` treated `.` as a wildcard and replaced part of Firefox's `skin/icons`. The pattern now matches the literal `./icons/` prefix. The generated-CSS probe failed on the corrupt reference, then rebuilt and verified 90 distinct referenced SVG files plus the intact Firefox chrome URL. This checks generated files, not Firefox rendering of every icon or store garbage-collection behavior. Existing V2 and V9 cover icon preservation; a §B entry requires approval under the spec backprop protocol. T5 remains open.
