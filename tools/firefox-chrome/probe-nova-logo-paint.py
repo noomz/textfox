@@ -122,6 +122,10 @@ def main():
                         endSidebar:{x:end.x, y:end.y, width:end.width, height:end.height},
                         startSidebar:{x:start.x, y:start.y, width:start.width, height:start.height},
                         logoDisplay:getComputedStyle(logo).display, pseudoContent:ps.content, parents,
+                        startChildren:[...document.querySelector('.container.nova-enabled > .sidebar-inline-start').children].map(e => {
+                          const b=e.getBoundingClientRect(), s=getComputedStyle(e); return {tag:e.localName, class:e.className,
+                            display:s.display, x:b.x, y:b.y, width:b.width, height:b.height};
+                        }),
                         sideControls:[...document.querySelectorAll('.container.nova-enabled > aside :is(button, a, input, moz-button)')].filter(e => e.getClientRects().length).map(e => {
                           const b=e.getBoundingClientRect(); return {tag:e.localName, class:e.className,
                             x:b.x, y:b.y, width:b.width, height:b.height};
