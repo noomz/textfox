@@ -50,7 +50,11 @@ def check(nova, display):
                 const host = document.querySelector('sidebar-main');
                 const wrapper = host.shadowRoot.querySelector('.buttons-wrapper');
                 const s = getComputedStyle(wrapper), rect = wrapper.getBoundingClientRect();
+                const splitter = host.shadowRoot.querySelector('#sidebar-tools-and-extensions-splitter');
+                const ss = splitter && getComputedStyle(splitter);
                 return {rootOption:getComputedStyle(document.documentElement).getPropertyValue('--tf-display-sidebar-tools').trim(),
+                        splitter:splitter && {display:ss.display, width:splitter.getBoundingClientRect().width,
+                          height:splitter.getBoundingClientRect().height, html:splitter.outerHTML},
                         display:s.display, visibility:s.visibility, width:rect.width, height:rect.height,
                         part:wrapper.getAttribute('part'), hostHidden:host.hidden,
                         lightDomMatches:document.querySelectorAll('.buttons-wrapper').length,
@@ -67,6 +71,36 @@ def check(nova, display):
                 raise RuntimeError('configured sidebar tools are not visible')
             if display == 'none' and (result['width'] != 0 or result['height'] != 0):
                 raise RuntimeError('hidden sidebar tools still occupy space')
+            if not result['splitter']:
+                raise RuntimeError('sidebar tools splitter fixture is missing')
+            if display == 'flex' and (result['splitter']['display'] == 'none' or result['splitter']['height'] <= 0):
+                raise RuntimeError('visible sidebar tools have no resize splitter')
+            if display == 'none' and result['splitter']['display'] != 'none':
+                raise RuntimeError('hidden sidebar tools still show resize splitter')
+            if display == 'flex':
+                collapsed = m.execute_async_script("""
+                    const done = arguments[arguments.length - 1];
+                    SidebarController.updateUIState({launcherExpanded:false}).then(() => done(true), e => done(String(e)));
+                    """, sandbox='system')
+                if collapsed is not True:
+                    raise RuntimeError(f'could not collapse sidebar launcher: {collapsed}')
+                drag = m.execute_script("""
+                    const host = document.querySelector('sidebar-main');
+                    const splitter = host.shadowRoot.querySelector('#sidebar-tools-and-extensions-splitter');
+                    const r = splitter.getBoundingClientRect();
+                    return {x:r.x + r.width / 2, y:r.y + r.height / 2,
+                            expanded:host.hasAttribute('expanded'),
+                            height:host.shadowRoot.querySelector('.buttons-wrapper').getBoundingClientRect().height};
+                    """, sandbox='system')
+                if drag['expanded'] or drag['height'] <= 0:
+                    raise RuntimeError(f'collapsed tools fixture invalid: {drag}')
+                actions = m.actions.sequence('pointer', 'mouse', {'pointerType': 'mouse'})
+                actions.pointer_move(round(drag['x']), round(drag['y'])).pointer_down()
+                actions.pointer_move(round(drag['x']), round(drag['y'] + 100), duration=500).pointer_up().perform()
+                after = m.execute_script("return document.querySelector('sidebar-main').shadowRoot.querySelector('.buttons-wrapper').getBoundingClientRect().height", sandbox='system')
+                print(json.dumps({'nova': nova, 'toolsHeightBefore': drag['height'], 'toolsHeightAfter': after}), flush=True)
+                if after >= drag['height']:
+                    raise RuntimeError('dragging the sidebar tools splitter did not shrink the tools area')
         finally:
             try:
                 if m:

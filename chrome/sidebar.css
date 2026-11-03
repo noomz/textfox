@@ -44,7 +44,7 @@ sidebar-main {
 }
 
 #sidebar-tools-and-extensions-splitter {
-  display: none !important;
+  display: var(--tf-display-sidebar-tools) !important;
 }
 
 .buttons-wrapper {
