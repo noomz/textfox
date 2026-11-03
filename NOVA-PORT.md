@@ -90,6 +90,14 @@ A fresh disposable Firefox 159.0 profile reported `true` for both Nova preferenc
 
 The `flake.lock` GitHub input and `flake.nix` channel tarball declaration differ. At the locked nixpkgs revision `0726a0ecb6d4e08f6adced58726b95db924cef57`, the upstream `pkgs/applications/networking/browsers/firefox/packages/firefox.nix` declares Firefox 150.0. This is source-level evidence, not a verified Nix evaluation or build; host package overrides can differ. The mismatch may contribute to offline evaluation timeout, but cause is not established. No lock file was changed.
 
+## Layout and selector continuation
+
+The Nova layout probe now checks shortcut text rectangles against the viewport and overflow-clipping ancestors. A deliberately clipped DOM fixture checks that this detection is exercised. On headless Firefox 159.0 build `20261022150525`, the fixture was detected as clipped, while the Wikipedia shortcut occupied two lines and had no detected clipping. The probe exited 1 for that wrap and the estimated logo/search overlap. It still cannot prove painted pseudo-element geometry, visible focus, or responsive and RTL behavior; no CSS fix was applied.
+
+A bounded source inventory of URL bar and new-tab selectors found that current Firefox release source emits `.urlbarView-results` where textfox targets `.urlbarView-body-inner` and `.urlbarView-body-outer`. Firefox's one-offs separator condition tests `[noresults]` on `#urlbar`, whereas textfox tests it on `.urlbarView`. These are source-level discrepancies, not confirmed visual defects. Inspect the live results DOM, slot assignment, and computed borders before changing them. New-tab `.logo-and-wordmark`, `.top-site-outer`, and `--newtab-background-color-secondary` remain present in release source; parent hover and focus states and forced-color cascade still need live checks. Searchfox's release branch is moving and was not independently pinned to the investigated build. Other components remain uninventoried.
+
+Delivery-path inspection confirms manual installation uses the selected profile and does not select a Firefox build, home-manager uses the host's Firefox package, and NixOS accepts a `textfox.package` override. Per-path package builds, effective preferences, actual installation and real NixOS activation remain unverified. The manual and NixOS CSS source orders differ; browser processing must be tested before drawing conclusions about precedence.
+
 ## Resume commands
 
 ```sh

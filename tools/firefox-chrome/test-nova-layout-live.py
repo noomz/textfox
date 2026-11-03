@@ -33,9 +33,37 @@ const trace = e => {
     overflowWrap:s.overflowWrap, whiteSpace:s.whiteSpace, font:s.font};
 };
 const range = document.createRange();
-range.selectNodeContents(label);
-const lines = [...range.getClientRects()].filter(r => r.width > 0)
-  .map(r => ({x:r.x, y:r.y, width:r.width, height:r.height}));
+const measureText = element => {
+  range.selectNodeContents(element);
+  const lines = [...range.getClientRects()].filter(r => r.width > 0 && r.height > 0)
+    .map(r => ({x:r.x, y:r.y, width:r.width, height:r.height}));
+  const clips = [{name:'viewport', left:0, top:0, right:innerWidth, bottom:innerHeight}];
+  for (let e = element; e; e = e.parentElement) {
+    const style = getComputedStyle(e), r = e.getBoundingClientRect();
+    const clipX = /^(hidden|clip|scroll|auto)$/.test(style.overflowX);
+    const clipY = /^(hidden|clip|scroll|auto)$/.test(style.overflowY);
+    if (clipX || clipY) clips.push({name:e.localName + '.' + e.className,
+      left:clipX ? r.left + e.clientLeft : -Infinity,
+      right:clipX ? r.left + e.clientLeft + e.clientWidth : Infinity,
+      top:clipY ? r.top + e.clientTop : -Infinity,
+      bottom:clipY ? r.top + e.clientTop + e.clientHeight : Infinity});
+  }
+  const clipped = [];
+  for (const line of lines) for (const clip of clips) {
+    if (line.x < clip.left - 1 || line.x + line.width > clip.right + 1 ||
+        line.y < clip.top - 1 || line.y + line.height > clip.bottom + 1)
+      clipped.push(clip.name);
+  }
+  return {lines, clipped:[...new Set(clipped)]};
+};
+const shortcut = measureText(label);
+const fixture = document.createElement('div');
+Object.assign(fixture.style, {position:'fixed', left:'0', top:'0', width:'10px',
+  height:'20px', overflow:'hidden', whiteSpace:'nowrap'});
+fixture.textContent = 'A deliberately clipped label';
+document.body.appendChild(fixture);
+const clippingSelfTest = measureText(fixture);
+fixture.remove();
 const ancestors = [];
 for (let e = label; e && ancestors.length < 5; e = e.parentElement) ancestors.push(trace(e));
 const pseudo = getComputedStyle(wordmark, '::before');
@@ -52,7 +80,8 @@ if (pseudo.content !== 'none' && pseudo.content !== 'normal') {
     .map(r => ({x:w.x + r.x - origin.x, y:w.y + r.y - origin.y, width:r.width, height:r.height}));
   clone.remove();
 }
-return {viewport:[innerWidth, innerHeight], logo, shortcut:{fixture:'Wikipedia', lines, ancestors}};
+return {viewport:[innerWidth, innerHeight], logo,
+  shortcut:{fixture:'Wikipedia', ...shortcut, ancestors}, clippingSelfTest};
 """
 
 
@@ -107,12 +136,18 @@ def main():
                 failures.append('logo has no measurable lines')
             if overlap:
                 failures.append('estimated logo line box overlaps search wrapper')
+            if not result['clippingSelfTest']['lines'] or not result['clippingSelfTest']['clipped']:
+                raise RuntimeError('clipping check failed its deliberately clipped fixture')
+            if not result['shortcut']['lines']:
+                failures.append('Wikipedia shortcut has no measurable text')
+            if result['shortcut']['clipped']:
+                failures.append('Wikipedia shortcut text clipped by ' + ', '.join(result['shortcut']['clipped']))
             if len({round(r['y'], 1) for r in result['shortcut']['lines']}) != 1:
                 failures.append('Wikipedia shortcut wraps')
             if failures:
                 print('FAIL: ' + '; '.join(failures), file=sys.stderr)
                 return 1
-            print('INCONCLUSIVE: no detected overlap or wrapping; visibility and painted pixels not verified')
+            print('INCONCLUSIVE: no detected overlap, wrapping, or clipping; visibility and painted pixels not verified')
             return 2
         finally:
             try:
