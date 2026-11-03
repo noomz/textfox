@@ -24,6 +24,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('nixpkgs_path')
     parser.add_argument('--forced-colors', action='store_true')
+    parser.add_argument('--wallpaper', action='store_true')
     args = parser.parse_args()
     if not re.fullmatch(r'/nix/store/[a-zA-Z0-9._/-]+', args.nixpkgs_path):
         parser.error('nixpkgs_path must be a literal /nix/store path')
@@ -64,6 +65,10 @@ def main():
                  'browser.display.document_color_use': 2 if args.forced_colors else 1,
                  'toolkit.legacyUserProfileCustomizations.stylesheets': True,
                  'browser.shell.checkDefaultBrowser': False}
+        if args.wallpaper:
+            prefs.update({'browser.newtabpage.activity-stream.newtabWallpapers.enabled': True,
+                          'browser.newtabpage.activity-stream.newtabWallpapers.user.enabled': True,
+                          'browser.newtabpage.activity-stream.newtabWallpapers.wallpaper': 'solid-color-picker-#14283c'})
         (profile / 'user.js').write_text(''.join(
             f'user_pref({json.dumps(k)}, {json.dumps(v)});\n' for k, v in prefs.items()))
         env['MOZ_REMOTE_ALLOW_SYSTEM_ACCESS'] = '1'
@@ -108,6 +113,12 @@ def main():
                 if time.monotonic() >= deadline:
                     raise RuntimeError('generated userContent fixture did not initialize')
                 time.sleep(.25)
+            if args.wallpaper:
+                deadline = time.monotonic() + 20
+                while not m.execute_script("return getComputedStyle(document.body).getPropertyValue('--newtab-wallpaper-color').trim() === '#14283c'"):
+                    if time.monotonic() >= deadline:
+                        raise RuntimeError('wallpaper fixture did not initialize')
+                    time.sleep(.1)
             content = m.execute_script("""
                 const tile = getComputedStyle(document.querySelector('.nova-enabled .tile'));
                 return {borderWidth:tile.borderTopWidth, borderStyle:tile.borderTopStyle,
@@ -115,9 +126,12 @@ def main():
                         tfBorder:tile.getPropertyValue('--tf-border-width').trim(),
                         borderColorToken:tile.getPropertyValue('--newtab-border-color').trim(),
                         radius:tile.borderRadius, shadow:tile.boxShadow,
-                        forcedColors:matchMedia('(forced-colors: active)').matches};
+                        forcedColors:matchMedia('(forced-colors: active)').matches,
+                        wallpaper:document.body.style.getPropertyValue('--newtab-wallpaper-color').trim()};
                 """)
             print(json.dumps({'generatedContent':content}), flush=True)
+            if args.wallpaper and content['wallpaper'] != '#14283c':
+                raise RuntimeError('requested Firefox wallpaper color not effective')
             if content['forcedColors'] != args.forced_colors or content['borderWidth'] != '7px' or content['borderStyle'] != 'solid' or content['radius'] != '0px' or content['shadow'] != 'none':
                 raise RuntimeError('generated userContent CSS did not style Nova shortcut tile')
             m.execute_script("document.body.style.setProperty('--newtab-wallpaper-color', 'rgb(20, 40, 60)')")
