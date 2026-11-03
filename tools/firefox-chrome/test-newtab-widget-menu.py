@@ -60,8 +60,8 @@ def check(browser_nova, newtab_nova, themed):
                 if time.monotonic() >= deadline:
                     raise RuntimeError('widget menu did not initialize')
                 time.sleep(.25)
-            button = m.find_element('css selector', selector)
-            button.send_keys(Keys.ENTER)
+            m.execute_script('document.querySelector(arguments[0]).focus()', script_args=[selector])
+            m.find_element('css selector', selector).send_keys(Keys.ENTER)
             deadline = time.monotonic() + 10
             while not m.execute_script("return [...document.querySelectorAll('[role=menu]')].some(e => e.getClientRects().length)"):
                 if time.monotonic() >= deadline:
@@ -69,15 +69,20 @@ def check(browser_nova, newtab_nova, themed):
                 time.sleep(.1)
             m.find_element('tag name', 'body').send_keys(Keys.ARROW_DOWN)
             state = m.execute_script("""
-                const active = document.activeElement;
+                const active = document.activeElement, inner=active?.shadowRoot?.activeElement;
+                const s=inner && getComputedStyle(inner);
                 return {active:active?.outerHTML.slice(0, 700),
-                        shadowActive:active?.shadowRoot?.activeElement?.outerHTML.slice(0, 700)};
+                        shadowActive:inner?.outerHTML.slice(0, 700),
+                        focusVisible:inner?.matches(':focus-visible'),
+                        outlineStyle:s?.outlineStyle, outlineWidth:s?.outlineWidth};
                 """)
             print(json.dumps({'firefox': meta, 'themed': themed, 'focus': state}), flush=True)
             expected = 'newtab-widget-section-menu-hide-all' if newtab_nova else 'newtab-widget-timer-menu-notifications'
             if (not state['active'] or expected not in state['active']
                     or not state['shadowActive'] or 'role="menuitem"' not in state['shadowActive']):
                 raise RuntimeError('expected first widget menu item is not focused')
+            if not state['focusVisible'] or state['outlineStyle'] == 'none' or state['outlineWidth'] == '0px':
+                raise RuntimeError('widget menu item has no computed focus outline')
             m.find_element('tag name', 'body').send_keys(Keys.ENTER)
             deadline = time.monotonic() + 10
             if newtab_nova:
