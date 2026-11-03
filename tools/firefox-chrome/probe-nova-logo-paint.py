@@ -49,18 +49,22 @@ def main():
     parser.add_argument('--rtl', action='store_true')
     parser.add_argument('--font-size', type=int, default=14)
     parser.add_argument('--long-logo', action='store_true')
+    parser.add_argument('--empty-logo', action='store_true')
     parser.add_argument('--reduced-motion', action='store_true')
     parser.add_argument('--forced-colors', action='store_true')
     parser.add_argument('--experiment', action='store_true')
     parser.add_argument('--experiment-wrap', action='store_true')
     args = parser.parse_args()
+    if args.long_logo and args.empty_logo:
+        parser.error('--long-logo and --empty-logo cannot be combined')
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0))
         port = sock.getsockname()[1]
     with tempfile.TemporaryDirectory(prefix='tf-logo-paint-') as directory:
         profile = Path(directory)
         shutil.copytree(ROOT / 'chrome', profile / 'chrome')
-        logo = f' --tf-newtab-logo: {json.dumps("W" * 100)};' if args.long_logo else ''
+        logo_value = 'W' * 100 if args.long_logo else ''
+        logo = f' --tf-newtab-logo: {json.dumps(logo_value)};' if args.long_logo or args.empty_logo else ''
         (profile / 'chrome' / 'config.css').write_text(f':root {{ --tf-font-size: {args.font_size}px;{logo} }}\n')
         prefs = {'marionette.port': port, 'browser.nova.enabled': True,
                  'browser.newtabpage.activity-stream.nova.enabled': True,
@@ -192,7 +196,8 @@ def main():
                     raise RuntimeError('search click did not focus URL bar')
                 time.sleep(.1)
             print(json.dumps({'firefox': metadata, 'requestedWidth': args.width, 'fontSize': args.font_size,
-                              'longLogo': args.long_logo, 'searchClickFocusedUrlbar': True, 'scroll': scroll,
+                              'longLogo': args.long_logo, 'emptyLogo': args.empty_logo,
+                              'searchClickFocusedUrlbar': True, 'scroll': scroll,
                               'experiment': args.experiment, 'experimentWrap': args.experiment_wrap,
                               'interventionVisible': full_difference != 0,
                               'search': geometry, 'crop': crop,
