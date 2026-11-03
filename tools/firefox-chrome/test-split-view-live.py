@@ -16,7 +16,7 @@ from ff_inspect import connect
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def check(nova, themed, rtl):
+def check(nova, themed, rtl, high_contrast):
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0))
         port = sock.getsockname()[1]
@@ -26,6 +26,7 @@ def check(nova, themed, rtl):
             shutil.copytree(ROOT / 'chrome', profile / 'chrome')
         prefs = {'marionette.port': port, 'browser.nova.enabled': nova,
                  'intl.l10n.pseudo': 'bidi' if rtl else '',
+                 'ui.useAccessibilityTheme': 1 if high_contrast else 0,
                  'toolkit.legacyUserProfileCustomizations.stylesheets': True,
                  'browser.shell.checkDefaultBrowser': False}
         (profile / 'user.js').write_text(''.join(
@@ -39,9 +40,10 @@ def check(nova, themed, rtl):
         try:
             m = connect(port)
             m.set_context('chrome')
-            meta = m.execute_script("return {profile:Services.dirsvc.get('ProfD',Ci.nsIFile).path,version:Services.appinfo.version,build:Services.appinfo.appBuildID,nova:Services.prefs.getBoolPref('browser.nova.enabled'),direction:getComputedStyle(document.documentElement).direction}", sandbox='system')
+            meta = m.execute_script("return {profile:Services.dirsvc.get('ProfD',Ci.nsIFile).path,version:Services.appinfo.version,build:Services.appinfo.appBuildID,nova:Services.prefs.getBoolPref('browser.nova.enabled'),direction:getComputedStyle(document.documentElement).direction,prefersContrast:matchMedia('(prefers-contrast)').matches}", sandbox='system')
             if (process.poll() is not None or Path(meta['profile']).resolve() != profile.resolve()
-                    or meta['nova'] != nova or meta['direction'] != ('rtl' if rtl else 'ltr')):
+                    or meta['nova'] != nova or meta['direction'] != ('rtl' if rtl else 'ltr')
+                    or meta['prefersContrast'] != high_contrast):
                 raise RuntimeError('unexpected Firefox process, profile, or Nova preference')
             deadline = time.monotonic() + 20
             while not m.execute_script('return gBrowserInit.delayedStartupFinished', sandbox='system'):
@@ -154,4 +156,5 @@ if __name__ == '__main__':
     for nova in (False, True):
         for themed in (False, True):
             for rtl in (False, True):
-                check(nova, themed, rtl)
+                for high_contrast in (False, True):
+                    check(nova, themed, rtl, high_contrast)
