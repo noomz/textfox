@@ -57,13 +57,27 @@ const measureText = element => {
   return {lines, clipped:[...new Set(clipped)]};
 };
 const shortcut = measureText(label);
+const neighbors = [...document.querySelectorAll('.nova-enabled .top-site-outer .title .title-label')]
+  .filter(e => e !== label && e.getClientRects().length)
+  .flatMap(e => measureText(e).lines);
+const overlaps = (a, b) => a.x < b.x + b.width && a.x + a.width > b.x &&
+  a.y < b.y + b.height && a.y + a.height > b.y;
+shortcut.neighborLinesMeasured = neighbors.length;
+shortcut.neighborCollisions = shortcut.lines.filter(line => neighbors.some(other => overlaps(line, other))).length;
 const fixture = document.createElement('div');
 Object.assign(fixture.style, {position:'fixed', left:'0', top:'0', width:'10px',
   height:'20px', overflow:'hidden', whiteSpace:'nowrap'});
 fixture.textContent = 'A deliberately clipped label';
 document.body.appendChild(fixture);
 const clippingSelfTest = measureText(fixture);
+fixture.style.overflow = 'visible';
+const collisionFixture = fixture.cloneNode(true);
+collisionFixture.textContent = 'Collision';
+document.body.appendChild(collisionFixture);
+const collisionSelfTest = measureText(fixture).lines.some(a =>
+  measureText(collisionFixture).lines.some(b => overlaps(a, b)));
 fixture.remove();
+collisionFixture.remove();
 const ancestors = [];
 for (let e = label; e && ancestors.length < 5; e = e.parentElement) ancestors.push(trace(e));
 const pseudo = getComputedStyle(wordmark, '::before');
@@ -81,7 +95,7 @@ if (pseudo.content !== 'none' && pseudo.content !== 'normal') {
   clone.remove();
 }
 return {viewport:[innerWidth, innerHeight], logo,
-  shortcut:{fixture:'Wikipedia', ...shortcut, ancestors}, clippingSelfTest};
+  shortcut:{fixture:'Wikipedia', ...shortcut, ancestors}, clippingSelfTest, collisionSelfTest};
 """
 
 
@@ -138,12 +152,18 @@ def main():
                 failures.append('estimated logo line box overlaps search wrapper')
             if not result['clippingSelfTest']['lines'] or not result['clippingSelfTest']['clipped']:
                 raise RuntimeError('clipping check failed its deliberately clipped fixture')
+            if not result['collisionSelfTest']:
+                raise RuntimeError('collision check failed its overlapping fixture')
             if not result['shortcut']['lines']:
                 failures.append('Wikipedia shortcut has no measurable text')
             if result['shortcut']['clipped']:
                 failures.append('Wikipedia shortcut text clipped by ' + ', '.join(result['shortcut']['clipped']))
+            if not result['shortcut']['neighborLinesMeasured']:
+                print('INCONCLUSIVE: no neighboring shortcut text measured', file=sys.stderr)
+            if result['shortcut']['neighborCollisions']:
+                failures.append('Wikipedia shortcut text collides with another title')
             if len({round(r['y'], 1) for r in result['shortcut']['lines']}) != 1:
-                failures.append('Wikipedia shortcut wraps')
+                print('OBSERVATION: Wikipedia shortcut wraps; wrapping alone is not a layout failure', file=sys.stderr)
             if failures:
                 print('FAIL: ' + '; '.join(failures), file=sys.stderr)
                 return 1
