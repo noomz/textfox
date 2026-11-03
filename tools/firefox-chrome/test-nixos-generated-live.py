@@ -50,6 +50,20 @@ def main():
         for name in ('userChrome.css', 'userContent.css'):
             (chrome / name).write_bytes(subprocess.check_output(['nix', 'store', 'cat', f'{store_dir}/{name}'], timeout=30))
         generated_chrome = (chrome / 'userChrome.css').read_text()
+        imports = re.findall(r'^@import\s+url\(["\']?([^"\')]+)', (ROOT / 'chrome' / 'userChrome.css').read_text(), re.MULTILINE)
+        if not imports:
+            raise RuntimeError('manual userChrome imports not found')
+        for name in imports:
+            if name == 'config.css':
+                continue
+            if name == 'defaults.css':
+                marker = '--tf-font-family:'
+            else:
+                lines = [(line.strip()) for line in (ROOT / 'chrome' / name).read_text().splitlines()
+                         if line.strip() and not line.lstrip().startswith(('/*', '*', '//'))]
+                marker = lines[0]
+            if marker not in generated_chrome:
+                raise RuntimeError(f'generated CSS missing imported file marker: {name}: {marker}')
         if './icons/' in generated_chrome:
             raise RuntimeError('generated CSS retains a relative icon reference')
         if 'chrome://global/skin/icons/close.svg' not in generated_chrome:
