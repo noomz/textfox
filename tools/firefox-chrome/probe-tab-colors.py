@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Inspect horizontal tab colors and current Firefox theme tokens."""
+import argparse
 import json
 import os
 from pathlib import Path
@@ -15,13 +16,13 @@ from ff_inspect import connect
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def check(nova, dark):
+def check(nova, dark, source):
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0))
         port = sock.getsockname()[1]
     with tempfile.TemporaryDirectory(prefix='tf-tab-colors-') as directory:
         profile = Path(directory)
-        shutil.copytree(ROOT / 'chrome', profile / 'chrome')
+        shutil.copytree(source / 'chrome', profile / 'chrome')
         bg = 'rgb(23, 47, 71)' if dark else 'rgb(232, 240, 248)'
         (profile / 'chrome' / 'config.css').write_text(f':root {{ --tf-bg: {bg}; --tf-display-horizontal-tabs: block; }}\n')
         theme = profile / 'probe-theme.xpi'
@@ -75,12 +76,20 @@ def check(nova, dark):
                         props:Object.fromEntries(names.map(n => [n, root.getPropertyValue(n).trim()]))};
                 """
             before = m.execute_script(js, sandbox='system')
+            hover = m.execute_script("""
+                const tab=gBrowser.addTrustedTab('about:blank');
+                InspectorUtils.addPseudoClassLock(tab, ':hover');
+                const bg=getComputedStyle(tab.querySelector('.tab-background'));
+                const result={background:bg.backgroundColor, hover:tab.matches(':hover')};
+                InspectorUtils.removePseudoClassLock(tab, ':hover');
+                return result;
+                """, sandbox='system')
             m.execute_script("""
                 const bg = document.querySelector('#TabsToolbar .tabbrowser-tab[selected] .tab-background');
                 bg.style.setProperty('--tab-selected-bgcolor', 'var(--tab-background-color-selected)', 'important');
                 """, sandbox='system')
             after = m.execute_script(js, sandbox='system')
-            print(json.dumps({'firefox': meta, 'dark': dark, 'before': before, 'after': after}), flush=True)
+            print(json.dumps({'firefox': meta, 'dark': dark, 'before': before, 'hover':hover, 'after': after}), flush=True)
         finally:
             try:
                 if m:
@@ -95,6 +104,9 @@ def check(nova, dark):
 
 
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--source', type=Path, default=ROOT)
+    args = parser.parse_args()
     for nova in (False, True):
         for dark in (False, True):
-            check(nova, dark)
+            check(nova, dark, args.source)
