@@ -112,6 +112,12 @@ A separate disposable headless app-menu probe opened `#appMenu-popup` in vanilla
 
 A parallel URL bar no-results investigation stopped before producing findings when `jev-guard` blocked a scout's command. The guard was not bypassed. Reassess the blocked command and investigate safely before retrying; do not change guard configuration as a workaround. No tracked code changes remained from these investigations. T1 through T4 remain incomplete, and Nova support remains unclaimed.
 
+## Private-window URL bar
+
+`tools/firefox-chrome/test-private-window-live.py` starts a private Firefox window in a disposable profile, verifies its private state and Nova preference, opens URL bar results, and checks configured accent, border width and result separator. It passed in headless Firefox 159.0 build `20261022150525` with browser Nova both off and on. Search suggestions may make network requests. This covers computed borders and initialized results only, not private-browsing guarantees, navigation, focus, contrast, other components or delivery paths. T2 and T4 remain open.
+
+Run `MOZ_HEADLESS=1 "$HOME/.cache/textfox-firefox-live/venv/bin/python" tools/firefox-chrome/test-private-window-live.py`.
+
 ## Findbar keyboard search
 
 `tools/firefox-chrome/test-findbar-live.py` opens a disposable local data page, sends Ctrl+F, searches for a known string, checks the actual selected text and computed focus outline, then closes findbar with Escape. It passed in headless Firefox 159.0 build `20261022150525` for vanilla and textfox with browser Nova both off and on. The first probe attempt incorrectly assumed the selected tab stored a `_findBar`; the second searched an unexpected `about:home` startup page. The test now waits for startup, opens and verifies its own fixture tab, and queries the visible findbar. This covers Linux keyboard behavior in the test profile, not painted focus, contrast, RTL, forced colors, split view or delivery paths. T2 and T4 remain open.
