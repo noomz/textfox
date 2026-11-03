@@ -159,6 +159,19 @@ def main():
                     """, script_args=[stress['canvas']])
                 if negative != stress['canvasPixel']:
                     raise RuntimeError('forced-colors comparison did not detect Canvas negative control')
+            m.set_context('chrome')
+            m.execute_script('gBrowser.selectedTab = gBrowser.addTrustedTab("about:preferences")', sandbox='system')
+            m.set_context('content')
+            m.switch_to_window(m.window_handles[-1])
+            deadline = time.monotonic() + 20
+            while not m.execute_script('return location.href.startsWith("about:preferences") && !!document.querySelector("body")'):
+                if time.monotonic() >= deadline:
+                    raise RuntimeError('preferences page did not load')
+                time.sleep(.1)
+            font = m.execute_script('return getComputedStyle(document.body).fontFamily')
+            print(json.dumps({'generatedAboutPreferencesFont':font}), flush=True)
+            if font != 'monospace':
+                raise RuntimeError('generated userContent did not apply configured about-page font')
         finally:
             try:
                 if m:

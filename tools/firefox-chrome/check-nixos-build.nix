@@ -18,6 +18,7 @@ let
       {
         textfox.enable = true;
         textfox.config.border.width = "7px";
+        textfox.config.font.family = "monospace";
         system.stateVersion = "26.05";
       }
     ];
