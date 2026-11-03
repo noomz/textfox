@@ -35,7 +35,8 @@ def check(install_user_js):
         if not (profile / 'chrome' / 'icons').is_dir():
             raise RuntimeError('manual installation did not copy icons')
         (profile / 'chrome' / 'config.css').write_text(
-            ':root { --tf-accent: rgb(19, 83, 137); --tf-border-width: 3px; }\n')
+            ':root { --tf-accent: rgb(19, 83, 137); --tf-border-width: 3px; '
+            '--tf-font-family: monospace; }\n')
         with (profile / 'user.js').open('a') as prefs:
             prefs.write(f'user_pref("marionette.port", {port});\n')
             prefs.write('user_pref("browser.shell.checkDefaultBrowser", false);\n')
@@ -73,6 +74,18 @@ def check(install_user_js):
             print(json.dumps({'installedUserJs': install_user_js, 'firefox': meta, 'result': result}), flush=True)
             if result != {'borderWidth': '3px', 'borderColor': 'rgb(19, 83, 137)'}:
                 raise RuntimeError('manual installation did not honor configured URL bar styles')
+            m.execute_script('gBrowser.selectedTab = gBrowser.addTrustedTab("about:preferences")', sandbox='system')
+            m.set_context('content')
+            m.switch_to_window(m.window_handles[-1])
+            deadline = time.monotonic() + 20
+            while not m.execute_script('return location.href.startsWith("about:preferences") && !!document.querySelector("body")'):
+                if time.monotonic() >= deadline:
+                    raise RuntimeError('preferences page did not load')
+                time.sleep(.1)
+            font = m.execute_script("return getComputedStyle(document.body).fontFamily")
+            if font != 'monospace':
+                raise RuntimeError(f'manually installed about-page font not applied: {font}')
+            print(json.dumps({'installedUserJs': install_user_js, 'aboutPreferencesFont': font}), flush=True)
         finally:
             try:
                 if m:
