@@ -112,6 +112,12 @@ A separate disposable headless app-menu probe opened `#appMenu-popup` in vanilla
 
 A parallel URL bar no-results investigation stopped before producing findings when `jev-guard` blocked a scout's command. The guard was not bypassed. Reassess the blocked command and investigate safely before retrying; do not change guard configuration as a workaround. No tracked code changes remained from these investigations. T1 through T4 remain incomplete, and Nova support remains unclaimed.
 
+## App-menu color intervention
+
+`tools/firefox-chrome/probe-panel-colors.py` reproduces the configured app-menu background discrepancy in disposable profiles and temporarily sets Firefox's current `--panel-background-color` on the open panel. On headless Linux Firefox 159.0 build `20261022150525`, both browser Nova states changed from white background with black text to the configured dark blue background while retaining black text. This demonstrates that setting the background alone risks unreadable text; no CSS fix was retained. The probe reports computed slot styles, not painted pixels or menu item contrast, and does not exercise forced colors, other operating systems, or delivery paths. Firefox release `toolkit/themes/shared/popup.css` uses `--panel-background-color` and `--panel-text-color` for the content part. Further work must establish a safe foreground pairing and accessibility behavior before changing the theme. Existing V4 and V5 already cover configuration and contrast; no new invariant is needed for this observation. T2 and T4 remain in progress.
+
+Run with `MOZ_HEADLESS=1 "$HOME/.cache/textfox-firefox-live/venv/bin/python" tools/firefox-chrome/probe-panel-colors.py`. It makes a temporary runtime override, not a persistent theme change.
+
 ## Resume commands
 
 ```sh
