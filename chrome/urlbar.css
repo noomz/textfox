@@ -14,11 +14,6 @@
   border: var(--border-width) solid var(--tf-accent) !important;
   border-radius: 0 0 var(--tf-rounding) var(--tf-rounding);
 }
-.urlbarView-body-inner {
-  #urlbar[open] > .urlbarView > .urlbarView-body-outer > & {
-    border-top: unset !important;
-  }
-}
 #urlbar[open] > .urlbarView > .urlbarView-results {
   border-top: unset !important;
 }

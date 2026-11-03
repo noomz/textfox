@@ -73,11 +73,17 @@ def check(nova):
             m.actions.sequence('key', 'keyboard').send_keys(Keys.ESCAPE).perform()
             m.actions.sequence('key', 'keyboard').key_down(Keys.CONTROL).key_down('l').key_up('l').key_up(Keys.CONTROL).perform()
             field = m.find_element('id', 'urlbar-input')
-            field.send_keys('about:blank', Keys.ENTER)
+            field.send_keys(Keys.CONTROL, 'a')
+            field.send_keys('about:blank')
+            entered = m.execute_script('return gURLBar.value', sandbox='system')
+            if entered != 'about:blank':
+                raise RuntimeError(f'private URL bar input did not match destination: {entered}')
+            field.send_keys(Keys.ENTER)
             deadline = time.monotonic() + 15
             while not m.execute_script("return gBrowser.selectedBrowser.currentURI.spec === 'about:blank'", sandbox='system'):
                 if time.monotonic() >= deadline:
-                    raise RuntimeError('private URL bar navigation did not complete')
+                    state = m.execute_script("return {uri:gBrowser.selectedBrowser.currentURI.spec, value:gURLBar.value}", sandbox='system')
+                    raise RuntimeError(f'private URL bar navigation did not complete: {state}')
                 time.sleep(.1)
             if not m.execute_script('return PrivateBrowsingUtils.isWindowPrivate(window)', sandbox='system'):
                 raise RuntimeError('navigation left private window')
