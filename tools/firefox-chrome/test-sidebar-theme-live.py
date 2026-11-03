@@ -84,7 +84,19 @@ def check(nova, dark):
                 return {root:document.documentElement.hasAttribute('sidebar-expand-on-hover'),
                         color:s.color, background:s.backgroundColor, image:s.backgroundImage};
                 """, sandbox='system')
-            print(json.dumps({'nova':nova, 'dark':dark, 'expandOnHover':hoverState}), flush=True)
+            deadline = time.monotonic() + 10
+            while m.execute_script("return document.getElementById('sidebar-container').hasAttribute('sidebar-launcher-expanded')", sandbox='system'):
+                if time.monotonic() >= deadline:
+                    raise RuntimeError('sidebar was not initially collapsed')
+                time.sleep(.1)
+            container = m.find_element('id', 'sidebar-container')
+            m.actions.sequence('pointer', 'mouse', {'pointerType':'mouse'}).pointer_move(0, 0, origin=container).perform()
+            deadline = time.monotonic() + 10
+            while not m.execute_script("return document.getElementById('sidebar-container').hasAttribute('sidebar-launcher-expanded')", sandbox='system'):
+                if time.monotonic() >= deadline:
+                    raise RuntimeError('sidebar did not expand on pointer hover')
+                time.sleep(.1)
+            print(json.dumps({'nova':nova, 'dark':dark, 'expandOnHover':hoverState, 'expanded':True}), flush=True)
             if not hoverState['root'] or hoverState['color'] != foreground:
                 raise RuntimeError('expand-on-hover theme state or foreground is incorrect')
             if result['configuredBackground'] != background or result['hostBackground'] != background:
