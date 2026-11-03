@@ -54,6 +54,10 @@ def main():
             raise RuntimeError('generated CSS retains a relative icon reference')
         if 'chrome://global/skin/icons/close.svg' not in generated_chrome:
             raise RuntimeError('generated CSS corrupted Firefox chrome icon URL')
+        source_icons = (ROOT / 'chrome' / 'icons.css').read_text()
+        firefox_urls = set(re.findall(r'chrome://[^\s\"\')]+', source_icons))
+        if not firefox_urls or any(url not in generated_chrome for url in firefox_urls):
+            raise RuntimeError('generated CSS changed Firefox chrome URLs')
         icon_names = set(re.findall(re.escape(store_dir) + r'/icons/([^\s\"\')]+)', generated_chrome))
         if not icon_names:
             raise RuntimeError('generated CSS does not reference store icons')
