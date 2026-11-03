@@ -47,6 +47,7 @@ const computed = {};
 for (const p of props) computed[p] = cs.getPropertyValue(p);
 const out = {
   found: true,
+  novaEnabled: Services.prefs.getBoolPref("browser.nova.enabled", false),
   tag: el.localName,
   id: el.id || null,
   classes: [...el.classList],

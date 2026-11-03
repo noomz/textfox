@@ -14,6 +14,9 @@
 #   firefox-live.sh ELEMENT_ID
 #   firefox-live.sh --selector "CSS"  [-- ff_inspect.py flags]
 #   firefox-live.sh --vanilla nav-bar          # bare Firefox, no textfox
+#   firefox-live.sh --nova on nav-bar          # force Nova on (or off)
+#   firefox-live.sh --nova on --newtab        # inspect initialized new-tab
+#   firefox-live.sh --nova off --newtab-nova on --newtab  # set prefs independently
 #   firefox-live.sh back-button -- --html --children
 #
 # Cross-platform: detects firefox on macOS / Linux (native, snap, flatpak).
@@ -25,12 +28,18 @@ TOOL_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$TOOL_DIR/../.." && pwd)"   # tools/firefox-chrome -> repo root
 VENV="$HOME/.cache/textfox-firefox-live/venv"
 SEED=1
+NOVA=""
+NEWTAB_NOVA=""
 QUERY=""
 SELECTOR=""
+NEWTAB=0
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --vanilla)  SEED=0; shift ;;
+    --newtab)   NEWTAB=1; shift ;;
+    --nova)     NOVA="${2:?--nova needs on or off}"; shift 2 ;;
+    --newtab-nova) NEWTAB_NOVA="${2:?--newtab-nova needs on or off}"; shift 2 ;;
     --selector) SELECTOR="${2:?--selector needs a value}"; shift 2 ;;
     --port)     PORT="${2:?--port needs a value}"; shift 2 ;;
     --)         shift; break ;;
@@ -40,6 +49,22 @@ while [ $# -gt 0 ]; do
   esac
 done
 # remaining "$@" = passthrough flags for ff_inspect.py
+case "$NOVA" in
+  ""|on|off) ;;
+  *) echo "error: --nova must be on or off" >&2; exit 1 ;;
+esac
+case "$NEWTAB_NOVA" in
+  ""|on|off) ;;
+  *) echo "error: --newtab-nova must be on or off" >&2; exit 1 ;;
+esac
+if [ -n "$NEWTAB_NOVA" ] && [ "$NEWTAB" -ne 1 ]; then
+  echo "error: --newtab-nova requires --newtab" >&2
+  exit 1
+fi
+if [ "$NEWTAB" -eq 1 ] && { [ -n "$QUERY" ] || [ -n "$SELECTOR" ] || [ "$#" -gt 0 ]; }; then
+  echo "error: --newtab cannot be combined with an element query or inspector flags" >&2
+  exit 1
+fi
 
 # --- locate firefox -------------------------------------------------------
 find_firefox() {
@@ -83,6 +108,18 @@ trap cleanup EXIT INT TERM
   echo 'user_pref("browser.shell.checkDefaultBrowser", false);'
   echo 'user_pref("datareporting.policy.dataSubmissionEnabled", false);'
 } > "$PROFILE/user.js"
+case "$NOVA" in
+  on)  echo 'user_pref("browser.nova.enabled", true);' >> "$PROFILE/user.js" ;;
+  off) echo 'user_pref("browser.nova.enabled", false);' >> "$PROFILE/user.js" ;;
+esac
+if [ "$NEWTAB" -eq 1 ]; then
+  echo 'user_pref("browser.newtabpage.activity-stream.testing.shouldInitializeFeeds", true);' >> "$PROFILE/user.js"
+  echo 'user_pref("browser.newtabpage.activity-stream.widgets.enabled", true);' >> "$PROFILE/user.js"
+  case "${NEWTAB_NOVA:-$NOVA}" in
+    on)  echo 'user_pref("browser.newtabpage.activity-stream.nova.enabled", true);' >> "$PROFILE/user.js" ;;
+    off) echo 'user_pref("browser.newtabpage.activity-stream.nova.enabled", false);' >> "$PROFILE/user.js" ;;
+  esac
+fi
 
 if [ "$SEED" -eq 1 ] && [ -d "$REPO_ROOT/chrome" ]; then
   mkdir -p "$PROFILE/chrome"
@@ -90,7 +127,8 @@ if [ "$SEED" -eq 1 ] && [ -d "$REPO_ROOT/chrome" ]; then
 fi
 
 # --- launch ---------------------------------------------------------------
-# -remote-allow-system-access: required by modern Firefox for chrome-context access
+# Chrome-context access is restricted to this disposable Firefox instance.
+export MOZ_REMOTE_ALLOW_SYSTEM_ACCESS=1
 if [ "$FIREFOX" = "FLATPAK" ]; then
   flatpak run org.mozilla.firefox --marionette -remote-allow-system-access \
     --new-instance --profile "$PROFILE" about:blank >/dev/null 2>&1 &
@@ -102,7 +140,9 @@ FF_PID=$!
 
 # --- inspect --------------------------------------------------------------
 # "$@" here = passthrough flags after `--` (e.g. --html --children)
-if [ -n "$SELECTOR" ]; then
+if [ "$NEWTAB" -eq 1 ]; then
+  "$VENV/bin/python" "$TOOL_DIR/ff_newtab.py" --port "$PORT" --profile "$PROFILE" --pid "$FF_PID"
+elif [ -n "$SELECTOR" ]; then
   "$VENV/bin/python" "$TOOL_DIR/ff_inspect.py" --port "$PORT" --selector "$SELECTOR" "$@"
 elif [ -n "$QUERY" ]; then
   "$VENV/bin/python" "$TOOL_DIR/ff_inspect.py" --port "$PORT" --id "$QUERY" "$@"
