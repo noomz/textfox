@@ -25,6 +25,7 @@ def main():
     parser.add_argument('nixpkgs_path')
     parser.add_argument('--forced-colors', action='store_true')
     parser.add_argument('--wallpaper', action='store_true')
+    parser.add_argument('--newtab-classic', action='store_true')
     args = parser.parse_args()
     if not re.fullmatch(r'/nix/store/[a-zA-Z0-9._/-]+', args.nixpkgs_path):
         parser.error('nixpkgs_path must be a literal /nix/store path')
@@ -59,7 +60,7 @@ def main():
         (chrome / 'userChrome.css').write_text('@import url("control.css");\n' + (chrome / 'userChrome.css').read_text())
         (chrome / 'control.css').write_text(':root { --tf-import-control-sentinel: imported; }\n')
         prefs = {'marionette.port': port, 'browser.nova.enabled': False,
-                 'browser.newtabpage.activity-stream.nova.enabled': True,
+                 'browser.newtabpage.activity-stream.nova.enabled': not args.newtab_classic,
                  'browser.newtabpage.activity-stream.testing.shouldInitializeFeeds': True,
                  'browser.newtabpage.activity-stream.widgets.enabled': True,
                  'browser.display.document_color_use': 2 if args.forced_colors else 1,
@@ -79,8 +80,9 @@ def main():
         try:
             m = connect(port)
             m.set_context('chrome')
-            meta = m.execute_script("return {profile:Services.dirsvc.get('ProfD',Ci.nsIFile).path,version:Services.appinfo.version,build:Services.appinfo.appBuildID,nova:Services.prefs.getBoolPref('browser.nova.enabled')}", sandbox='system')
-            if process.poll() is not None or Path(meta['profile']).resolve() != profile.resolve() or meta['nova']:
+            meta = m.execute_script("return {profile:Services.dirsvc.get('ProfD',Ci.nsIFile).path,version:Services.appinfo.version,build:Services.appinfo.appBuildID,nova:Services.prefs.getBoolPref('browser.nova.enabled'),newtabNova:Services.prefs.getBoolPref('browser.newtabpage.activity-stream.nova.enabled')}", sandbox='system')
+            if (process.poll() is not None or Path(meta['profile']).resolve() != profile.resolve()
+                    or meta['nova'] or meta['newtabNova'] != (not args.newtab_classic)):
                 raise RuntimeError('unexpected Firefox process, profile, or Nova preference')
             deadline = time.monotonic() + 20
             while not m.execute_script('return gBrowserInit.delayedStartupFinished', sandbox='system'):
@@ -109,7 +111,8 @@ def main():
             m.set_context('content')
             m.switch_to_window(m.window_handles[-1])
             deadline = time.monotonic() + 30
-            while not m.execute_script('return location.href === "about:newtab" && !!document.querySelector(".nova-enabled .tile")'):
+            selector = '.classic-enabled .tile' if args.newtab_classic else '.nova-enabled .tile'
+            while not m.execute_script('return location.href === "about:newtab" && !!document.querySelector(arguments[0])', script_args=[selector]):
                 if time.monotonic() >= deadline:
                     raise RuntimeError('generated userContent fixture did not initialize')
                 time.sleep(.25)
@@ -120,7 +123,7 @@ def main():
                         raise RuntimeError('wallpaper fixture did not initialize')
                     time.sleep(.1)
             content = m.execute_script("""
-                const tile = getComputedStyle(document.querySelector('.nova-enabled .tile'));
+                const tile = getComputedStyle(document.querySelector(arguments[0]));
                 return {borderWidth:tile.borderTopWidth, borderStyle:tile.borderTopStyle,
                         color:tile.borderTopColor, borderToken:tile.getPropertyValue('--border-width').trim(),
                         tfBorder:tile.getPropertyValue('--tf-border-width').trim(),
@@ -128,7 +131,7 @@ def main():
                         radius:tile.borderRadius, shadow:tile.boxShadow,
                         forcedColors:matchMedia('(forced-colors: active)').matches,
                         wallpaper:document.body.style.getPropertyValue('--newtab-wallpaper-color').trim()};
-                """)
+                """, script_args=[selector])
             print(json.dumps({'generatedContent':content}), flush=True)
             if args.wallpaper and content['wallpaper'] != '#14283c':
                 raise RuntimeError('requested Firefox wallpaper color not effective')
@@ -136,14 +139,14 @@ def main():
                 raise RuntimeError('generated userContent CSS did not style Nova shortcut tile')
             m.execute_script("document.body.style.setProperty('--newtab-wallpaper-color', 'rgb(20, 40, 60)')")
             wallpaper = m.execute_script("""
-                const s=getComputedStyle(document.querySelector('.nova-enabled .tile'));
+                const s=getComputedStyle(document.querySelector(arguments[0]));
                 const probe=document.createElement('span');
                 probe.style.color='Canvas'; document.body.appendChild(probe);
                 const canvas=getComputedStyle(probe).color; probe.remove();
                 return {width:s.borderTopWidth, style:s.borderTopStyle,
                         color:s.borderTopColor, token:s.getPropertyValue('--newtab-border-color').trim(), canvas,
                         background:getComputedStyle(document.body).backgroundColor};
-                """)
+                """, script_args=[selector])
             print(json.dumps({'generatedContentWallpaper':wallpaper}), flush=True)
             if wallpaper['width'] != '7px' or wallpaper['style'] != 'solid' or not wallpaper['token']:
                 raise RuntimeError('generated userContent border failed with wallpaper color')
@@ -153,7 +156,7 @@ def main():
                     document.body.style.setProperty('--newtab-contextual-text-primary-color', 'Canvas');
                     """)
                 stress = m.execute_script("""
-                    const tile=document.querySelector('.nova-enabled .tile');
+                    const tile=document.querySelector(arguments[0]);
                     const s=getComputedStyle(tile);
                     const p=document.createElement('span'); p.style.color='Canvas'; document.body.appendChild(p);
                     const canvas=getComputedStyle(p).color; p.remove();
@@ -162,7 +165,7 @@ def main():
                       c.fillStyle=color; c.fillRect(0, 0, 1, 1); return [...c.getImageData(0, 0, 1, 1).data];
                     };
                     return {border:s.borderTopColor, canvas, borderPixel:normalize(s.borderTopColor), canvasPixel:normalize(canvas)};
-                    """)
+                    """, script_args=[selector])
                 print(json.dumps({'forcedColorStress':stress}), flush=True)
                 if stress['borderPixel'] == stress['canvasPixel']:
                     raise RuntimeError('forced-colors tile border matches Canvas in stress fixture')
