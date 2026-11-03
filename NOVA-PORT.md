@@ -114,7 +114,7 @@ A parallel URL bar no-results investigation stopped before producing findings wh
 
 ## Nova new-tab with search disabled
 
-`tools/firefox-chrome/test-nova-no-search-live.py` verifies effective preferences and initializes Nova new-tab with `showSearch=false` in disposable vanilla and textfox profiles. On headless Firefox 159.0 build `20261022150525`, both browser Nova states rendered the centered-logo layout and shortcuts with nonzero geometry and no search wrapper. This does not prove painted logo/shortcut separation, interaction, clipping or accessibility. Feeds and widgets are probe-only overrides and may make network requests. T3 and T4 remain open.
+`tools/firefox-chrome/test-nova-no-search-live.py` verifies effective preferences and initializes Nova new-tab with `showSearch=false` in disposable vanilla and textfox profiles. On headless Firefox 159.0 build `20261022150525`, both browser Nova states rendered the centered-logo layout and shortcuts with nonzero geometry and no search wrapper. A follow-up made the generated logo transparent and compared screenshots. In the textfox profiles, the intervention changed 3052 pixels across the screenshot but none inside the first shortcut rectangle; control screenshots had zero changes there. This tests one shortcut and one viewport, not general logo/shortcut separation, interaction, clipping or accessibility. The probe requires ImageMagick. Feeds and widgets are probe-only overrides and may make network requests. T3 and T4 remain open.
 
 Run `MOZ_HEADLESS=1 "$HOME/.cache/textfox-firefox-live/venv/bin/python" tools/firefox-chrome/test-nova-no-search-live.py`.
 

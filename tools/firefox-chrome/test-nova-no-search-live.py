@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
-"""Inspect Nova layout with search disabled in disposable Firefox profiles."""
+"""Inspect Nova layout with search disabled in disposable Firefox profiles.
+
+Requires ImageMagick. Disposable new-tab feeds may make network requests.
+"""
 import json
 import os
+import subprocess
 from pathlib import Path
 import shutil
 import socket
-import subprocess
 import tempfile
 import time
 
@@ -59,8 +62,34 @@ def check(browser_nova, themed):
                 const rect = e => {const r=e.getBoundingClientRect(); return {x:r.x,y:r.y,width:r.width,height:r.height};};
                 return {search:!!container.querySelector('.search-wrapper'), centered:container.classList.contains('logo-in-content'),
                         shortcut:rect(shortcut), logo:logo ? rect(logo) : null,
+                        logoDisplay:logo ? getComputedStyle(logo).display : null,
                         shortcutVisible:getComputedStyle(shortcut).visibility, viewport:[innerWidth, innerHeight]};
                 """)
+            if themed and result['logo'] and result['logo']['width'] > 0:
+                first, control, hidden = (profile / name for name in ('first.png', 'control.png', 'hidden.png'))
+                first.write_bytes(m.screenshot(format='binary', full=False))
+                control.write_bytes(m.screenshot(format='binary', full=False))
+                m.execute_script("""
+                    const style = document.createElement('style');
+                    style.textContent = '.nova-enabled .wordmark::before { color: transparent !important; }';
+                    document.head.appendChild(style);
+                    """)
+                hidden.write_bytes(m.screenshot(format='binary', full=False))
+                r = result['shortcut']
+                crop = f"{int(r['width'])}x{int(r['height'])}+{int(r['x'])}+{int(r['y'])}"
+                def changed(a, b):
+                    return round(float(subprocess.check_output(['magick', str(a), str(b), '-crop', crop, '+repage',
+                        '-compose', 'difference', '-composite', '-colorspace', 'gray', '-threshold', '0',
+                        '-format', '%[fx:mean*w*h]', 'info:'], text=True)))
+                result['shortcutControlPixels'] = changed(first, control)
+                result['shortcutLogoPixels'] = changed(control, hidden)
+                def full_changed(a, b):
+                    return round(float(subprocess.check_output(['magick', str(a), str(b),
+                        '-compose', 'difference', '-composite', '-colorspace', 'gray', '-threshold', '0',
+                        '-format', '%[fx:mean*w*h]', 'info:'], text=True)))
+                result['fullLogoPixels'] = full_changed(control, hidden)
+                if result['logoDisplay'] != 'none' and result['fullLogoPixels'] == 0:
+                    raise RuntimeError('logo transparency intervention changed no pixels')
             print(json.dumps({'firefox': meta, 'themed': themed, 'result': result}), flush=True)
             if (result['search'] or not result['centered'] or result['shortcutVisible'] != 'visible'
                     or result['shortcut']['width'] <= 0 or result['shortcut']['height'] <= 0):
