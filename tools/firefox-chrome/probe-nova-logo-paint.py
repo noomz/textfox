@@ -25,6 +25,22 @@ def difference(first, second, crop):
     return float(subprocess.check_output(command, text=True))
 
 
+def changed_pixels(first, second, crop):
+    command = ['magick', str(first), str(second), '-crop', crop, '+repage',
+               '-compose', 'difference', '-composite', '-colorspace', 'gray',
+               '-threshold', '0', '-format', '%[fx:mean*w*h]', 'info:']
+    return round(float(subprocess.check_output(command, text=True)))
+
+
+def viewport_crop(rect, viewport):
+    left, top = max(0, int(rect['x'])), max(0, int(rect['y']))
+    right = min(viewport['viewportWidth'], int(rect['x'] + rect['width']))
+    bottom = min(viewport['viewportHeight'], int(rect['y'] + rect['height']))
+    if right <= left or bottom <= top:
+        raise RuntimeError(f'region outside viewport: {rect}')
+    return f'{right - left}x{bottom - top}+{left}+{top}'
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--width', type=int, default=1280)
@@ -84,6 +100,7 @@ def main():
                 const logo = document.querySelector('.nova-enabled .wordmark');
                 const ps = getComputedStyle(logo, '::before');
                 const end = document.querySelector('.container.nova-enabled > .sidebar-inline-end').getBoundingClientRect();
+                const start = document.querySelector('.container.nova-enabled > .sidebar-inline-start').getBoundingClientRect();
                 const parents = [];
                 for (let e = logo; e && parents.length < 5; e = e.parentElement) {
                   const s = getComputedStyle(e), b = e.getBoundingClientRect();
@@ -95,6 +112,7 @@ def main():
                         viewportWidth:innerWidth, viewportHeight:innerHeight, dpr:devicePixelRatio,
                         direction:getComputedStyle(document.documentElement).direction,
                         endSidebar:{x:end.x, y:end.y, width:end.width, height:end.height},
+                        startSidebar:{x:start.x, y:start.y, width:start.width, height:start.height},
                         logoDisplay:getComputedStyle(logo).display, pseudoContent:ps.content, parents,
                         gridChildren:[...document.querySelector('.container.nova-enabled').children].map(e => {
                           const s = getComputedStyle(e), b = e.getBoundingClientRect();
@@ -130,13 +148,8 @@ def main():
             crop = f'{width}x{height}+{x}+{y}'
             full_crop = f"{geometry['viewportWidth']}x{geometry['viewportHeight']}+0+0"
             full_difference = difference(control, changed, full_crop)
-            end = geometry['endSidebar']
-            left, top = max(0, int(end['x'])), max(0, int(end['y']))
-            right = min(geometry['viewportWidth'], int(end['x'] + end['width']))
-            bottom = min(geometry['viewportHeight'], int(end['y'] + end['height']))
-            if right <= left or bottom <= top:
-                raise RuntimeError(f'end sidebar outside viewport: {end}')
-            end_crop = f'{right - left}x{bottom - top}+{left}+{top}'
+            end_crop = viewport_crop(geometry['endSidebar'], geometry)
+            start_crop = viewport_crop(geometry['startSidebar'], geometry)
             m.find_element('css selector', '.nova-enabled content-search-handoff-ui').click()
             m.set_context('chrome')
             deadline = time.monotonic() + 5
@@ -150,9 +163,16 @@ def main():
                               'search': geometry, 'crop': crop,
                               'controlDifference': difference(first, control, crop),
                               'logoTransparentDifference': difference(control, changed, crop),
+                              'searchControlChangedPixels': changed_pixels(first, control, crop),
+                              'searchLogoChangedPixels': changed_pixels(control, changed, crop),
+                              'startSidebarCrop': start_crop,
+                              'startSidebarControlChangedPixels': changed_pixels(first, control, start_crop),
+                              'startSidebarLogoChangedPixels': changed_pixels(control, changed, start_crop),
                               'endSidebarCrop': end_crop,
                               'endSidebarControlDifference': difference(first, control, end_crop),
                               'endSidebarDifference': difference(control, changed, end_crop),
+                              'endSidebarControlChangedPixels': changed_pixels(first, control, end_crop),
+                              'endSidebarLogoChangedPixels': changed_pixels(control, changed, end_crop),
                               'fullImageDifference': full_difference}))
         finally:
             try:
