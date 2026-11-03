@@ -23,7 +23,7 @@
 # Linux headless (no $DISPLAY): prefix with `xvfb-run -a`.
 set -eu
 
-PORT="${FF_MARIONETTE_PORT:-2828}"
+PORT="${FF_MARIONETTE_PORT:-}"
 TOOL_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$TOOL_DIR/../.." && pwd)"   # tools/firefox-chrome -> repo root
 VENV="$HOME/.cache/textfox-firefox-live/venv"
@@ -88,6 +88,10 @@ if [ ! -x "$VENV/bin/python" ]; then
   mkdir -p "$(dirname "$VENV")"
   python3 -m venv "$VENV"
   "$VENV/bin/python" -m pip install -q --upgrade pip marionette_driver >&2
+fi
+
+if [ -z "$PORT" ]; then
+  PORT="$("$VENV/bin/python" -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')"
 fi
 
 # --- ephemeral profile ----------------------------------------------------
