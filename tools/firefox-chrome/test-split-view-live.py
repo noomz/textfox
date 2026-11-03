@@ -16,7 +16,7 @@ from ff_inspect import connect
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def check(nova, themed):
+def check(nova, themed, rtl):
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0))
         port = sock.getsockname()[1]
@@ -25,6 +25,7 @@ def check(nova, themed):
         if themed:
             shutil.copytree(ROOT / 'chrome', profile / 'chrome')
         prefs = {'marionette.port': port, 'browser.nova.enabled': nova,
+                 'intl.l10n.pseudo': 'bidi' if rtl else '',
                  'toolkit.legacyUserProfileCustomizations.stylesheets': True,
                  'browser.shell.checkDefaultBrowser': False}
         (profile / 'user.js').write_text(''.join(
@@ -38,8 +39,9 @@ def check(nova, themed):
         try:
             m = connect(port)
             m.set_context('chrome')
-            meta = m.execute_script("return {profile:Services.dirsvc.get('ProfD',Ci.nsIFile).path,version:Services.appinfo.version,build:Services.appinfo.appBuildID,nova:Services.prefs.getBoolPref('browser.nova.enabled')}", sandbox='system')
-            if process.poll() is not None or Path(meta['profile']).resolve() != profile.resolve() or meta['nova'] != nova:
+            meta = m.execute_script("return {profile:Services.dirsvc.get('ProfD',Ci.nsIFile).path,version:Services.appinfo.version,build:Services.appinfo.appBuildID,nova:Services.prefs.getBoolPref('browser.nova.enabled'),direction:getComputedStyle(document.documentElement).direction}", sandbox='system')
+            if (process.poll() is not None or Path(meta['profile']).resolve() != profile.resolve()
+                    or meta['nova'] != nova or meta['direction'] != ('rtl' if rtl else 'ltr')):
                 raise RuntimeError('unexpected Firefox process, profile, or Nova preference')
             deadline = time.monotonic() + 20
             while not m.execute_script('return gBrowserInit.delayedStartupFinished', sandbox='system'):
@@ -78,7 +80,7 @@ def check(nova, themed):
                     or not before['focused'] or before['display'] == 'none'
                     or before['splitterWidth'] <= 0 or before['splitterHeight'] <= 0):
                 raise RuntimeError('split view splitter is not visible and focusable')
-            m.actions.sequence('key', 'keyboard').send_keys(Keys.ARROW_LEFT).perform()
+            m.actions.sequence('key', 'keyboard').send_keys(Keys.ARROW_RIGHT if rtl else Keys.ARROW_LEFT).perform()
             deadline = time.monotonic() + 5
             while True:
                 after = m.execute_script("return document.getElementById(gBrowser.tabpanels.splitViewPanels[0]).getBoundingClientRect().width", sandbox='system')
@@ -86,7 +88,7 @@ def check(nova, themed):
                 if after < before['width'] and measured['value'] != before['valueNow'] and int(measured['value']) == measured['clientWidth']:
                     break
                 if time.monotonic() >= deadline:
-                    raise RuntimeError(f'left arrow did not update first split panel and accessibility value: {before} -> {after}, {measured}')
+                    raise RuntimeError(f'shrink arrow did not update first split panel and accessibility value: {before} -> {after}, {measured}')
                 time.sleep(.1)
             print(json.dumps({'nova': nova, 'themed': themed, 'firstPanelBefore': before['width'],
                               'firstPanelAfter': after, 'after': measured}), flush=True)
@@ -147,4 +149,5 @@ def check(nova, themed):
 if __name__ == '__main__':
     for nova in (False, True):
         for themed in (False, True):
-            check(nova, themed)
+            for rtl in (False, True):
+                check(nova, themed, rtl)
