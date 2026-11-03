@@ -16,7 +16,7 @@ from ff_inspect import connect
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def check(nova, rtl):
+def check(nova, rtl, high_contrast):
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0))
         port = sock.getsockname()[1]
@@ -26,7 +26,8 @@ def check(nova, rtl):
         prefs = {'marionette.port': port, 'browser.nova.enabled': nova,
                  'toolkit.legacyUserProfileCustomizations.stylesheets': True,
                  'browser.shell.checkDefaultBrowser': False,
-                 'intl.l10n.pseudo': 'bidi' if rtl else ''}
+                 'intl.l10n.pseudo': 'bidi' if rtl else '',
+                 'ui.useAccessibilityTheme': 1 if high_contrast else 0}
         (profile / 'user.js').write_text(''.join(
             f'user_pref({json.dumps(k)}, {json.dumps(v)});\n' for k, v in prefs.items()))
         env = os.environ.copy()
@@ -54,7 +55,9 @@ def check(nova, rtl):
                 splitter.focus();
                 return {display:style.display, visibility:style.visibility, width:rect.width,
                         height:rect.height, focused:document.activeElement === splitter,
-                        direction:getComputedStyle(document.documentElement).direction};
+                        direction:getComputedStyle(document.documentElement).direction,
+                        prefersContrast:matchMedia('(prefers-contrast)').matches,
+                        forcedColors:matchMedia('(forced-colors: active)').matches};
                 """, sandbox='system')
             print(json.dumps({'firefox': metadata, 'splitter': result}), flush=True)
             if result['display'] == 'none' or result['visibility'] != 'visible' or result['width'] <= 0 or result['height'] <= 0:
@@ -63,6 +66,8 @@ def check(nova, rtl):
                 raise RuntimeError('sidebar resize control cannot receive focus')
             if result['direction'] != ('rtl' if rtl else 'ltr'):
                 raise RuntimeError('requested document direction not active')
+            if result['prefersContrast'] != high_contrast:
+                raise RuntimeError('requested prefers-contrast state not active')
             before = m.execute_script("return document.getElementById('sidebar-box').getBoundingClientRect().width", sandbox='system')
             m.find_element('id', 'sidebar-splitter').send_keys(Keys.ARROW_LEFT if rtl else Keys.ARROW_RIGHT)
             deadline = time.monotonic() + 5
@@ -88,7 +93,7 @@ def check(nova, rtl):
                 return {focusVisible:splitter.matches(':focus-visible'), outlineStyle:s.outlineStyle,
                         outlineWidth:s.outlineWidth, outlineColor:s.outlineColor};
                 """, sandbox='system')
-            print(json.dumps({'nova': nova, 'rtl': rtl, 'sidebarWidthBefore': before,
+            print(json.dumps({'nova': nova, 'rtl': rtl, 'highContrast': high_contrast, 'sidebarWidthBefore': before,
                               'sidebarWidthExpanded': after, 'sidebarWidthShrunk': shrunk,
                               'focus': focus}), flush=True)
             if not focus['focusVisible'] or focus['outlineStyle'] == 'none' or focus['outlineWidth'] == '0px':
@@ -109,4 +114,5 @@ def check(nova, rtl):
 if __name__ == '__main__':
     for nova in (False, True):
         for rtl in (False, True):
-            check(nova, rtl)
+            for high_contrast in (False, True):
+                check(nova, rtl, high_contrast)
