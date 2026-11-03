@@ -112,6 +112,10 @@ A separate disposable headless app-menu probe opened `#appMenu-popup` in vanilla
 
 A parallel URL bar no-results investigation stopped before producing findings when `jev-guard` blocked a scout's command. The guard was not bypassed. Reassess the blocked command and investigate safely before retrying; do not change guard configuration as a workaround. No tracked code changes remained from these investigations. T1 through T4 remain incomplete, and Nova support remains unclaimed.
 
+## Sidebar resize control
+
+Firefox release `browser/themes/shared/sidebar.css` gives `#sidebar-splitter` focus and visible focus styling. Textfox hid it unconditionally, preventing sidebar resizing through that control. In disposable headless Firefox 159.0 build `20261022150525`, `test-sidebar-live.py` failed before removing that rule because the open bookmarks sidebar's splitter had `display: none`. After removal, the splitter was visible and focusable in both browser Nova states; Arrow Right increased sidebar width and Arrow Left decreased it. The test drives keyboard input but does not prove tab order, painted focus indication, mouse drag, RTL, forced colors, other platforms, or delivery paths. Existing V5 covers keyboard access and V6 requires real interaction checks. A §B entry should record the root cause under the spec backprop protocol; that spec edit requires approval. T4 remains in progress.
+
 ## Browser-chrome probe identity
 
 `firefox-live.sh` now passes its disposable profile path and launched process ID to `ff_inspect.py` for chrome queries. Before inspecting an element, the inspector rejects a mismatched Marionette profile or an exited process. `test-inspector-profile.py` exercises both rejections and a valid profile with real headless Firefox. A listening port can still belong to another Firefox, and establishing a Marionette session itself occurs before the identity check; use disposable instances and avoid sharing the port. The PID liveness check does not prove process ancestry. T1 remains in progress because delivery-path builds and baselines are not verified.
