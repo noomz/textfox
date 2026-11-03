@@ -30,6 +30,7 @@ def main():
     parser.add_argument('--width', type=int, default=1280)
     parser.add_argument('--rtl', action='store_true')
     parser.add_argument('--font-size', type=int, default=14)
+    parser.add_argument('--long-logo', action='store_true')
     parser.add_argument('--experiment', action='store_true')
     args = parser.parse_args()
     with socket.socket() as sock:
@@ -38,7 +39,8 @@ def main():
     with tempfile.TemporaryDirectory(prefix='tf-logo-paint-') as directory:
         profile = Path(directory)
         shutil.copytree(ROOT / 'chrome', profile / 'chrome')
-        (profile / 'chrome' / 'config.css').write_text(f':root {{ --tf-font-size: {args.font_size}px; }}\n')
+        logo = f' --tf-newtab-logo: {json.dumps("W" * 100)};' if args.long_logo else ''
+        (profile / 'chrome' / 'config.css').write_text(f':root {{ --tf-font-size: {args.font_size}px;{logo} }}\n')
         prefs = {'marionette.port': port, 'browser.nova.enabled': True,
                  'browser.newtabpage.activity-stream.nova.enabled': True,
                  'browser.newtabpage.activity-stream.testing.shouldInitializeFeeds': True,
@@ -143,7 +145,7 @@ def main():
                     raise RuntimeError('search click did not focus URL bar')
                 time.sleep(.1)
             print(json.dumps({'firefox': metadata, 'requestedWidth': args.width, 'fontSize': args.font_size,
-                              'searchClickFocusedUrlbar': True,
+                              'longLogo': args.long_logo, 'searchClickFocusedUrlbar': True,
                               'experiment': args.experiment, 'interventionVisible': full_difference != 0,
                               'search': geometry, 'crop': crop,
                               'controlDifference': difference(first, control, crop),
