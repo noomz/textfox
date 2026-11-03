@@ -105,6 +105,18 @@ def check(nova, themed):
                 }, e => done({error:String(e)}));
                 """, sandbox='system')
             print(json.dumps({'nova': nova, 'themed': themed, 'findbars': bars}), flush=True)
+            overlap = m.execute_script("""
+                const panels = gBrowser.tabpanels.splitViewPanels.map(id => document.getElementById(id));
+                const a=panels[0].getBoundingClientRect(), b=panels[1].getBoundingClientRect();
+                const split=gBrowser.tabpanels.splitViewSplitter.getBoundingClientRect();
+                return {first:{x:a.x,y:a.y,width:a.width,height:a.height},
+                        second:{x:b.x,y:b.y,width:b.width,height:b.height},
+                        splitter:{x:split.x,y:split.y,width:split.width,height:split.height}};
+                """, sandbox='system')
+            print(json.dumps({'nova': nova, 'themed': themed, 'geometry': overlap}), flush=True)
+            a, b = overlap['first'], overlap['second']
+            if a['x'] < b['x'] + b['width'] and a['x'] + a['width'] > b['x'] and a['y'] < b['y'] + b['height'] and a['y'] + a['height'] > b['y']:
+                raise RuntimeError('split panel boxes overlap')
             if (bars.get('count') != 2 or any(len(bars.get(stage, [])) != 2 for stage in ('before', 'after'))
                     or any(bar['hidden'] or bar['display'] == 'none' or bar['width'] <= 0 or bar['height'] <= 0
                            for stage in ('before', 'after') for bar in bars.get(stage, []))):
