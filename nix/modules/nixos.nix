@@ -72,7 +72,6 @@ in
             configCss
             ;
 
-          extraPolicies = policies;
           extraPrefs = preferences;
         })
       ];

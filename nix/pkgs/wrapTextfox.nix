@@ -81,10 +81,7 @@ let
         updated = true;
 
     } else if (!hashFile.exists()) {
-        chromeDir.remove(1);
-        userChrome.copyTo(chromeDir, "userChrome.css");
-        userContent.copyTo(chromeDir, "userContent.css");
-        updated = true;
+        Cu.reportError("textfox: refusing to replace an existing profile chrome directory; files were left untouched. Theme installation or update requires manual intervention.");
     }
 
     // Restart Firefox immediately if one of the files got updated
