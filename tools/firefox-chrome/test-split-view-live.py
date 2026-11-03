@@ -73,7 +73,8 @@ def check(nova, themed, rtl):
                         clientWidth:panel.clientWidth, borderLeft:getComputedStyle(panel).borderLeftWidth,
                         borderRight:getComputedStyle(panel).borderRightWidth, valueNow:split.getAttribute('aria-valuenow'),
                         splitterWidth:r.width, splitterHeight:r.height,
-                        focused:document.activeElement === split, display:s.display};
+                        focused:document.activeElement === split, display:s.display,
+                        outlineStyle:s.outlineStyle, outlineWidth:s.outlineWidth};
                 """, sandbox='system')
             print(json.dumps({'firefox': meta, 'themed': themed, 'before': before}), flush=True)
             if (before['role'] != 'separator' or before['controls'] != before['panelId']
@@ -81,6 +82,9 @@ def check(nova, themed, rtl):
                     or before['splitterWidth'] <= 0 or before['splitterHeight'] <= 0):
                 raise RuntimeError('split view splitter is not visible and focusable')
             m.actions.sequence('key', 'keyboard').send_keys(Keys.ARROW_RIGHT if rtl else Keys.ARROW_LEFT).perform()
+            focus = m.execute_script("const e=gBrowser.tabpanels.splitViewSplitter,s=getComputedStyle(e); return {visible:e.matches(':focus-visible'), style:s.outlineStyle, width:s.outlineWidth}", sandbox='system')
+            if not focus['visible'] or focus['style'] == 'none' or focus['width'] == '0px':
+                raise RuntimeError(f'splitter keyboard focus outline missing: {focus}')
             deadline = time.monotonic() + 5
             while True:
                 after = m.execute_script("return document.getElementById(gBrowser.tabpanels.splitViewPanels[0]).getBoundingClientRect().width", sandbox='system')
