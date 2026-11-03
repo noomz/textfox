@@ -98,6 +98,12 @@ A bounded source inventory of URL bar and new-tab selectors found that current F
 
 Delivery-path inspection confirms manual installation uses the selected profile and does not select a Firefox build, home-manager uses the host's Firefox package, and NixOS accepts a `textfox.package` override. Per-path package builds, effective preferences, actual installation and real NixOS activation remain unverified. The manual and NixOS CSS source orders differ; browser processing must be tested before drawing conclusions about precedence.
 
+## URL bar fix and further source inventory
+
+In disposable headless Firefox 159.0 build `20261022150525`, open classic URL bar results had a 1px top border because textfox's old `.urlbarView-body-inner` selector no longer matched the results element. Nova results had no top border. A narrow reset for the current direct-child `.urlbarView-results` removes the classic separator while retaining the configured outer border. `test-urlbar-live.py` checks both browser Nova states, profile identity, the current selector, and non-default accent and border width. A negative-control run without the reset failed on the classic 1px border; the updated probe passed both states, including under `python -O`. This covers computed styles for populated results, not painted appearance, accessibility, or delivery paths. A visible one-offs or true `noresults` state was not obtained; its selector discrepancy remains unverified and unchanged.
+
+Additional moving-release source inventory identified potential stale tab color variables, `#vertical-pinned-tabs-container`, and `#sidebar-main` selectors in `chrome/tabs.css` and `chrome/sidebar.css`. Current Firefox source uses different tab color tokens, a `#pinned-tabs-container`, and a `sidebar-main` element; live values, matching, and sidebar shadow boundaries need verification. In `chrome/menus.css`, Firefox source paints panels using `--panel-background-color` and exposes panel content through a shadow part, while textfox sets `--panel-background` and targets ordinary descendant selectors. Actual panel appearance and cascade remain unverified. Findbar source retains the local textbox and checkbox selectors, but focus, contrast, split view, and interaction need live checks. These source observations are not confirmed defects or a complete T2 inventory.
+
 ## Resume commands
 
 ```sh

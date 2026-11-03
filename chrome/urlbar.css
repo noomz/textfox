@@ -19,6 +19,9 @@
     border-top: unset !important;
   }
 }
+#urlbar[open] > .urlbarView > .urlbarView-results {
+  border-top: unset !important;
+}
 .urlbarView:not([noresults]) > .search-one-offs:not([hidden]) {
   border-top: var(--border-width) solid var(--tf-accent) !important;
 }
