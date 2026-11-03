@@ -112,6 +112,12 @@ A separate disposable headless app-menu probe opened `#appMenu-popup` in vanilla
 
 A parallel URL bar no-results investigation stopped before producing findings when `jev-guard` blocked a scout's command. The guard was not bypassed. Reassess the blocked command and investigate safely before retrying; do not change guard configuration as a workaround. No tracked code changes remained from these investigations. T1 through T4 remain incomplete, and Nova support remains unclaimed.
 
+## Manual-install baseline
+
+`tools/firefox-chrome/test-manual-install-live.py` runs the real interactive installer against disposable fresh profiles, both accepting and declining its optional `user.js`. It preserves an unrelated marker, checks copied icons and an existing `user.js` when declined, writes a test `config.css`, launches Firefox and verifies effective preferences plus configured URL bar borders. On headless Linux Firefox 159.0 build `20261022150525`, accepting `user.js` set browser Nova to false as a user preference; declining left it at its true default. New-tab Nova remained true in both profiles. Declining used a pre-existing `user.js` that enabled custom stylesheets, since the installer does not enable them when `user.js` is skipped. This is a limited fresh-profile manual-install baseline, not an update, migration, accessibility, visual or full delivery test. Search suggestions may make network requests. T1 remains in progress.
+
+Run `MOZ_HEADLESS=1 "$HOME/.cache/textfox-firefox-live/venv/bin/python" tools/firefox-chrome/test-manual-install-live.py`.
+
 ## Private-window URL bar
 
 `tools/firefox-chrome/test-private-window-live.py` starts a private Firefox window in a disposable profile, verifies its private state and Nova preference, opens URL bar results, and checks configured accent, border width and result separator. It passed in headless Firefox 159.0 build `20261022150525` with browser Nova both off and on. Search suggestions may make network requests. This covers computed borders and initialized results only, not private-browsing guarantees, navigation, focus, contrast, other components or delivery paths. T2 and T4 remain open.
