@@ -10,7 +10,7 @@
   box-shadow: none !important;
 }
 
-#sidebar-main {
+sidebar-main {
   :root[lwtheme] & {
     background-color: var(--tf-bg) !important;
     background-image: unset !important;

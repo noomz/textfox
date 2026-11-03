@@ -112,6 +112,12 @@ A separate disposable headless app-menu probe opened `#appMenu-popup` in vanilla
 
 A parallel URL bar no-results investigation stopped before producing findings when `jev-guard` blocked a scout's command. The guard was not bypassed. Reassess the blocked command and investigate safely before retrying; do not change guard configuration as a workaround. No tracked code changes remained from these investigations. T1 through T4 remain incomplete, and Nova support remains unclaimed.
 
+## Themed sidebar launcher selector
+
+Firefox 159.0 build `20261022150525` exposes the launcher as `sidebar-main` without an ID, so the old `#sidebar-main` rule never matched. `test-sidebar-theme-live.py` installs a temporary static theme only inside each disposable profile and checks the launcher with non-default `--tf-bg`. The original selector failed the dark-theme baseline because its host background remained transparent. Replacing it with `sidebar-main` made the host background follow configured dark and light colors in both browser Nova states; computed launcher foreground matched the corresponding white or black theme text. The temporary themes deliberately pair backgrounds and text; this does not guarantee contrast for arbitrary user-specified combinations, actual painted output, forced colors, or other delivery paths. Built-in dark theme did not set `lwtheme` in this Firefox baseline, so the test uses a temporary extension theme that does. Existing V4 and V5 cover this class; a §B entry requires approval under the spec backprop protocol. T2 and T4 remain open.
+
+Run `MOZ_HEADLESS=1 "$HOME/.cache/textfox-firefox-live/venv/bin/python" tools/firefox-chrome/test-sidebar-theme-live.py`.
+
 ## Nova widget menu activation
 
 `tools/firefox-chrome/test-newtab-widget-menu.py` opens a disposable Nova new-tab widget menu with Enter, moves to its first item with Arrow Down, verifies focus on the `Hide widgets` menu item and its shadow button, and activates it with Enter. On headless Firefox 159.0 build `20261022150525`, the widget menu was removed after activation in vanilla and textfox profiles with browser Nova both off and on. The test enables feeds and widgets only in temporary profiles and may make network requests. It does not test classic new-tab menus, tab order, painted focus, contrast or other menu actions. T4 remains in progress.
