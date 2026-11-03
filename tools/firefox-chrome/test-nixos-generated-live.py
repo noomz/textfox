@@ -46,6 +46,10 @@ def main():
         chrome.mkdir()
         for name in ('userChrome.css', 'userContent.css'):
             (chrome / name).write_bytes(subprocess.check_output(['nix', 'store', 'cat', f'{store_dir}/{name}'], timeout=30))
+        (chrome / 'config.css').write_text(':root { --tf-import-config-sentinel: imported; }\n')
+        (chrome / 'browser.css').write_text(':root { --tf-import-browser-sentinel: imported; }\n')
+        (chrome / 'userChrome.css').write_text('@import url("control.css");\n' + (chrome / 'userChrome.css').read_text())
+        (chrome / 'control.css').write_text(':root { --tf-import-control-sentinel: imported; }\n')
         prefs = {'marionette.port': port, 'browser.nova.enabled': False,
                  'toolkit.legacyUserProfileCustomizations.stylesheets': True,
                  'browser.shell.checkDefaultBrowser': False}
@@ -73,11 +77,18 @@ def main():
                 const s = getComputedStyle(el);
                 return {configuredBorder:root.getPropertyValue('--tf-border-width').trim(),
                         borderWidth:s.borderTopWidth, borderStyle:s.borderTopStyle,
-                        background:s.backgroundColor};
+                        background:s.backgroundColor,
+                        controlSentinel:root.getPropertyValue('--tf-import-control-sentinel').trim(),
+                        configSentinel:root.getPropertyValue('--tf-import-config-sentinel').trim(),
+                        browserSentinel:root.getPropertyValue('--tf-import-browser-sentinel').trim()};
                 """, sandbox='system')
             print(json.dumps({'firefox':meta, 'autoconfig':output, 'storeCss':store_dir, 'result':result}), flush=True)
             if result['configuredBorder'] != '7px' or result['borderWidth'] != '7px':
                 raise RuntimeError('generated CSS did not apply configured border')
+            if result['controlSentinel'] != 'imported':
+                raise RuntimeError('valid import control did not load')
+            if result['configSentinel'] or result['browserSentinel']:
+                raise RuntimeError('late generated imports unexpectedly loaded profile files')
         finally:
             try:
                 if m:
