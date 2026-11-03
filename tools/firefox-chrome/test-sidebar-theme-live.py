@@ -73,6 +73,20 @@ def check(nova, dark):
                         configuredBackground:hs.getPropertyValue('--tf-bg').trim()};
                 """, sandbox='system')
             print(json.dumps({'firefox': meta, 'theme': enabled, 'dark': dark, 'result': result}), flush=True)
+            hover = m.execute_async_script("""
+                const done=arguments[arguments.length-1];
+                SidebarController.toggleExpandOnHover(true).then(() => done(true), e => done(String(e)));
+                """, sandbox='system')
+            if hover is not True:
+                raise RuntimeError(f'could not enable expand-on-hover: {hover}')
+            hoverState = m.execute_script("""
+                const c=document.getElementById('sidebar-container'), s=getComputedStyle(c);
+                return {root:document.documentElement.hasAttribute('sidebar-expand-on-hover'),
+                        color:s.color, background:s.backgroundColor, image:s.backgroundImage};
+                """, sandbox='system')
+            print(json.dumps({'nova':nova, 'dark':dark, 'expandOnHover':hoverState}), flush=True)
+            if not hoverState['root'] or hoverState['color'] != foreground:
+                raise RuntimeError('expand-on-hover theme state or foreground is incorrect')
             if result['configuredBackground'] != background or result['hostBackground'] != background:
                 raise RuntimeError('themed sidebar launcher background does not follow --tf-bg')
             if result['hostColor'] != foreground or result['wrapperColor'] != foreground:
