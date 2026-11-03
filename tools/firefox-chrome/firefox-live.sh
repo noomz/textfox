@@ -33,11 +33,13 @@ NEWTAB_NOVA=""
 QUERY=""
 SELECTOR=""
 NEWTAB=0
+WAIT_FOR=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --vanilla)  SEED=0; shift ;;
     --newtab)   NEWTAB=1; shift ;;
+    --wait-for) WAIT_FOR="${2:?--wait-for needs a selector}"; shift 2 ;;
     --nova)     NOVA="${2:?--nova needs on or off}"; shift 2 ;;
     --newtab-nova) NEWTAB_NOVA="${2:?--newtab-nova needs on or off}"; shift 2 ;;
     --selector) SELECTOR="${2:?--selector needs a value}"; shift 2 ;;
@@ -57,6 +59,10 @@ case "$NEWTAB_NOVA" in
   ""|on|off) ;;
   *) echo "error: --newtab-nova must be on or off" >&2; exit 1 ;;
 esac
+if [ -n "$WAIT_FOR" ] && [ "$NEWTAB" -ne 1 ]; then
+  echo "error: --wait-for requires --newtab" >&2
+  exit 1
+fi
 if [ -n "$NEWTAB_NOVA" ] && [ "$NEWTAB" -ne 1 ]; then
   echo "error: --newtab-nova requires --newtab" >&2
   exit 1
@@ -145,7 +151,11 @@ FF_PID=$!
 # --- inspect --------------------------------------------------------------
 # "$@" here = passthrough flags after `--` (e.g. --html --children)
 if [ "$NEWTAB" -eq 1 ]; then
-  "$VENV/bin/python" "$TOOL_DIR/ff_newtab.py" --port "$PORT" --profile "$PROFILE" --pid "$FF_PID"
+  if [ -n "$WAIT_FOR" ]; then
+    "$VENV/bin/python" "$TOOL_DIR/ff_newtab.py" --port "$PORT" --profile "$PROFILE" --pid "$FF_PID" --wait-for "$WAIT_FOR"
+  else
+    "$VENV/bin/python" "$TOOL_DIR/ff_newtab.py" --port "$PORT" --profile "$PROFILE" --pid "$FF_PID"
+  fi
 elif [ -n "$SELECTOR" ]; then
   "$VENV/bin/python" "$TOOL_DIR/ff_inspect.py" --port "$PORT" --selector "$SELECTOR" "$@" --profile "$PROFILE" --pid "$FF_PID"
 elif [ -n "$QUERY" ]; then

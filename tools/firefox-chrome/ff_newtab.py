@@ -40,6 +40,7 @@ def main():
     parser.add_argument("--port", type=int, default=2828)
     parser.add_argument("--profile", required=True)
     parser.add_argument("--pid", type=int, required=True)
+    parser.add_argument("--wait-for", help="selector that must appear before reporting")
     args = parser.parse_args()
     m = connect(args.port)
     try:
@@ -57,10 +58,11 @@ def main():
         deadline = time.monotonic() + 30
         while True:
             result = m.execute_script(JS)
-            if result["url"] == "about:newtab" and result["initialized"]:
+            if (result["url"] == "about:newtab" and result["initialized"]
+                    and (not args.wait_for or m.execute_script('return !!document.querySelector(arguments[0])', script_args=[args.wait_for]))):
                 break
             if time.monotonic() >= deadline:
-                sys.exit(f"error: new-tab did not initialize: {result['url']}")
+                sys.exit(f"error: new-tab or requested selector did not initialize: {result['url']}, {args.wait_for}")
             time.sleep(0.25)
         m.set_context("chrome")
         result["preferences"] = m.execute_script(

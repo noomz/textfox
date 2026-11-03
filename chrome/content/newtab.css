@@ -23,6 +23,10 @@
     ) !important;
 
     --newtab-weather-background-color: transparent !important;
+
+    @media (forced-colors: active) {
+      --newtab-border-color: CanvasText !important;
+    }
   }
 
   /* replace firefox logo */

@@ -117,12 +117,42 @@ def main():
             m.execute_script("document.body.style.setProperty('--newtab-wallpaper-color', 'rgb(20, 40, 60)')")
             wallpaper = m.execute_script("""
                 const s=getComputedStyle(document.querySelector('.nova-enabled .tile'));
+                const probe=document.createElement('span');
+                probe.style.color='Canvas'; document.body.appendChild(probe);
+                const canvas=getComputedStyle(probe).color; probe.remove();
                 return {width:s.borderTopWidth, style:s.borderTopStyle,
-                        color:s.borderTopColor, token:s.getPropertyValue('--newtab-border-color').trim()};
+                        color:s.borderTopColor, token:s.getPropertyValue('--newtab-border-color').trim(), canvas,
+                        background:getComputedStyle(document.body).backgroundColor};
                 """)
             print(json.dumps({'generatedContentWallpaper':wallpaper}), flush=True)
             if wallpaper['width'] != '7px' or wallpaper['style'] != 'solid' or not wallpaper['token']:
                 raise RuntimeError('generated userContent border failed with wallpaper color')
+            if args.forced_colors:
+                m.execute_script("""
+                    document.body.style.setProperty('--newtab-wallpaper-color', 'Canvas');
+                    document.body.style.setProperty('--newtab-contextual-text-primary-color', 'Canvas');
+                    """)
+                stress = m.execute_script("""
+                    const tile=document.querySelector('.nova-enabled .tile');
+                    const s=getComputedStyle(tile);
+                    const p=document.createElement('span'); p.style.color='Canvas'; document.body.appendChild(p);
+                    const canvas=getComputedStyle(p).color; p.remove();
+                    const normalize=color => {
+                      const c=document.createElement('canvas').getContext('2d');
+                      c.fillStyle=color; c.fillRect(0, 0, 1, 1); return [...c.getImageData(0, 0, 1, 1).data];
+                    };
+                    return {border:s.borderTopColor, canvas, borderPixel:normalize(s.borderTopColor), canvasPixel:normalize(canvas)};
+                    """)
+                print(json.dumps({'forcedColorStress':stress}), flush=True)
+                if stress['borderPixel'] == stress['canvasPixel']:
+                    raise RuntimeError('forced-colors tile border matches Canvas in stress fixture')
+                negative = m.execute_script("""
+                    const c=document.createElement('canvas').getContext('2d');
+                    c.fillStyle=arguments[0]; c.fillRect(0,0,1,1);
+                    return [...c.getImageData(0,0,1,1).data];
+                    """, script_args=[stress['canvas']])
+                if negative != stress['canvasPixel']:
+                    raise RuntimeError('forced-colors comparison did not detect Canvas negative control')
         finally:
             try:
                 if m:

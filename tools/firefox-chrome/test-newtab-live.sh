@@ -8,9 +8,9 @@ for browser in on off; do
   for newtab in on off; do
     for theme in vanilla textfox; do
       if [ "$theme" = vanilla ]; then
-        result=$(sh "$TOOL_DIR/firefox-live.sh" --vanilla --nova "$browser" --newtab-nova "$newtab" --newtab)
+        result=$(sh "$TOOL_DIR/firefox-live.sh" --vanilla --nova "$browser" --newtab-nova "$newtab" --newtab --wait-for .tile)
       else
-        result=$(sh "$TOOL_DIR/firefox-live.sh" --nova "$browser" --newtab-nova "$newtab" --newtab)
+        result=$(sh "$TOOL_DIR/firefox-live.sh" --nova "$browser" --newtab-nova "$newtab" --newtab --wait-for .tile)
       fi
       printf '%s\n' "$result" | python3 -c '
 import json, sys
