@@ -122,9 +122,9 @@ Firefox 159.0 build `20261022150525` exposes the launcher as `sidebar-main` with
 
 Run `MOZ_HEADLESS=1 "$HOME/.cache/textfox-firefox-live/venv/bin/python" tools/firefox-chrome/test-sidebar-theme-live.py`.
 
-## Nova widget menu activation
+## New-tab widget menu activation
 
-`tools/firefox-chrome/test-newtab-widget-menu.py` opens a disposable Nova new-tab widget menu with Enter, moves to its first item with Arrow Down, verifies focus on the `Hide widgets` menu item and its shadow button, and activates it with Enter. On headless Firefox 159.0 build `20261022150525`, the widget menu was removed after activation in vanilla and textfox profiles with browser Nova both off and on. The test enables feeds and widgets only in temporary profiles and may make network requests. It does not test classic new-tab menus, tab order, painted focus, contrast or other menu actions. T4 remains in progress.
+`tools/firefox-chrome/test-newtab-widget-menu.py` opens a disposable Nova new-tab widget menu with Enter, moves to its first item with Arrow Down, verifies focus on the `Hide widgets` menu item and its shadow button, and activates it with Enter. On headless Firefox 159.0 build `20261022150525`, the widget menu was removed after activation in vanilla and textfox profiles with browser Nova both off and on. The same test now also uses the classic timer menu's first item to turn off notifications and verifies the effective preference changed. It passed for vanilla and textfox with both browser Nova states and classic new-tab on the same Firefox baseline. The test enables feeds and widgets only in temporary profiles and may make network requests. It does not test tab order, painted focus, contrast or other menu actions. T4 remains in progress.
 
 Run `MOZ_HEADLESS=1 "$HOME/.cache/textfox-firefox-live/venv/bin/python" tools/firefox-chrome/test-newtab-widget-menu.py`.
 

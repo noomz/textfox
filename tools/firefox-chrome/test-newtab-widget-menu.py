@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exercise Nova widget menu keyboard activation in disposable profiles.
+"""Exercise widget menu keyboard activation in disposable profiles.
 
 The new-tab feed may make network requests. Hiding widgets affects only the
 throwaway profile. Run with the live-tool venv Python.
@@ -20,7 +20,7 @@ from ff_inspect import connect
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def check(browser_nova, themed):
+def check(browser_nova, newtab_nova, themed):
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0))
         port = sock.getsockname()[1]
@@ -29,7 +29,8 @@ def check(browser_nova, themed):
         if themed:
             shutil.copytree(ROOT / 'chrome', profile / 'chrome')
         prefs = {'marionette.port': port, 'browser.nova.enabled': browser_nova,
-                 'browser.newtabpage.activity-stream.nova.enabled': True,
+                 'browser.newtabpage.activity-stream.nova.enabled': newtab_nova,
+                 'browser.newtabpage.activity-stream.widgets.focusTimer.showSystemNotifications': True,
                  'browser.newtabpage.activity-stream.testing.shouldInitializeFeeds': True,
                  'browser.newtabpage.activity-stream.widgets.enabled': True,
                  'toolkit.legacyUserProfileCustomizations.stylesheets': True,
@@ -45,19 +46,21 @@ def check(browser_nova, themed):
         try:
             m = connect(port)
             m.set_context('chrome')
-            meta = m.execute_script("return {profile:Services.dirsvc.get('ProfD',Ci.nsIFile).path,version:Services.appinfo.version,build:Services.appinfo.appBuildID,browserNova:Services.prefs.getBoolPref('browser.nova.enabled'),newtabNova:Services.prefs.getBoolPref('browser.newtabpage.activity-stream.nova.enabled')}", sandbox='system')
+            meta = m.execute_script("return {profile:Services.dirsvc.get('ProfD',Ci.nsIFile).path,version:Services.appinfo.version,build:Services.appinfo.appBuildID,browserNova:Services.prefs.getBoolPref('browser.nova.enabled'),newtabNova:Services.prefs.getBoolPref('browser.newtabpage.activity-stream.nova.enabled'),notifications:Services.prefs.getBoolPref('browser.newtabpage.activity-stream.widgets.focusTimer.showSystemNotifications')}", sandbox='system')
             if (process.poll() is not None or Path(meta['profile']).resolve() != profile.resolve()
-                    or meta['browserNova'] != browser_nova or not meta['newtabNova']):
+                    or meta['browserNova'] != browser_nova or meta['newtabNova'] != newtab_nova
+                    or not meta['notifications']):
                 raise RuntimeError('unexpected Firefox process, profile, or preferences')
             m.execute_script('gBrowser.selectedTab = gBrowser.addTrustedTab("about:newtab")', sandbox='system')
             m.set_context('content')
             m.switch_to_window(m.window_handles[-1])
+            selector = '.widgets-header-context-menu-button' if newtab_nova else '.focus-timer-context-menu-button'
             deadline = time.monotonic() + 30
-            while not m.execute_script('return location.href === "about:newtab" && !!document.querySelector(".nova-enabled .widgets-header-context-menu-button")'):
+            while not m.execute_script('return location.href === "about:newtab" && !!document.querySelector(arguments[0])', script_args=[selector]):
                 if time.monotonic() >= deadline:
-                    raise RuntimeError('Nova widget menu did not initialize')
+                    raise RuntimeError('widget menu did not initialize')
                 time.sleep(.25)
-            button = m.find_element('css selector', '.widgets-header-context-menu-button')
+            button = m.find_element('css selector', selector)
             button.send_keys(Keys.ENTER)
             deadline = time.monotonic() + 10
             while not m.execute_script("return [...document.querySelectorAll('[role=menu]')].some(e => e.getClientRects().length)"):
@@ -71,17 +74,25 @@ def check(browser_nova, themed):
                         shadowActive:active?.shadowRoot?.activeElement?.outerHTML.slice(0, 700)};
                 """)
             print(json.dumps({'firefox': meta, 'themed': themed, 'focus': state}), flush=True)
-            if (not state['active'] or 'newtab-widget-section-menu-hide-all' not in state['active']
+            expected = 'newtab-widget-section-menu-hide-all' if newtab_nova else 'newtab-widget-timer-menu-notifications'
+            if (not state['active'] or expected not in state['active']
                     or not state['shadowActive'] or 'role="menuitem"' not in state['shadowActive']):
-                raise RuntimeError('first widget menu item is not focused')
+                raise RuntimeError('expected first widget menu item is not focused')
             m.find_element('tag name', 'body').send_keys(Keys.ENTER)
             deadline = time.monotonic() + 10
-            while m.execute_script("return !!document.querySelector('.nova-enabled .widgets-header-context-menu-button')"):
-                if time.monotonic() >= deadline:
-                    raise RuntimeError('activating Hide all did not remove widget menu')
-                time.sleep(.1)
-            print(json.dumps({'browserNova': browser_nova, 'themed': themed,
-                              'hideActionRemovedWidgetMenu': True}), flush=True)
+            if newtab_nova:
+                while m.execute_script('return !!document.querySelector(arguments[0])', script_args=[selector]):
+                    if time.monotonic() >= deadline:
+                        raise RuntimeError('activating Hide all did not remove widget menu')
+                    time.sleep(.1)
+            else:
+                m.set_context('chrome')
+                while m.execute_script("return Services.prefs.getBoolPref('browser.newtabpage.activity-stream.widgets.focusTimer.showSystemNotifications')", sandbox='system'):
+                    if time.monotonic() >= deadline:
+                        raise RuntimeError('timer notification preference did not change')
+                    time.sleep(.1)
+            print(json.dumps({'browserNova': browser_nova, 'newtabNova': newtab_nova, 'themed': themed,
+                              'menuActionObserved': True}), flush=True)
         finally:
             try:
                 if m:
@@ -97,5 +108,6 @@ def check(browser_nova, themed):
 
 if __name__ == '__main__':
     for browser_nova in (False, True):
-        for themed in (False, True):
-            check(browser_nova, themed)
+        for newtab_nova in (False, True):
+            for themed in (False, True):
+                check(browser_nova, newtab_nova, themed)
