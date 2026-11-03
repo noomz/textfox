@@ -111,9 +111,19 @@ def check(nova, themed):
                 const split=gBrowser.tabpanels.splitViewSplitter.getBoundingClientRect();
                 return {first:{x:a.x,y:a.y,width:a.width,height:a.height},
                         second:{x:b.x,y:b.y,width:b.width,height:b.height},
-                        splitter:{x:split.x,y:split.y,width:split.width,height:split.height}};
+                        splitter:{x:split.x,y:split.y,width:split.width,height:split.height},
+                        footers:panels.map(panel => {
+                          const e=panel.querySelector('split-view-footer');
+                          if (!e) return null;
+                          const r=e.getBoundingClientRect(), s=getComputedStyle(e);
+                          return {x:r.x,y:r.y,width:r.width,height:r.height,display:s.display,
+                                  visibility:s.visibility, direction:s.direction};
+                        })};
                 """, sandbox='system')
             print(json.dumps({'nova': nova, 'themed': themed, 'geometry': overlap}), flush=True)
+            visible_footers = [f for f in overlap['footers'] if f and f['display'] != 'none' and f['visibility'] == 'visible']
+            if len(visible_footers) != 1 or visible_footers[0]['width'] <= 0 or visible_footers[0]['height'] <= 0:
+                raise RuntimeError('inactive split panel footer is not visible')
             a, b = overlap['first'], overlap['second']
             if a['x'] < b['x'] + b['width'] and a['x'] + a['width'] > b['x'] and a['y'] < b['y'] + b['height'] and a['y'] + a['height'] > b['y']:
                 raise RuntimeError('split panel boxes overlap')
