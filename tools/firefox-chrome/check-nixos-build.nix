@@ -24,6 +24,7 @@ let
         '';
         textfox.extraUserChrome = ''
           :root { --tf-border-width: 11px; }
+          #nav-bar { --tf-extra-chrome-sentinel: applied; }
         '';
         textfox.extraUserContent = ''
           :root { --tf-border-width: 13px; }

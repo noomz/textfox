@@ -121,11 +121,14 @@ def main():
                 return {configuredBorder:root.getPropertyValue('--tf-border-width').trim(),
                         borderWidth:s.borderTopWidth, borderStyle:s.borderTopStyle,
                         background:s.backgroundColor,
+                        extraSentinel:s.getPropertyValue('--tf-extra-chrome-sentinel').trim(),
                         controlSentinel:root.getPropertyValue('--tf-import-control-sentinel').trim(),
                         configSentinel:root.getPropertyValue('--tf-import-config-sentinel').trim(),
                         browserSentinel:root.getPropertyValue('--tf-import-browser-sentinel').trim()};
                 """, sandbox='system')
             print(json.dumps({'firefox':meta, 'autoconfig':output, 'storeCss':store_dir, 'result':result}), flush=True)
+            if result['extraSentinel'] != 'applied':
+                raise RuntimeError('extraUserChrome rule did not apply')
             if result['configuredBorder'] != '11px' or result['borderWidth'] != '11px':
                 raise RuntimeError('generated CSS did not apply configured border')
             if result['controlSentinel'] != 'imported':
