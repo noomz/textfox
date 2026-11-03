@@ -1,0 +1,108 @@
+#!/usr/bin/env python3
+"""Check keyboard resizing of a disposable Firefox split view."""
+import json
+import os
+from pathlib import Path
+import shutil
+import socket
+import subprocess
+import tempfile
+import time
+
+from marionette_driver.keys import Keys
+
+from ff_inspect import connect
+
+ROOT = Path(__file__).resolve().parents[2]
+
+
+def check(nova, themed):
+    with socket.socket() as sock:
+        sock.bind(('127.0.0.1', 0))
+        port = sock.getsockname()[1]
+    with tempfile.TemporaryDirectory(prefix='tf-split-view-') as directory:
+        profile = Path(directory)
+        if themed:
+            shutil.copytree(ROOT / 'chrome', profile / 'chrome')
+        prefs = {'marionette.port': port, 'browser.nova.enabled': nova,
+                 'toolkit.legacyUserProfileCustomizations.stylesheets': True,
+                 'browser.shell.checkDefaultBrowser': False}
+        (profile / 'user.js').write_text(''.join(
+            f'user_pref({json.dumps(k)}, {json.dumps(v)});\n' for k, v in prefs.items()))
+        env = os.environ.copy()
+        env['MOZ_REMOTE_ALLOW_SYSTEM_ACCESS'] = '1'
+        process = subprocess.Popen(['firefox', '--marionette', '-remote-allow-system-access',
+                                    '--new-instance', '--profile', str(profile), 'about:blank'],
+                                   env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        m = None
+        try:
+            m = connect(port)
+            m.set_context('chrome')
+            meta = m.execute_script("return {profile:Services.dirsvc.get('ProfD',Ci.nsIFile).path,version:Services.appinfo.version,build:Services.appinfo.appBuildID,nova:Services.prefs.getBoolPref('browser.nova.enabled')}", sandbox='system')
+            if process.poll() is not None or Path(meta['profile']).resolve() != profile.resolve() or meta['nova'] != nova:
+                raise RuntimeError('unexpected Firefox process, profile, or Nova preference')
+            deadline = time.monotonic() + 20
+            while not m.execute_script('return gBrowserInit.delayedStartupFinished', sandbox='system'):
+                if time.monotonic() >= deadline:
+                    raise RuntimeError('Firefox startup did not finish')
+                time.sleep(.1)
+            m.execute_script("""
+                const first = gBrowser.selectedTab;
+                const second = gBrowser.addTrustedTab('about:blank');
+                gBrowser.addTabSplitView([first, second], {insertBefore:first});
+                """, sandbox='system')
+            deadline = time.monotonic() + 20
+            while not m.execute_script("return !!gBrowser.tabpanels.splitViewSplitter && gBrowser.tabpanels.splitViewPanels.length === 2", sandbox='system'):
+                if time.monotonic() >= deadline:
+                    raise RuntimeError('split view did not initialize')
+                time.sleep(.1)
+            deadline = time.monotonic() + 10
+            while not m.execute_script("return !!gBrowser.tabpanels.splitViewSplitter.getAttribute('aria-controls')", sandbox='system'):
+                if time.monotonic() >= deadline:
+                    raise RuntimeError('split view splitter accessibility attributes did not initialize')
+                time.sleep(.1)
+            before = m.execute_script("""
+                const split = gBrowser.tabpanels.splitViewSplitter;
+                const panel = document.getElementById(gBrowser.tabpanels.splitViewPanels[0]);
+                split.focus();
+                const s = getComputedStyle(split), r = split.getBoundingClientRect();
+                return {role:split.getAttribute('role'), controls:split.getAttribute('aria-controls'),
+                        panelId:panel.id, width:panel.getBoundingClientRect().width,
+                        valueNow:split.getAttribute('aria-valuenow'),
+                        splitterWidth:r.width, splitterHeight:r.height,
+                        focused:document.activeElement === split, display:s.display};
+                """, sandbox='system')
+            print(json.dumps({'firefox': meta, 'themed': themed, 'before': before}), flush=True)
+            if (before['role'] != 'separator' or before['controls'] != before['panelId']
+                    or not before['focused'] or before['display'] == 'none'
+                    or before['splitterWidth'] <= 0 or before['splitterHeight'] <= 0):
+                raise RuntimeError('split view splitter is not visible and focusable')
+            m.actions.sequence('key', 'keyboard').send_keys(Keys.ARROW_LEFT).perform()
+            deadline = time.monotonic() + 5
+            while True:
+                after = m.execute_script("return document.getElementById(gBrowser.tabpanels.splitViewPanels[0]).getBoundingClientRect().width", sandbox='system')
+                value = m.execute_script("return gBrowser.tabpanels.splitViewSplitter.getAttribute('aria-valuenow')", sandbox='system')
+                if after < before['width'] and value != before['valueNow']:
+                    break
+                if time.monotonic() >= deadline:
+                    raise RuntimeError(f'left arrow did not update first split panel and accessibility value: {before} -> {after}, {value}')
+                time.sleep(.1)
+            print(json.dumps({'nova': nova, 'themed': themed, 'firstPanelBefore': before['width'],
+                              'firstPanelAfter': after, 'valueAfter': value}), flush=True)
+        finally:
+            try:
+                if m:
+                    m.delete_session()
+            finally:
+                process.terminate()
+                try:
+                    process.wait(timeout=15)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait()
+
+
+if __name__ == '__main__':
+    for nova in (False, True):
+        for themed in (False, True):
+            check(nova, themed)
