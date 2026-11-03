@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Check Nix-generated custom logo CSS in disposable Firefox new-tab content."""
+import argparse
 import json
 import os
 from pathlib import Path
@@ -12,11 +13,13 @@ import time
 from ff_inspect import connect
 
 ROOT = Path(__file__).resolve().parents[2]
-NIXPKGS = '/nix/store/771lrblshx04rd5hgbg69pxkfzm9ncqh-source'
-
-
 def main():
-    expression = f'import ./tools/firefox-chrome/check-nixos-eval.nix {{ nixpkgsPath = {NIXPKGS}; }}'
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('nixpkgs_path', help='absolute Nix store path to a nixpkgs source')
+    args = parser.parse_args()
+    if not args.nixpkgs_path.startswith('/nix/store/') or any(c not in 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._/' for c in args.nixpkgs_path):
+        parser.error('nixpkgs_path must be a literal /nix/store path')
+    expression = f'import ./tools/firefox-chrome/check-nixos-eval.nix {{ nixpkgsPath = {args.nixpkgs_path}; }}'
     generated = json.loads(subprocess.check_output(
         ['nix', 'eval', '--offline', '--impure', '--json', '--expr', expression], cwd=ROOT, text=True, timeout=120))
     with socket.socket() as sock:
