@@ -54,6 +54,7 @@ def main():
     parser.add_argument('--forced-colors', action='store_true')
     parser.add_argument('--experiment', action='store_true')
     parser.add_argument('--experiment-wrap', action='store_true')
+    parser.add_argument('--experiment-column', action='store_true')
     args = parser.parse_args()
     if args.long_logo and args.empty_logo:
         parser.error('--long-logo and --empty-logo cannot be combined')
@@ -100,13 +101,17 @@ def main():
                     raise RuntimeError('Nova new-tab did not initialize')
                 time.sleep(.25)
             time.sleep(2)
-            if args.experiment or args.experiment_wrap:
+            if args.experiment or args.experiment_wrap or args.experiment_column:
                 m.execute_script("""
                     const style = document.createElement('style');
-                    style.textContent = `.container.nova-enabled { grid-template-rows: ${arguments[0] ? 'minmax(var(--row-height), auto)' : 'auto'} var(--row-height) !important; } .nova-enabled .sidebar-inline-start { grid-row: 1 !important; } .nova-enabled .wordmark { height: auto !important; }`;
-                    if (arguments[0]) style.textContent += '.nova-enabled .wordmark { max-inline-size: calc(100cqi - var(--side-col-width) - 3 * var(--space-xlarge)) !important; } .nova-enabled .wordmark::before { overflow-wrap: anywhere !important; }';
+                    if (arguments[1]) {
+                      style.textContent = '.container.nova-enabled { grid-template-columns: fit-content(35cqi) var(--content-col-width) var(--side-col-width) !important; } .nova-enabled .wordmark { height: auto !important; max-inline-size: calc(35cqi - var(--space-large)) !important; } .nova-enabled .wordmark::before { overflow-wrap: anywhere !important; }';
+                    } else {
+                      style.textContent = `.container.nova-enabled { grid-template-rows: ${arguments[0] ? 'minmax(var(--row-height), auto)' : 'auto'} var(--row-height) !important; } .nova-enabled .sidebar-inline-start { grid-row: 1 !important; } .nova-enabled .wordmark { height: auto !important; }`;
+                      if (arguments[0]) style.textContent += '.nova-enabled .wordmark { max-inline-size: calc(100cqi - var(--side-col-width) - 3 * var(--space-xlarge)) !important; } .nova-enabled .wordmark::before { overflow-wrap: anywhere !important; }';
+                    }
                     document.head.appendChild(style);
-                    """, script_args=[args.experiment_wrap])
+                    """, script_args=[args.experiment_wrap, args.experiment_column])
             geometry = m.execute_script("""
                 const r = document.querySelector('.nova-enabled .search-inner-wrapper').getBoundingClientRect();
                 const logo = document.querySelector('.nova-enabled .wordmark');
@@ -199,6 +204,7 @@ def main():
                               'longLogo': args.long_logo, 'emptyLogo': args.empty_logo,
                               'searchClickFocusedUrlbar': True, 'scroll': scroll,
                               'experiment': args.experiment, 'experimentWrap': args.experiment_wrap,
+                              'experimentColumn': args.experiment_column,
                               'interventionVisible': full_difference != 0,
                               'search': geometry, 'crop': crop,
                               'controlDifference': difference(first, control, crop),
