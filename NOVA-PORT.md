@@ -1,0 +1,107 @@
+# Firefox Nova port progress
+
+## Goal and status
+
+Port textfox to Firefox Nova while preserving the TUI appearance, existing configuration, accessibility, and browser functionality. Support is not complete. Do not enable Nova for textfox users or remove the README warning until the checks below pass.
+
+Baseline: repository commit `79f8391`, Firefox 159.0 on Linux, and Nix 2.20.6 through rootless nix-portable. The working tree contains uncommitted inspection-tool changes. Nix-portable uses proot and cannot prove NixOS VM or activation behavior that requires mount namespaces or a real Nix daemon.
+
+## Completed
+
+- Reviewed the plan independently with DeepSeek and Grok. Both identified the Nova preference, existing profile migration, CSS delivery order, and live verification as priorities.
+- Confirmed that Firefox release source defines `browser.nova.enabled` as `true` and uses it in browser chrome as well as new-tab content. The earlier assumption that Nova was limited to new-tab was wrong.
+- Confirmed that textfox sets `browser.nova.enabled` to `false` in `user.js` and `nix/pkgs/wrapTextfox.nix`. Home-manager reads `user.js`; manual installation of that file is optional.
+- Updated `tools/firefox-chrome/firefox-live.sh` to set `MOZ_REMOTE_ALLOW_SYSTEM_ACCESS=1` for the disposable browser and to accept `--nova on` or `--nova off`. Firefox 159 rejected chrome-context access without the environment variable, despite the existing command-line flag.
+- Updated `tools/firefox-chrome/ff_inspect.py` to report the effective Nova preference.
+- Added `tools/firefox-chrome/test-firefox-live.sh`. It passed against Firefox 159 in headless mode and verified that `#nav-bar` exists with the requested Nova preference in both states. This is not a full theme test.
+- Ran `nix shell nixpkgs#nixfmt -c sh -c 'find . -type f -name "*.nix" -not -path "./.git/*" -exec nixfmt --check {} +'`. It passed. The documented `nix run nixpkgs#nixfmt-tree -- --check` failed because the current `treefmt` rejects `--check`.
+
+## Current investigation
+
+A disposable Firefox 159 headless profile loads `about:newtab`, but its `#root` has no children after waiting. This occurs with Nova on and off, including when browser chrome opens a trusted new tab. The page reports `readyState` as `complete`, is visible, and has a nonzero viewport. Browser chrome reports delayed startup complete. The browser console showed telemetry client-ID errors but no established cause for the empty new-tab root.
+
+A second headless probe used an unthemed profile with Nova on and opened `about:home`. After 15 seconds, its `#root` was also empty, although `javascript.enabled` was true and the document contained the expected new-tab script elements. This isolates neither headless mode nor Marionette as the cause, but shows that textfox CSS is not necessary to reproduce the observation. No `DISPLAY`, `WAYLAND_DISPLAY`, Xvfb, or xvfb-run was available in this session. The temporary probes and their JSON output are under `/tmp/textfox-*` and may disappear.
+
+A four-way headless browser-chrome comparison found `#nav-bar` in vanilla and textfox profiles with Nova both on and off. The effective preference matched the requested state. Textfox computed a transparent background and a 2px solid border in both states, unlike vanilla. This validates only that one element and its computed styles, not layout or interaction.
+
+The empty root was caused by the automation baseline, not established as a theme defect. Firefox 159's bundled `chrome/remote/content/shared/RecommendedPreferences.sys.mjs` sets `browser.newtabpage.activity-stream.testing.shouldInitializeFeeds` to `false` and disables widgets for automation. Its new-tab bundle returns no content until `App.initialized` is true. In a disposable vanilla profile, setting `browser.newtabpage.activity-stream.testing.shouldInitializeFeeds` to `true` before startup produced a populated `about:home` root in headless Firefox. Setting the feeds preference and `browser.newtabpage.activity-stream.widgets.enabled` to `true` produced populated `about:newtab` roots in textfox profiles with the browser Nova preference requested both on and off. These probes do not verify the effective new-tab Nova state or visual correctness. The `.nova-enabled` element appeared in both runs, so do not use the browser preference alone as proof that the new-tab implementation switched.
+
+A headed Firefox session on a disposable headless Sway/Wayland compositor also produced an empty root with the original automation preferences. Disabling all recommended remote preferences caused a Marionette timeout in one attempt; use targeted preference overrides for further tests instead. The temporary probes are under `/tmp/textfox-*` and may disappear.
+
+`firefox-live.sh --newtab` now probes initialized new-tab content in a disposable profile and reports Firefox build, effective preferences, selector presence, and computed styles. `--nova on` and `--nova off` explicitly set both the browser-wide preference and the separate `browser.newtabpage.activity-stream.nova.enabled` preference. The feed and widget overrides apply only to this disposable probe. These profiles may make Firefox's normal new-tab network requests.
+
+On Firefox 159.0 build `20261022150525`, the four-way headless probe reported the requested effective preferences and the expected `.nova-enabled` or `.classic-enabled` container. Both themes populated the new tab. For `.tile`, textfox computed `border-radius: 0px` and `box-shadow: none` in both states; vanilla computed 12px with Nova and 16px with classic, both with shadows. This confirms a limited userContent style difference, not layout, contrast, or interaction correctness. The test and JSON probe are repeatable; temporary results are in `/tmp/tf-newtab-*` when available.
+
+A headed probe on a disposable Sway headless compositor at 1280×800 repeated the four aligned-state checks on Firefox 159.0 build `20261022150525`. All four new-tab roots initialized and exposed the expected Nova or classic container. Textfox tiles computed a 0px radius and no shadow in both states; vanilla tiles computed 12px with Nova and 16px with classic, both with shadows. JSON results are in `/tmp/tf-headed.A5PtCN/` and may disappear. This was a headed rendering environment, but the probe did not inspect screenshots, layout, focus, keyboard interaction, or menus.
+
+A further headed Sway probe requested all four combinations of browser and new-tab Nova preferences, each with vanilla and textfox profiles. All eight new-tab roots initialized; the observed Nova or classic container followed the requested new-tab preference regardless of the requested browser preference. This probe did not read back effective preferences. After a body click, its first eight Tab presses reached the same sequence of element types and classes in vanilla and textfox for each preference combination. This is a limited focus-order observation, not proof of visible focus, complete keyboard access, or equivalent behavior inside shadow roots and iframes. The probe and JSONL are `/tmp/tf-matrix-probe.py` and `/tmp/tf-matrix.Y5QPPF/results.jsonl`; they may disappear. New-tab widgets can vary with profile and network state.
+
+A repeat of the eight headed combinations read back both effective Nova preferences; each matched its requested value. In each profile, the probe programmatically focused one widget menu button, sent Enter, observed a visible `role=menu`, then sent Escape and observed it close with focus on the button. It tested the timer menu in classic and the widgets header menu in Nova, not menu item navigation or activation. Results are `/tmp/tf-menu.6s2yfx/results.jsonl`; the temporary probe may disappear. Its first attempt failed because it called a nonexistent Marionette API; the probe was corrected before this run.
+
+In another headed run, Enter opened the same widget menus, and Arrow Down focused the first menu item's shadow-DOM button in all eight combinations. Screenshots show a visible focus outline on that item in the inspected textfox Nova and classic cases. The textfox Nova screenshot also shows the ASCII logo overlapping the search field and the Wikipedia shortcut label wrapping mid-word; the vanilla Nova screenshot does not show those two effects. These are observations at this viewport and profile, not yet root-caused or tested at other sizes. Screenshots and JSONL are in `/tmp/tf-focus.7aoGGZ/` and may disappear. Menu item activation was not tested.
+
+A follow-up headed Nova probe compared computed geometry. In textfox, `.wordmark` is 294×64 CSS pixels but its `::before` renders the five-line `--tf-newtab-logo` at 14px; vanilla uses a 105×64 wordmark without generated text. The textfox logo/search screenshot shows apparent overlap, but the probe did not measure pseudo-element ink bounds, so the precise overlap and cause remain unverified. Both vanilla and textfox shortcut title boxes are 75px wide; the computed title font differs: Adwaita Sans in vanilla and SF Mono/Consolas/monospace in textfox. This supports font width as a hypothesis for the screenshot's mid-word wrapping, not a confirmed cause. Geometry and screenshots are in `/tmp/tf-geometry.Sc9uNJ/`; they may disappear.
+
+A headed Nova font intervention measured the Wikipedia shortcut text via DOM range rectangles. With textfox's default font it occupied two lines (70.4px and 8.8px); changing only `--tf-font-family` to Adwaita Sans at runtime reduced it to one 67.9px line. The shortcut title has `word-break: break-word`, and `chrome/content/about.css` applies the configured font to all about-page elements. This confirms the font choice causes this observed wrap in that profile and viewport; changing the font globally would defeat the user's configured font. Earlier attempts to override individual elements did not win the user stylesheet's `!important` rule. Results are `/tmp/tf-font.LtBtjf/results.jsonl` and may disappear.
+
+A temporary headed probe reproduced the logo text as a hidden DOM element with the pseudo-element's computed font and whitespace settings. Its estimated last line bottom was 112.5px, below the search wrapper's 96.25px top, while the wordmark starts at 22.5px. This supports a vertical overflow cause, but is an approximation rather than a measurement of the actual pseudo-element ink or proof of painted-pixel overlap. The same probe widened the outer shortcut `.title` to 90px; its computed width changed, but Wikipedia still occupied two lines, so widening that element alone is insufficient. Results are `/tmp/tf-layout.u2XFWp/results.jsonl` and may disappear.
+
+Next, build a repeatable failing layout check, trace the shortcut's nested width constraints and the logo's Nova layout, test menu item activation and broader focus behavior, then inventory other components. These targeted probes do not establish visual or accessibility correctness.
+
+## Remaining work
+
+- [ ] Pin the target Firefox release and build for each delivery path. Record the effective Nova preference and its default.
+- [ ] Establish a working live baseline for Nova new-tab and browser chrome. Capture vanilla and textfox behavior with Nova on and, while supported upstream, off.
+- [ ] Inventory current theme selectors and Firefox-owned variables against Firefox source and live DOM. Cover tabs, sidebar, toolbar, URL bar, menus, panels, findbar, split view, private windows, new-tab, and supported `about:` pages.
+- [ ] Port verified gaps in component CSS. Preserve existing `--tf-*` overrides, TUI styling, visible focus, keyboard access, contrast, forced colors, reduced motion, and RTL behavior.
+- [ ] Check CSS delivery separately for manual installation, home-manager, and NixOS. Compare `@import` order with the fixed concatenation order in `nix/pkgs/wrapTextfox.nix`; verify user config precedence, icons, and NixOS restart behavior. Do not infer activation success from evaluation alone.
+- [ ] Test existing configuration options against computed styles. If adding a `--tf-*` option, update `chrome/defaults.css`, `nix/modules/options.nix` option definitions, and generated `configCss` together.
+- [ ] Design and verify preference migration for fresh and existing profiles across all delivery paths. Removing `user_pref(..., false)` alone may leave a persisted user preference. Flip or retire the preference only after Nova UI checks pass.
+- [ ] Exercise the interaction and accessibility matrix on real Firefox. Record platform and environment limits. Update README support and migration guidance only after verification.
+- [ ] Run the live regression test, relevant Nix checks, `git diff --check`, and independent review before claiming support.
+
+## Pause checkpoint
+
+`tools/firefox-chrome/test-nova-layout-live.py` now creates a disposable profile, sets both Nova preferences, inserts a deterministic Wikipedia shortcut label, and reports DOM geometry. With Firefox 159.0, its headed 1280×800 run and a separate headless run both reported an estimated logo/search overlap and a wrapped shortcut. Logo line boxes are reconstructed from pseudo-element styles, not measured painted pixels. The check assumes a usable shortcut and default font; the disposable new-tab profile may make network requests. Run it with `MOZ_HEADLESS=1 "$HOME/.cache/textfox-firefox-live/venv/bin/python" tools/firefox-chrome/test-nova-layout-live.py`; it currently exits 1 for those two observations.
+
+Firefox's Nova wordmark has a 64px fixed height; textfox's generated logo exceeds it. Testing Nova-scoped `height: auto` increased the wordmark to 90px but left search at the same position and did not clear the estimated overlap. That experimental change was removed. Trace the surrounding grid and responsive placement before another fix. Nova's shortcut label and ancestor tile are each 75px wide; widening only the outer title did not prevent wrapping. Do not replace the configured monospace font or assume labels can overflow neighboring tiles safely. No theme CSS fix has been applied.
+
+A delivery audit found that NixOS concatenation order differs from manual imports. A Firefox 159 disposable-profile probe confirmed that the former update branch's recursive removal deleted an unrelated `chrome/config.css`; a deliberately failed copy also left the directory absent. The probe exercised equivalent `nsIFile` operations, not generated autoconfig or NixOS activation. As an interim containment, the branch now reports an error and leaves existing profile files untouched when the current store marker is missing. This deliberately blocks updates and installation into existing chrome directories; existing users retain old styles, but their icons may disappear if Nix garbage-collects the old store path referenced by those styles. A failed first install can leave a partial chrome directory that this guard also refuses on retry. Preserve the old store generation and back up the entire profile before any manual recovery; no recovery procedure is verified yet. `node tools/firefox-chrome/test-nixos-update.js` exercises the extracted branch with mocked Firefox file APIs, including fresh, current and update paths. This is not a real Firefox autoconfig or NixOS activation test. Design and verify a safe ownership, migration and retry protocol before restoring updates. Do not delete profile files to work around the block. Manual reinstall backs up the old chrome directory but does not restore its config automatically.
+
+`nix eval --impure --expr 'builtins.typeOf (import ./nix/modules/nixos.nix {})'` failed on an undefined `policies` variable. Removed that unbound assignment; the same import now returns `"lambda"`. A full offline `nixosSystem` evaluation timed out after 90 seconds in this environment. The import check does not prove module evaluation, wrapper build, policies, or activation work.
+
+Nova's sidebar occupies a fixed 150px grid track while the default generated logo is approximately 294px wide. Search is in a neighboring column with overlapping row spans. Headless runtime interventions moving search or widening grid tracks avoided the estimated collision at one viewport but altered Firefox layout and lack responsive, RTL, and interaction validation; none was retained. Independent review found the layout probe can miss clipped text or misestimate pseudo-element geometry. Its success case now reports inconclusive rather than passing, and it checks the disposable profile identity before opening a tab. Preserve the Nova warning and preference until the full matrix passes.
+
+Working tree at pause: modified `tools/firefox-chrome/ff_inspect.py` and `tools/firefox-chrome/firefox-live.sh`; untracked `tools/firefox-chrome/ff_newtab.py`, `tools/firefox-chrome/test-firefox-live.sh`, `tools/firefox-chrome/test-newtab-live.sh`, `NOVA-PORT.md`, and pre-existing `.pi/`. These files are not committed. Preserve existing changes and `.pi/`. `git diff --check` passed at pause; it does not check untracked files. Temporary probe scripts and screenshots under `/tmp` are not durable.
+
+## T1 continuation
+
+Firefox found on PATH is `$HOME/.local/bin/firefox`, linked to `$HOME/opt/firefox/firefox`. On this Linux host it reports Firefox 159.0; the disposable vanilla new-tab probe reports build `20261022150525`. With neither Nova preference explicitly set by the probe, it reports both effective preferences as `true` and displays `.nova-enabled`. This is an effective-value observation under Marionette and targeted feed/widget overrides, not an independent reading of Firefox's default preference branch.
+
+On this run, `MOZ_HEADLESS=1 sh tools/firefox-chrome/test-firefox-live.sh` and `MOZ_HEADLESS=1 sh tools/firefox-chrome/test-newtab-live.sh` exited successfully. They exercise both aligned Nova states, not all independent preference combinations or actual installation paths.
+
+Manual installation targets the user's selected Firefox profile and does not choose a browser build. Home-manager enables `programs.firefox` but this module does not pin its Firefox package; host configuration determines it. NixOS defaults `textfox.package` to `pkgs.firefox-unwrapped` and permits an override. The flake lock identifies nixpkgs revision `0726a0ecb6d4e08f6adced58726b95db924cef57`, but does not pin user-supplied packages. An offline evaluation of that revision's `x86_64-linux.firefox-unwrapped.version` exceeded 60 seconds and was stopped; the cause is unknown. Nix delivery versions, build IDs, and actual delivery-path baselines remain unverified. T1 remains in progress.
+
+A fresh disposable Firefox 159.0 profile reported `true` for both Nova preferences on the default branch and effective branch, with no user value for either. `ff_newtab.py` now reports `defaultPreferences` separately from effective `preferences`; the new-tab regression checks both Nova defaults are booleans in all four aligned theme/state runs. The new assertion failed before implementation with a missing `defaultPreferences` key and passed afterward. A vanilla run confirmed both defaults as `true`, while automation overrides feed and widget defaults from `false` to `true`. A separate offline `nix flake metadata` also timed out after 20 seconds, while `nix eval --offline --impure --expr '1 + 1'` succeeded. The flake timeout cause remains unknown.
+
+## Parallel T1 continuation
+
+`firefox-live.sh --nova off --newtab-nova on --newtab` can request browser and new-tab Nova preferences independently. `test-newtab-live.sh` now checks all eight vanilla/textfox and preference combinations in headless Firefox, including effective values, initialized content, and both Nova/classic container selectors. The new test initially failed on the missing flag, then passed after implementation. `ff_newtab.py` checks the connected profile path and launched process before opening the new tab; a disposable wrong-profile check returned the expected error. The default Marionette port can still collide, and browser-chrome inspection does not yet verify profile identity. This matrix does not prove layout, accessibility, or installed delivery paths.
+
+The `flake.lock` GitHub input and `flake.nix` channel tarball declaration differ. At the locked nixpkgs revision `0726a0ecb6d4e08f6adced58726b95db924cef57`, the upstream `pkgs/applications/networking/browsers/firefox/packages/firefox.nix` declares Firefox 150.0. This is source-level evidence, not a verified Nix evaluation or build; host package overrides can differ. The mismatch may contribute to offline evaluation timeout, but cause is not established. No lock file was changed.
+
+## Resume commands
+
+```sh
+export PATH="$HOME/.local/bin:$PATH"
+firefox --version
+nix --version
+sh tools/firefox-chrome/test-firefox-live.sh
+sh tools/firefox-chrome/test-newtab-live.sh
+MOZ_HEADLESS=1 sh tools/firefox-chrome/firefox-live.sh --vanilla --nova on --newtab
+MOZ_HEADLESS=1 sh tools/firefox-chrome/firefox-live.sh --nova on --newtab
+MOZ_HEADLESS=1 sh tools/firefox-chrome/firefox-live.sh --nova on nav-bar -- --computed border,background-color
+git status --short
+```
+
+The untracked `.pi/` directory was already present during this work and has not been modified intentionally. Do not remove it as part of this port.
