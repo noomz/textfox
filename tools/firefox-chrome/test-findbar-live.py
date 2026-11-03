@@ -16,7 +16,7 @@ from ff_inspect import connect
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def check(nova, themed, high_contrast):
+def check(nova, themed, high_contrast, rtl):
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0))
         port = sock.getsockname()[1]
@@ -27,7 +27,8 @@ def check(nova, themed, high_contrast):
         prefs = {'marionette.port': port, 'browser.nova.enabled': nova,
                  'toolkit.legacyUserProfileCustomizations.stylesheets': True,
                  'browser.shell.checkDefaultBrowser': False,
-                 'ui.useAccessibilityTheme': 1 if high_contrast else 0}
+                 'ui.useAccessibilityTheme': 1 if high_contrast else 0,
+                 'intl.l10n.pseudo': 'bidi' if rtl else ''}
         (profile / 'user.js').write_text(''.join(
             f'user_pref({json.dumps(k)}, {json.dumps(v)});\n' for k, v in prefs.items()))
         env = os.environ.copy()
@@ -79,12 +80,13 @@ def check(nova, themed, high_contrast):
                 return {visible:!bar.hidden && s.display !== 'none', fieldValue:bar._findField.value,
                         focused:document.activeElement === bar._findField || bar._findField.matches(':focus-within'),
                         prefersContrast:matchMedia('(prefers-contrast)').matches,
+                        direction:getComputedStyle(document.documentElement).direction,
                         outlineStyle:getComputedStyle(bar._findField).outlineStyle,
                         outlineWidth:getComputedStyle(bar._findField).outlineWidth};
                 """, sandbox='system')
             print(json.dumps({'firefox': meta, 'themed': themed, 'result': result}), flush=True)
-            if result['prefersContrast'] != high_contrast:
-                raise RuntimeError('requested contrast preference not active')
+            if result['prefersContrast'] != high_contrast or result['direction'] != ('rtl' if rtl else 'ltr'):
+                raise RuntimeError('requested contrast or direction not active')
             if not result['visible'] or result['fieldValue'] != 'unique-find-target' or not result['focused']:
                 raise RuntimeError('findbar state does not reflect keyboard search')
             if result['outlineStyle'] == 'none' or result['outlineWidth'] == '0px':
@@ -109,4 +111,5 @@ if __name__ == '__main__':
     for nova in (False, True):
         for themed in (False, True):
             for high_contrast in (False, True):
-                check(nova, themed, high_contrast)
+                for rtl in (False, True):
+                    check(nova, themed, high_contrast, rtl)
