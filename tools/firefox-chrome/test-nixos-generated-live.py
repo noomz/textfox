@@ -50,11 +50,18 @@ def main():
         for name in ('userChrome.css', 'userContent.css'):
             (chrome / name).write_bytes(subprocess.check_output(['nix', 'store', 'cat', f'{store_dir}/{name}'], timeout=30))
         generated_chrome = (chrome / 'userChrome.css').read_text()
-        if f'{store_dir}/icons/book.svg' not in generated_chrome:
+        if './icons/' in generated_chrome:
+            raise RuntimeError('generated CSS retains a relative icon reference')
+        if 'chrome://global/skin/icons/close.svg' not in generated_chrome:
+            raise RuntimeError('generated CSS corrupted Firefox chrome icon URL')
+        icon_names = set(re.findall(re.escape(store_dir) + r'/icons/([^\s\"\')]+)', generated_chrome))
+        if not icon_names:
             raise RuntimeError('generated CSS does not reference store icons')
-        icon = subprocess.check_output(['nix', 'store', 'cat', f'{store_dir}/icons/book.svg'], timeout=30)
-        if b'<svg' not in icon:
-            raise RuntimeError('generated icon store path is invalid')
+        for name in sorted(icon_names):
+            icon = subprocess.check_output(['nix', 'store', 'cat', f'{store_dir}/icons/{name}'], timeout=30)
+            if b'<svg' not in icon:
+                raise RuntimeError(f'generated icon store path is invalid: {name}')
+        print(json.dumps({'generatedIconFiles':len(icon_names)}), flush=True)
         (chrome / 'config.css').write_text(':root { --tf-import-config-sentinel: imported; }\n')
         (chrome / 'browser.css').write_text(':root { --tf-import-browser-sentinel: imported; }\n')
         (chrome / 'userChrome.css').write_text('@import url("control.css");\n' + (chrome / 'userChrome.css').read_text())

@@ -36,7 +36,7 @@ let
         cat "$src/findbar.css" >> "$out/userChrome.css"
         cat "$src/navbar.css" >> "$out/userChrome.css"
         cat "$src/urlbar.css" >> "$out/userChrome.css"
-        sed "s|./icons|$out/icons|g" "$src/icons.css" >> "$out/userChrome.css"
+        sed "s|\\./icons/|$out/icons/|g" "$src/icons.css" >> "$out/userChrome.css"
         cat "$src/menus.css" >> "$out/userChrome.css"
         cat "$src/tabs.css" >> "$out/userChrome.css"
 
