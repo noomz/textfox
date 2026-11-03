@@ -11,7 +11,8 @@ Usage (normally invoked by firefox-live.sh, which launches Firefox first):
   inspect.py --selector "#urlbar .urlbar-background" --computed background-color,border
   inspect.py --id back-button --html --children
 """
-import argparse, json, sys, time
+import argparse, json, os, sys, time
+from pathlib import Path
 
 try:
     from marionette_driver.marionette import Marionette
@@ -66,6 +67,8 @@ return out;
 def main():
     ap = argparse.ArgumentParser(description="Inspect live Firefox chrome DOM via Marionette")
     ap.add_argument("--port", type=int, default=2828)
+    ap.add_argument("--profile", help="expected Firefox profile path")
+    ap.add_argument("--pid", type=int, help="launched Firefox process ID")
     ap.add_argument("--id", help="element id (getElementById)")
     ap.add_argument("--selector", help="CSS selector (querySelector)")
     ap.add_argument("--computed", default="", help="comma list of computed props to read")
@@ -76,10 +79,20 @@ def main():
 
     if not a.id and not a.selector:
         sys.exit("error: provide --id or --selector")
+    if (a.profile is None) != (a.pid is None):
+        ap.error("--profile and --pid must be provided together")
 
     m = connect(a.port)
     try:
         m.set_context(m.CONTEXT_CHROME)
+        if a.profile is not None:
+            profile = m.execute_script("return Services.dirsvc.get('ProfD', Ci.nsIFile).path", sandbox="system")
+            try:
+                os.kill(a.pid, 0)
+            except ProcessLookupError:
+                sys.exit("error: launched Firefox has exited")
+            if Path(profile).resolve() != Path(a.profile).resolve():
+                sys.exit("error: Marionette connected to an unexpected Firefox profile")
         arg = {
             "id": a.id,
             "selector": a.selector,

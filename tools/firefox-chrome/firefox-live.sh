@@ -143,9 +143,9 @@ FF_PID=$!
 if [ "$NEWTAB" -eq 1 ]; then
   "$VENV/bin/python" "$TOOL_DIR/ff_newtab.py" --port "$PORT" --profile "$PROFILE" --pid "$FF_PID"
 elif [ -n "$SELECTOR" ]; then
-  "$VENV/bin/python" "$TOOL_DIR/ff_inspect.py" --port "$PORT" --selector "$SELECTOR" "$@"
+  "$VENV/bin/python" "$TOOL_DIR/ff_inspect.py" --port "$PORT" --selector "$SELECTOR" "$@" --profile "$PROFILE" --pid "$FF_PID"
 elif [ -n "$QUERY" ]; then
-  "$VENV/bin/python" "$TOOL_DIR/ff_inspect.py" --port "$PORT" --id "$QUERY" "$@"
+  "$VENV/bin/python" "$TOOL_DIR/ff_inspect.py" --port "$PORT" --id "$QUERY" "$@" --profile "$PROFILE" --pid "$FF_PID"
 else
   echo "error: provide an element ID or --selector" >&2
   exit 1
