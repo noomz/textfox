@@ -20,7 +20,7 @@ from ff_inspect import connect
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def check(browser_nova, newtab_nova, themed, forced_colors, rtl):
+def check(browser_nova, newtab_nova, themed, forced_colors, rtl, reduced_motion):
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0))
         port = sock.getsockname()[1]
@@ -36,7 +36,8 @@ def check(browser_nova, newtab_nova, themed, forced_colors, rtl):
                  'toolkit.legacyUserProfileCustomizations.stylesheets': True,
                  'browser.shell.checkDefaultBrowser': False,
                  'browser.display.document_color_use': 2 if forced_colors else 1,
-                 'intl.l10n.pseudo': 'bidi' if rtl else ''}
+                 'intl.l10n.pseudo': 'bidi' if rtl else '',
+                 'ui.prefersReducedMotion': 1 if reduced_motion else 0}
         (profile / 'user.js').write_text(''.join(
             f'user_pref({json.dumps(k)}, {json.dumps(v)});\n' for k, v in prefs.items()))
         env = os.environ.copy()
@@ -62,8 +63,8 @@ def check(browser_nova, newtab_nova, themed, forced_colors, rtl):
                 if time.monotonic() >= deadline:
                     raise RuntimeError('widget menu did not initialize')
                 time.sleep(.25)
-            media = m.execute_script("return {forced:matchMedia('(forced-colors: active)').matches, direction:getComputedStyle(document.documentElement).direction}")
-            if media['forced'] != forced_colors or media['direction'] != ('rtl' if rtl else 'ltr'):
+            media = m.execute_script("return {forced:matchMedia('(forced-colors: active)').matches, reduced:matchMedia('(prefers-reduced-motion: reduce)').matches, direction:getComputedStyle(document.documentElement).direction}")
+            if media['forced'] != forced_colors or media['reduced'] != reduced_motion or media['direction'] != ('rtl' if rtl else 'ltr'):
                 raise RuntimeError(f'requested content forced-colors or direction not active: {media}')
             m.execute_script('document.querySelector(arguments[0]).focus()', script_args=[selector])
             m.find_element('css selector', selector).send_keys(Keys.ENTER)
@@ -105,7 +106,8 @@ def check(browser_nova, newtab_nova, themed, forced_colors, rtl):
                         raise RuntimeError('timer notification preference did not change')
                     time.sleep(.1)
             print(json.dumps({'browserNova': browser_nova, 'newtabNova': newtab_nova, 'themed': themed,
-                              'forcedColors':forced_colors, 'rtl':rtl, 'menuActionObserved': True}), flush=True)
+                              'forcedColors':forced_colors, 'rtl':rtl, 'reducedMotion':reduced_motion,
+                              'menuActionObserved': True}), flush=True)
         finally:
             try:
                 if m:
@@ -125,4 +127,5 @@ if __name__ == '__main__':
             for themed in (False, True):
                 for forced_colors in (False, True):
                     for rtl in (False, True):
-                        check(browser_nova, newtab_nova, themed, forced_colors, rtl)
+                        for reduced_motion in (False, True):
+                            check(browser_nova, newtab_nova, themed, forced_colors, rtl, reduced_motion)
