@@ -16,7 +16,7 @@ from ff_inspect import connect
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def check(nova, themed):
+def check(nova, themed, high_contrast):
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0))
         port = sock.getsockname()[1]
@@ -26,7 +26,8 @@ def check(nova, themed):
             shutil.copytree(ROOT / 'chrome', profile / 'chrome')
         prefs = {'marionette.port': port, 'browser.nova.enabled': nova,
                  'toolkit.legacyUserProfileCustomizations.stylesheets': True,
-                 'browser.shell.checkDefaultBrowser': False}
+                 'browser.shell.checkDefaultBrowser': False,
+                 'ui.useAccessibilityTheme': 1 if high_contrast else 0}
         (profile / 'user.js').write_text(''.join(
             f'user_pref({json.dumps(k)}, {json.dumps(v)});\n' for k, v in prefs.items()))
         env = os.environ.copy()
@@ -77,10 +78,13 @@ def check(nova, themed):
                 const bar = document.querySelector('findbar:not([hidden])'), s = getComputedStyle(bar);
                 return {visible:!bar.hidden && s.display !== 'none', fieldValue:bar._findField.value,
                         focused:document.activeElement === bar._findField || bar._findField.matches(':focus-within'),
+                        prefersContrast:matchMedia('(prefers-contrast)').matches,
                         outlineStyle:getComputedStyle(bar._findField).outlineStyle,
                         outlineWidth:getComputedStyle(bar._findField).outlineWidth};
                 """, sandbox='system')
             print(json.dumps({'firefox': meta, 'themed': themed, 'result': result}), flush=True)
+            if result['prefersContrast'] != high_contrast:
+                raise RuntimeError('requested contrast preference not active')
             if not result['visible'] or result['fieldValue'] != 'unique-find-target' or not result['focused']:
                 raise RuntimeError('findbar state does not reflect keyboard search')
             if result['outlineStyle'] == 'none' or result['outlineWidth'] == '0px':
@@ -104,4 +108,5 @@ def check(nova, themed):
 if __name__ == '__main__':
     for nova in (False, True):
         for themed in (False, True):
-            check(nova, themed)
+            for high_contrast in (False, True):
+                check(nova, themed, high_contrast)
