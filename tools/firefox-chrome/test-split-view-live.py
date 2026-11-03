@@ -68,7 +68,8 @@ def check(nova, themed):
                 const s = getComputedStyle(split), r = split.getBoundingClientRect();
                 return {role:split.getAttribute('role'), controls:split.getAttribute('aria-controls'),
                         panelId:panel.id, width:panel.getBoundingClientRect().width,
-                        valueNow:split.getAttribute('aria-valuenow'),
+                        clientWidth:panel.clientWidth, borderLeft:getComputedStyle(panel).borderLeftWidth,
+                        borderRight:getComputedStyle(panel).borderRightWidth, valueNow:split.getAttribute('aria-valuenow'),
                         splitterWidth:r.width, splitterHeight:r.height,
                         focused:document.activeElement === split, display:s.display};
                 """, sandbox='system')
@@ -81,14 +82,14 @@ def check(nova, themed):
             deadline = time.monotonic() + 5
             while True:
                 after = m.execute_script("return document.getElementById(gBrowser.tabpanels.splitViewPanels[0]).getBoundingClientRect().width", sandbox='system')
-                value = m.execute_script("return gBrowser.tabpanels.splitViewSplitter.getAttribute('aria-valuenow')", sandbox='system')
-                if after < before['width'] and value != before['valueNow']:
+                measured = m.execute_script("const p=document.getElementById(gBrowser.tabpanels.splitViewPanels[0]); return {value:gBrowser.tabpanels.splitViewSplitter.getAttribute('aria-valuenow'), clientWidth:p.clientWidth}", sandbox='system')
+                if after < before['width'] and measured['value'] != before['valueNow'] and int(measured['value']) == measured['clientWidth']:
                     break
                 if time.monotonic() >= deadline:
-                    raise RuntimeError(f'left arrow did not update first split panel and accessibility value: {before} -> {after}, {value}')
+                    raise RuntimeError(f'left arrow did not update first split panel and accessibility value: {before} -> {after}, {measured}')
                 time.sleep(.1)
             print(json.dumps({'nova': nova, 'themed': themed, 'firstPanelBefore': before['width'],
-                              'firstPanelAfter': after, 'valueAfter': value}), flush=True)
+                              'firstPanelAfter': after, 'after': measured}), flush=True)
         finally:
             try:
                 if m:
