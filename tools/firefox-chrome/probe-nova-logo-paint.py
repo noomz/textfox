@@ -47,6 +47,8 @@ def main():
     parser.add_argument('--rtl', action='store_true')
     parser.add_argument('--font-size', type=int, default=14)
     parser.add_argument('--long-logo', action='store_true')
+    parser.add_argument('--reduced-motion', action='store_true')
+    parser.add_argument('--forced-colors', action='store_true')
     parser.add_argument('--experiment', action='store_true')
     parser.add_argument('--experiment-wrap', action='store_true')
     args = parser.parse_args()
@@ -64,7 +66,9 @@ def main():
                  'browser.newtabpage.activity-stream.widgets.enabled': True,
                  'toolkit.legacyUserProfileCustomizations.stylesheets': True,
                  'browser.shell.checkDefaultBrowser': False,
-                 'intl.l10n.pseudo': 'bidi' if args.rtl else ''}
+                 'intl.l10n.pseudo': 'bidi' if args.rtl else '',
+                 'ui.prefersReducedMotion': 1 if args.reduced_motion else 0,
+                 'browser.display.document_color_use': 2 if args.forced_colors else 1}
         (profile / 'user.js').write_text(''.join(
             f'user_pref({json.dumps(k)}, {json.dumps(v)});\n' for k, v in prefs.items()))
         env = os.environ.copy()
@@ -113,6 +117,8 @@ def main():
                 return {x:r.x, y:r.y, width:r.width, height:r.height,
                         viewportWidth:innerWidth, viewportHeight:innerHeight, dpr:devicePixelRatio,
                         direction:getComputedStyle(document.documentElement).direction,
+                        reducedMotion:matchMedia('(prefers-reduced-motion: reduce)').matches,
+                        forcedColors:matchMedia('(forced-colors: active)').matches,
                         endSidebar:{x:end.x, y:end.y, width:end.width, height:end.height},
                         startSidebar:{x:start.x, y:start.y, width:start.width, height:start.height},
                         logoDisplay:getComputedStyle(logo).display, pseudoContent:ps.content, parents,
@@ -128,6 +134,10 @@ def main():
                 """)
             if geometry['direction'] != ('rtl' if args.rtl else 'ltr'):
                 raise RuntimeError(f'unexpected document direction: {geometry}')
+            if geometry['reducedMotion'] != args.reduced_motion:
+                raise RuntimeError(f'unexpected reduced-motion state: {geometry}')
+            if geometry['forcedColors'] != args.forced_colors:
+                raise RuntimeError(f'unexpected content forced-colors state: {geometry}')
             # Firefox screenshots use CSS pixels; reject unexpected image dimensions below.
             first, control, changed = (profile / name for name in ('first.png', 'control.png', 'changed.png'))
             first.write_bytes(m.screenshot(format='binary', full=False))
