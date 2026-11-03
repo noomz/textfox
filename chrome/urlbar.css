@@ -22,6 +22,6 @@
 #urlbar[open] > .urlbarView > .urlbarView-results {
   border-top: unset !important;
 }
-.urlbarView:not([noresults]) > .search-one-offs:not([hidden]) {
+#urlbar:not([noresults]) > .urlbarView > .search-one-offs:not([hidden]) {
   border-top: var(--border-width) solid var(--tf-accent) !important;
 }

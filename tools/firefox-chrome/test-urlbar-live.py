@@ -46,6 +46,31 @@ def check(nova):
                 if time.monotonic() >= deadline:
                     raise RuntimeError('URL bar results did not open')
                 time.sleep(.2)
+            diagnostic = m.execute_script("""
+                const url=document.getElementById('urlbar');
+                const one=url.querySelector('.urlbarView > .search-one-offs');
+                if (!one) return null;
+                const measure=()=>({urlNoResults:url.hasAttribute('noresults'), hidden:one.hidden,
+                  display:getComputedStyle(one).display, border:getComputedStyle(one).borderTopWidth,
+                  style:getComputedStyle(one).borderTopStyle});
+                const original=one.hidden;
+                if (url.hasAttribute('noresults')) throw new Error('expected populated URL bar');
+                one.hidden=false;
+                const populated=measure();
+                url.setAttribute('noresults','true');
+                const empty=measure();
+                one.hidden=true;
+                const hidden=measure();
+                url.removeAttribute('noresults'); one.hidden=original;
+                return {populated,empty,hidden};
+                """, sandbox='system')
+            print(json.dumps({'nova':nova, 'oneOffDiagnostic':diagnostic}), flush=True)
+            if diagnostic is None or diagnostic['populated']['border'] != '3px' or diagnostic['populated']['style'] != 'solid':
+                raise RuntimeError('configured one-offs separator missing with results')
+            if diagnostic['empty']['border'] != '0px':
+                raise RuntimeError('one-offs separator remains when URL bar has no results')
+            if diagnostic['hidden']['border'] != '0px':
+                raise RuntimeError('hidden one-offs unexpectedly receive separator')
             result = m.execute_script("""
                 const view = document.querySelector('#urlbar[open] .urlbarView');
                 const results = document.querySelector('#urlbar[open] > .urlbarView > .urlbarView-results');
