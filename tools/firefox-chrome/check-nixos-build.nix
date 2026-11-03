@@ -19,6 +19,15 @@ let
         textfox.enable = true;
         textfox.config.border.width = "7px";
         textfox.config.font.family = "monospace";
+        textfox.config.extraConfig = ''
+          :root { --tf-border-width: 9px; }
+        '';
+        textfox.extraUserChrome = ''
+          :root { --tf-border-width: 11px; }
+        '';
+        textfox.extraUserContent = ''
+          :root { --tf-border-width: 13px; }
+        '';
         system.stateVersion = "26.05";
       }
     ];
