@@ -81,6 +81,7 @@ def main():
                 const r = document.querySelector('.nova-enabled .search-inner-wrapper').getBoundingClientRect();
                 const logo = document.querySelector('.nova-enabled .wordmark');
                 const ps = getComputedStyle(logo, '::before');
+                const end = document.querySelector('.container.nova-enabled > .sidebar-inline-end').getBoundingClientRect();
                 const parents = [];
                 for (let e = logo; e && parents.length < 5; e = e.parentElement) {
                   const s = getComputedStyle(e), b = e.getBoundingClientRect();
@@ -91,6 +92,7 @@ def main():
                 return {x:r.x, y:r.y, width:r.width, height:r.height,
                         viewportWidth:innerWidth, viewportHeight:innerHeight, dpr:devicePixelRatio,
                         direction:getComputedStyle(document.documentElement).direction,
+                        endSidebar:{x:end.x, y:end.y, width:end.width, height:end.height},
                         logoDisplay:getComputedStyle(logo).display, pseudoContent:ps.content, parents,
                         gridChildren:[...document.querySelector('.container.nova-enabled').children].map(e => {
                           const s = getComputedStyle(e), b = e.getBoundingClientRect();
@@ -126,11 +128,21 @@ def main():
             crop = f'{width}x{height}+{x}+{y}'
             full_crop = f"{geometry['viewportWidth']}x{geometry['viewportHeight']}+0+0"
             full_difference = difference(control, changed, full_crop)
+            end = geometry['endSidebar']
+            left, top = max(0, int(end['x'])), max(0, int(end['y']))
+            right = min(geometry['viewportWidth'], int(end['x'] + end['width']))
+            bottom = min(geometry['viewportHeight'], int(end['y'] + end['height']))
+            if right <= left or bottom <= top:
+                raise RuntimeError(f'end sidebar outside viewport: {end}')
+            end_crop = f'{right - left}x{bottom - top}+{left}+{top}'
             print(json.dumps({'firefox': metadata, 'requestedWidth': args.width, 'fontSize': args.font_size,
                               'experiment': args.experiment, 'interventionVisible': full_difference != 0,
                               'search': geometry, 'crop': crop,
                               'controlDifference': difference(first, control, crop),
                               'logoTransparentDifference': difference(control, changed, crop),
+                              'endSidebarCrop': end_crop,
+                              'endSidebarControlDifference': difference(first, control, end_crop),
+                              'endSidebarDifference': difference(control, changed, end_crop),
                               'fullImageDifference': full_difference}))
         finally:
             try:
