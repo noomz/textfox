@@ -112,6 +112,12 @@ A separate disposable headless app-menu probe opened `#appMenu-popup` in vanilla
 
 A parallel URL bar no-results investigation stopped before producing findings when `jev-guard` blocked a scout's command. The guard was not bypassed. Reassess the blocked command and investigate safely before retrying; do not change guard configuration as a workaround. No tracked code changes remained from these investigations. T1 through T4 remain incomplete, and Nova support remains unclaimed.
 
+## Nova widget menu activation
+
+`tools/firefox-chrome/test-newtab-widget-menu.py` opens a disposable Nova new-tab widget menu with Enter, moves to its first item with Arrow Down, verifies focus on the `Hide widgets` menu item and its shadow button, and activates it with Enter. On headless Firefox 159.0 build `20261022150525`, the widget menu was removed after activation in vanilla and textfox profiles with browser Nova both off and on. The test enables feeds and widgets only in temporary profiles and may make network requests. It does not test classic new-tab menus, tab order, painted focus, contrast or other menu actions. T4 remains in progress.
+
+Run `MOZ_HEADLESS=1 "$HOME/.cache/textfox-firefox-live/venv/bin/python" tools/firefox-chrome/test-newtab-widget-menu.py`.
+
 ## Sidebar tools configuration
 
 `tools/firefox-chrome/test-sidebar-tools-live.py` checks `--tf-display-sidebar-tools` with vertical tabs and sidebar revamp enabled. On disposable headless Firefox 159.0 build `20261022150525`, both browser Nova states honored `flex` and `none`: the initialized tools wrapper had seven buttons and nonzero geometry for `flex`, and zero geometry for `none`. The wrapper is in `sidebar-main`'s shadow root with no `part` attribute and no matching light-DOM element, yet the textfox rule applies in these profiles. Do not assume a shadow boundary alone proves this option is broken. A separate attempt to run the same fixture with horizontal tabs and `sidebar.visibility=always-show` timed out waiting for the wrapper; the cause is unknown, so that combination is not verified. This checks one option, platform and delivery method; it does not verify interaction, other settings or theme rendering. T2 and T4 remain open.
