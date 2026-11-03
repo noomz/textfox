@@ -94,6 +94,20 @@ def check(nova, display):
                     """, sandbox='system')
                 if drag['expanded'] or drag['height'] <= 0:
                     raise RuntimeError(f'collapsed tools fixture invalid: {drag}')
+                m.execute_script('gBrowser.pinTab(gBrowser.addTrustedTab("about:blank"))', sandbox='system')
+                pinned = m.execute_script("""
+                    const tabs = document.getElementById('tabbrowser-tabs');
+                    const p = document.getElementById('pinned-tabs-container');
+                    const r = p.getBoundingClientRect(), t = tabs.getBoundingClientRect();
+                    return {orient:p.getAttribute('orient'), display:getComputedStyle(p).display,
+                            pinnedWidth:r.width, tabsWidth:t.width, expanded:tabs.hasAttribute('expanded'),
+                            pinnedTabs:gBrowser.tabs.filter(tab => tab.pinned).length};
+                    """, sandbox='system')
+                print(json.dumps({'nova': nova, 'pinned': pinned}), flush=True)
+                if (pinned['orient'] != 'vertical' or pinned['expanded'] or pinned['display'] == 'none'
+                        or pinned['pinnedTabs'] < 1 or pinned['pinnedWidth'] <= 0
+                        or abs(pinned['pinnedWidth'] - pinned['tabsWidth']) > 1):
+                    raise RuntimeError('collapsed pinned tabs do not fill the tab strip')
                 actions = m.actions.sequence('pointer', 'mouse', {'pointerType': 'mouse'})
                 actions.pointer_move(round(drag['x']), round(drag['y'])).pointer_down()
                 actions.pointer_move(round(drag['x']), round(drag['y'] + 100), duration=500).pointer_up().perform()
