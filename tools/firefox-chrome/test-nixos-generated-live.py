@@ -51,6 +51,9 @@ def main():
         (chrome / 'userChrome.css').write_text('@import url("control.css");\n' + (chrome / 'userChrome.css').read_text())
         (chrome / 'control.css').write_text(':root { --tf-import-control-sentinel: imported; }\n')
         prefs = {'marionette.port': port, 'browser.nova.enabled': False,
+                 'browser.newtabpage.activity-stream.nova.enabled': True,
+                 'browser.newtabpage.activity-stream.testing.shouldInitializeFeeds': True,
+                 'browser.newtabpage.activity-stream.widgets.enabled': True,
                  'toolkit.legacyUserProfileCustomizations.stylesheets': True,
                  'browser.shell.checkDefaultBrowser': False}
         (profile / 'user.js').write_text(''.join(
@@ -89,6 +92,34 @@ def main():
                 raise RuntimeError('valid import control did not load')
             if result['configSentinel'] or result['browserSentinel']:
                 raise RuntimeError('late generated imports unexpectedly loaded profile files')
+            m.execute_script('gBrowser.selectedTab = gBrowser.addTrustedTab("about:newtab")', sandbox='system')
+            m.set_context('content')
+            m.switch_to_window(m.window_handles[-1])
+            deadline = time.monotonic() + 30
+            while not m.execute_script('return location.href === "about:newtab" && !!document.querySelector(".nova-enabled .tile")'):
+                if time.monotonic() >= deadline:
+                    raise RuntimeError('generated userContent fixture did not initialize')
+                time.sleep(.25)
+            content = m.execute_script("""
+                const tile = getComputedStyle(document.querySelector('.nova-enabled .tile'));
+                return {borderWidth:tile.borderTopWidth, borderStyle:tile.borderTopStyle,
+                        color:tile.borderTopColor, borderToken:tile.getPropertyValue('--border-width').trim(),
+                        tfBorder:tile.getPropertyValue('--tf-border-width').trim(),
+                        borderColorToken:tile.getPropertyValue('--newtab-border-color').trim(),
+                        radius:tile.borderRadius, shadow:tile.boxShadow};
+                """)
+            print(json.dumps({'generatedContent':content}), flush=True)
+            if content['borderWidth'] != '7px' or content['borderStyle'] != 'solid' or content['radius'] != '0px' or content['shadow'] != 'none':
+                raise RuntimeError('generated userContent CSS did not style Nova shortcut tile')
+            m.execute_script("document.body.style.setProperty('--newtab-wallpaper-color', 'rgb(20, 40, 60)')")
+            wallpaper = m.execute_script("""
+                const s=getComputedStyle(document.querySelector('.nova-enabled .tile'));
+                return {width:s.borderTopWidth, style:s.borderTopStyle,
+                        color:s.borderTopColor, token:s.getPropertyValue('--newtab-border-color').trim()};
+                """)
+            print(json.dumps({'generatedContentWallpaper':wallpaper}), flush=True)
+            if wallpaper['width'] != '7px' or wallpaper['style'] != 'solid' or not wallpaper['token']:
+                raise RuntimeError('generated userContent border failed with wallpaper color')
         finally:
             try:
                 if m:

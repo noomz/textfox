@@ -17,6 +17,7 @@ import json, sys
 r = json.load(sys.stdin)
 browser = sys.argv[1] == "on"
 newtab = sys.argv[2] == "on"
+theme = sys.argv[3]
 assert isinstance(r["defaultPreferences"]["browser.nova.enabled"], bool), r
 assert isinstance(r["defaultPreferences"]["browser.newtabpage.activity-stream.nova.enabled"], bool), r
 assert r["preferences"]["browser.nova.enabled"] is browser, r
@@ -25,7 +26,10 @@ assert r["url"] == "about:newtab" and r["initialized"], r
 assert r["selectors"][".search-wrapper"] is not None, r
 assert (r["selectors"][".nova-enabled"] is not None) is newtab, r
 assert (r["selectors"][".classic-enabled"] is not None) is not newtab, r
-' "$browser" "$newtab"
+if theme == "textfox":
+    tile = r["selectors"][".tile"]
+    assert tile is not None and tile["border"].startswith("2px solid"), r
+' "$browser" "$newtab" "$theme"
     done
   done
 done
