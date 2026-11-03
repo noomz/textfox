@@ -52,6 +52,7 @@ def main():
     parser.add_argument('--empty-logo', action='store_true')
     parser.add_argument('--reduced-motion', action='store_true')
     parser.add_argument('--forced-colors', action='store_true')
+    parser.add_argument('--centered-logo', action='store_true')
     parser.add_argument('--experiment', action='store_true')
     parser.add_argument('--experiment-wrap', action='store_true')
     parser.add_argument('--experiment-column', action='store_true')
@@ -76,6 +77,10 @@ def main():
                  'intl.l10n.pseudo': 'bidi' if args.rtl else '',
                  'ui.prefersReducedMotion': 1 if args.reduced_motion else 0,
                  'browser.display.document_color_use': 2 if args.forced_colors else 1}
+        if args.centered_logo:
+            prefs.update({'browser.newtabpage.activity-stream.feeds.section.topstories': False,
+                          'browser.newtabpage.activity-stream.feeds.section.highlights': False,
+                          'browser.newtabpage.activity-stream.widgets.enabled': False})
         (profile / 'user.js').write_text(''.join(
             f'user_pref({json.dumps(k)}, {json.dumps(v)});\n' for k, v in prefs.items()))
         env = os.environ.copy()
@@ -128,6 +133,7 @@ def main():
                 return {x:r.x, y:r.y, width:r.width, height:r.height,
                         viewportWidth:innerWidth, viewportHeight:innerHeight, dpr:devicePixelRatio,
                         direction:getComputedStyle(document.documentElement).direction,
+                        centered:document.querySelector('.container.nova-enabled').classList.contains('logo-in-content'),
                         reducedMotion:matchMedia('(prefers-reduced-motion: reduce)').matches,
                         forcedColors:matchMedia('(forced-colors: active)').matches,
                         endSidebar:{x:end.x, y:end.y, width:end.width, height:end.height},
@@ -149,6 +155,8 @@ def main():
                 """)
             if geometry['direction'] != ('rtl' if args.rtl else 'ltr'):
                 raise RuntimeError(f'unexpected document direction: {geometry}')
+            if args.centered_logo and not geometry['centered']:
+                raise RuntimeError(f'centered logo fixture not active: {geometry}')
             if geometry['reducedMotion'] != args.reduced_motion:
                 raise RuntimeError(f'unexpected reduced-motion state: {geometry}')
             if geometry['forcedColors'] != args.forced_colors:
@@ -201,7 +209,7 @@ def main():
                     raise RuntimeError('search click did not focus URL bar')
                 time.sleep(.1)
             print(json.dumps({'firefox': metadata, 'requestedWidth': args.width, 'fontSize': args.font_size,
-                              'longLogo': args.long_logo, 'emptyLogo': args.empty_logo,
+                              'longLogo': args.long_logo, 'emptyLogo': args.empty_logo, 'centeredRequested':args.centered_logo,
                               'searchClickFocusedUrlbar': True, 'scroll': scroll,
                               'experiment': args.experiment, 'experimentWrap': args.experiment_wrap,
                               'experimentColumn': args.experiment_column,
