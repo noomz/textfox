@@ -23,6 +23,7 @@ ROOT = Path(__file__).resolve().parents[2]
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('nixpkgs_path')
+    parser.add_argument('--forced-colors', action='store_true')
     args = parser.parse_args()
     if not re.fullmatch(r'/nix/store/[a-zA-Z0-9._/-]+', args.nixpkgs_path):
         parser.error('nixpkgs_path must be a literal /nix/store path')
@@ -54,6 +55,7 @@ def main():
                  'browser.newtabpage.activity-stream.nova.enabled': True,
                  'browser.newtabpage.activity-stream.testing.shouldInitializeFeeds': True,
                  'browser.newtabpage.activity-stream.widgets.enabled': True,
+                 'browser.display.document_color_use': 2 if args.forced_colors else 1,
                  'toolkit.legacyUserProfileCustomizations.stylesheets': True,
                  'browser.shell.checkDefaultBrowser': False}
         (profile / 'user.js').write_text(''.join(
@@ -106,10 +108,11 @@ def main():
                         color:tile.borderTopColor, borderToken:tile.getPropertyValue('--border-width').trim(),
                         tfBorder:tile.getPropertyValue('--tf-border-width').trim(),
                         borderColorToken:tile.getPropertyValue('--newtab-border-color').trim(),
-                        radius:tile.borderRadius, shadow:tile.boxShadow};
+                        radius:tile.borderRadius, shadow:tile.boxShadow,
+                        forcedColors:matchMedia('(forced-colors: active)').matches};
                 """)
             print(json.dumps({'generatedContent':content}), flush=True)
-            if content['borderWidth'] != '7px' or content['borderStyle'] != 'solid' or content['radius'] != '0px' or content['shadow'] != 'none':
+            if content['forcedColors'] != args.forced_colors or content['borderWidth'] != '7px' or content['borderStyle'] != 'solid' or content['radius'] != '0px' or content['shadow'] != 'none':
                 raise RuntimeError('generated userContent CSS did not style Nova shortcut tile')
             m.execute_script("document.body.style.setProperty('--newtab-wallpaper-color', 'rgb(20, 40, 60)')")
             wallpaper = m.execute_script("""
