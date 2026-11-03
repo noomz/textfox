@@ -112,6 +112,12 @@ A separate disposable headless app-menu probe opened `#appMenu-popup` in vanilla
 
 A parallel URL bar no-results investigation stopped before producing findings when `jev-guard` blocked a scout's command. The guard was not bypassed. Reassess the blocked command and investigate safely before retrying; do not change guard configuration as a workaround. No tracked code changes remained from these investigations. T1 through T4 remain incomplete, and Nova support remains unclaimed.
 
+## Nova new-tab with search disabled
+
+`tools/firefox-chrome/test-nova-no-search-live.py` verifies effective preferences and initializes Nova new-tab with `showSearch=false` in disposable vanilla and textfox profiles. On headless Firefox 159.0 build `20261022150525`, both browser Nova states rendered the centered-logo layout and shortcuts with nonzero geometry and no search wrapper. This does not prove painted logo/shortcut separation, interaction, clipping or accessibility. Feeds and widgets are probe-only overrides and may make network requests. T3 and T4 remain open.
+
+Run `MOZ_HEADLESS=1 "$HOME/.cache/textfox-firefox-live/venv/bin/python" tools/firefox-chrome/test-nova-no-search-live.py`.
+
 ## Split-view keyboard resize
 
 `tools/firefox-chrome/test-split-view-live.py` creates a split view in disposable profiles, verifies a visible focusable splitter with separator role and `aria-controls` pointing to the first panel, and sends Arrow Left. In headless Firefox 159.0 build `20261022150525`, the first panel shrank and `aria-valuenow` changed in vanilla and textfox profiles with both browser Nova states. The test programmatically focuses the splitter; it does not verify tab order, painted focus, RTL, pointer resizing, forced colors or delivery paths. The first run showed textfox panel bounding width exceeding `aria-valuenow` by about 4 CSS pixels. Firefox release `toolkit/content/widgets/tabbox.js` derives that value from `clientWidth`, not bounding width. A follow-up measured 2px borders on both sides of the themed panel and confirmed `aria-valuenow` equaled `clientWidth` after resizing in all four cases. This explains the measured difference; it does not establish complete accessibility. T2 and T4 remain open.
