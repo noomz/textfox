@@ -3,6 +3,7 @@
 import argparse
 import json
 import os
+import re
 from pathlib import Path
 import shutil
 import socket
@@ -14,6 +15,20 @@ import zipfile
 from ff_inspect import connect
 
 ROOT = Path(__file__).resolve().parents[2]
+
+
+def contrast(background, foreground):
+    match = re.fullmatch(r'color\(srgb ([\d.]+) ([\d.]+) ([\d.]+)\)', background)
+    fg = re.fullmatch(r'rgb\((\d+), (\d+), (\d+)\)', foreground)
+    if not match or not fg:
+        return None
+    def luminance(channels):
+        def linear(c):
+            return c / 12.92 if c <= .04045 else ((c + .055) / 1.055) ** 2.4
+        return sum(w * linear(c) for w, c in zip((.2126, .7152, .0722), channels))
+    a = luminance(map(float, match.groups()))
+    b = luminance(int(c) / 255 for c in fg.groups())
+    return (max(a, b) + .05) / (min(a, b) + .05)
 
 
 def check(nova, dark, source):
@@ -80,7 +95,8 @@ def check(nova, dark, source):
                 const tab=gBrowser.addTrustedTab('about:blank');
                 InspectorUtils.addPseudoClassLock(tab, ':hover');
                 const bg=getComputedStyle(tab.querySelector('.tab-background'));
-                const result={background:bg.backgroundColor, hover:tab.matches(':hover')};
+                const result={background:bg.backgroundColor, color:getComputedStyle(tab.querySelector('.tab-content')).color,
+                              hover:tab.matches(':hover')};
                 InspectorUtils.removePseudoClassLock(tab, ':hover');
                 return result;
                 """, sandbox='system')
@@ -89,7 +105,9 @@ def check(nova, dark, source):
                 bg.style.setProperty('--tab-selected-bgcolor', 'var(--tab-background-color-selected)', 'important');
                 """, sandbox='system')
             after = m.execute_script(js, sandbox='system')
-            print(json.dumps({'firefox': meta, 'dark': dark, 'before': before, 'hover':hover, 'after': after}), flush=True)
+            print(json.dumps({'firefox': meta, 'dark': dark, 'before': before, 'hover':hover, 'after': after,
+                              'computedSelectedContrast':contrast(before['background'], before['color']),
+                              'computedHoverContrast':contrast(hover['background'], hover['color'])}), flush=True)
         finally:
             try:
                 if m:
