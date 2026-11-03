@@ -30,6 +30,7 @@ def main():
     parser.add_argument('--width', type=int, default=1280)
     parser.add_argument('--rtl', action='store_true')
     parser.add_argument('--font-size', type=int, default=14)
+    parser.add_argument('--experiment', action='store_true')
     args = parser.parse_args()
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0))
@@ -70,14 +71,32 @@ def main():
                     raise RuntimeError('Nova new-tab did not initialize')
                 time.sleep(.25)
             time.sleep(2)
+            if args.experiment:
+                m.execute_script("""
+                    const style = document.createElement('style');
+                    style.textContent = '.container.nova-enabled { grid-template-rows: auto var(--row-height) !important; } .nova-enabled .sidebar-inline-start { grid-row: 1 !important; } .nova-enabled .wordmark { height: auto !important; }';
+                    document.head.appendChild(style);
+                    """)
             geometry = m.execute_script("""
                 const r = document.querySelector('.nova-enabled .search-inner-wrapper').getBoundingClientRect();
                 const logo = document.querySelector('.nova-enabled .wordmark');
                 const ps = getComputedStyle(logo, '::before');
+                const parents = [];
+                for (let e = logo; e && parents.length < 5; e = e.parentElement) {
+                  const s = getComputedStyle(e), b = e.getBoundingClientRect();
+                  parents.push({tag:e.localName, class:e.className, display:s.display,
+                    gridColumn:s.gridColumn, gridRow:s.gridRow, gridTemplateColumns:s.gridTemplateColumns,
+                    gridTemplateRows:s.gridTemplateRows, x:b.x, y:b.y, width:b.width, height:b.height});
+                }
                 return {x:r.x, y:r.y, width:r.width, height:r.height,
                         viewportWidth:innerWidth, viewportHeight:innerHeight, dpr:devicePixelRatio,
                         direction:getComputedStyle(document.documentElement).direction,
-                        logoDisplay:getComputedStyle(logo).display, pseudoContent:ps.content};
+                        logoDisplay:getComputedStyle(logo).display, pseudoContent:ps.content, parents,
+                        gridChildren:[...document.querySelector('.container.nova-enabled').children].map(e => {
+                          const s = getComputedStyle(e), b = e.getBoundingClientRect();
+                          return {tag:e.localName, class:e.className, display:s.display, gridRow:s.gridRow,
+                            gridColumn:s.gridColumn, x:b.x, y:b.y, width:b.width, height:b.height};
+                        })};
                 """)
             if geometry['direction'] != ('rtl' if args.rtl else 'ltr'):
                 raise RuntimeError(f'unexpected document direction: {geometry}')
@@ -108,7 +127,7 @@ def main():
             full_crop = f"{geometry['viewportWidth']}x{geometry['viewportHeight']}+0+0"
             full_difference = difference(control, changed, full_crop)
             print(json.dumps({'firefox': metadata, 'requestedWidth': args.width, 'fontSize': args.font_size,
-                              'interventionVisible': full_difference != 0,
+                              'experiment': args.experiment, 'interventionVisible': full_difference != 0,
                               'search': geometry, 'crop': crop,
                               'controlDifference': difference(first, control, crop),
                               'logoTransparentDifference': difference(control, changed, crop),
