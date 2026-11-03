@@ -135,7 +135,15 @@ def main():
             if right <= left or bottom <= top:
                 raise RuntimeError(f'end sidebar outside viewport: {end}')
             end_crop = f'{right - left}x{bottom - top}+{left}+{top}'
+            m.find_element('css selector', '.nova-enabled content-search-handoff-ui').click()
+            m.set_context('chrome')
+            deadline = time.monotonic() + 5
+            while not m.execute_script('return gURLBar.focused', sandbox='system'):
+                if time.monotonic() >= deadline:
+                    raise RuntimeError('search click did not focus URL bar')
+                time.sleep(.1)
             print(json.dumps({'firefox': metadata, 'requestedWidth': args.width, 'fontSize': args.font_size,
+                              'searchClickFocusedUrlbar': True,
                               'experiment': args.experiment, 'interventionVisible': full_difference != 0,
                               'search': geometry, 'crop': crop,
                               'controlDifference': difference(first, control, crop),
