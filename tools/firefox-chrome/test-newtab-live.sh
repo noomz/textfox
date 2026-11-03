@@ -29,6 +29,7 @@ assert (r["selectors"][".classic-enabled"] is not None) is not newtab, r
 if theme == "textfox":
     tile = r["selectors"][".tile"]
     assert tile is not None and tile["border"].startswith("2px solid"), r
+    assert tile["border-radius"] == "0px" and tile["box-shadow"] == "none", r
 ' "$browser" "$newtab" "$theme"
     done
   done
