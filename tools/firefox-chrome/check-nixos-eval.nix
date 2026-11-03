@@ -25,10 +25,7 @@ let
       {
         textfox.enable = true;
         textfox.config.border.width = "7px";
-        textfox.config.newtabLogo = ''
-          say "hi"\path
-          1next
-        '';
+        textfox.config.newtabLogo = "say \"hi\"\\path\n1next\rtest\n";
         system.stateVersion = "26.05";
       }
     ];
@@ -39,7 +36,7 @@ let
 in
 assert builtins.length matches == 1;
 assert lib.hasInfix "--tf-border-width: 7px;" evaluated.config.textfox.configCss;
-assert lib.hasInfix ''--tf-newtab-logo: "say \"hi\"\\path\A 1next\A ";''
+assert lib.hasInfix ''--tf-newtab-logo: "say \"hi\"\\path\A 1next\D test\A ";''
   evaluated.config.textfox.configCss;
 assert lib.hasInfix ''pref("browser.nova.enabled", false);''
   (builtins.head matches).passthru.capturedPrefs;

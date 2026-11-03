@@ -60,7 +60,7 @@ def main():
                 return {content:p.content, border:getComputedStyle(document.documentElement).getPropertyValue('--tf-border-width').trim()};
                 """)
             print(json.dumps({'firefox':meta, 'result':result}), flush=True)
-            if result['content'] != '"say \\"hi\\"\\\\path\\a 1next\\a "':
+            if result['content'] != '"say \\"hi\\"\\\\path\\a 1next\\d test\\a "':
                 raise RuntimeError('Nix-generated logo does not preserve quotes, backslashes, and newlines')
             if result['border'] != '7px':
                 raise RuntimeError('Nix-generated CSS did not apply')
