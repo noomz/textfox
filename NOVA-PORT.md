@@ -251,3 +251,7 @@ git status --short
 ```
 
 The untracked `.pi/` directory was already present during this work and has not been modified intentionally. Do not remove it as part of this port.
+
+## NixOS interrupted-install mock checks
+
+`node tools/firefox-chrome/test-nixos-update.js` exercises the extracted autoconfig branch with a stateful in-memory profile. Injected failures before directory creation, each CSS copy, and marker creation leave the expected completed operations; no failure triggers a restart. A retry after directory creation is refused and preserves the partial files, while a failure before directory creation can retry the fresh install. Existing user files and an old store marker are preserved by the refusal. A negative control with the refusal guard removed failed the retry assertion. These mocks do not simulate partial writes within an operation, Firefox file APIs, actual autoconfig execution, or NixOS activation. Refusing a partial install is containment, not automatic recovery. T5 and V2 remain open.
