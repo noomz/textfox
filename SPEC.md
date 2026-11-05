@@ -55,3 +55,4 @@ Port textfox to Firefox Nova without losing TUI appearance, existing configurati
 
 | id | date | cause | fix |
 |---|---|---|---|
+| B1 | 2026-11-05 | NixOS autoconfig imports removed `FileUtils.jsm` on Firefox 159. | V2,V7; fix pending. |
