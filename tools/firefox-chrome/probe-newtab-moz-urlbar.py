@@ -3,6 +3,7 @@
 
 The disposable new-tab profile enables feeds and may make network requests.
 """
+import argparse
 import json
 import os
 from pathlib import Path
@@ -13,13 +14,14 @@ import tempfile
 import time
 
 from marionette_driver.errors import NoSuchElementException, StaleElementException
+from marionette_driver.keys import Keys
 
 from ff_inspect import connect
 
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def check(browser_nova, newtab_nova, themed):
+def check(browser_nova, newtab_nova, themed, variant):
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0))
         port = sock.getsockname()[1]
@@ -35,8 +37,8 @@ def check(browser_nova, newtab_nova, themed):
                  'browser.newtabpage.activity-stream.widgets.enabled': True,
                  'browser.newtabpage.activity-stream.improvesearch.handoffToAwesomebar': True,
                  'browser.urlbar.newtab.featureGate': True,
-                 'browser.urlbar.newtab.variantA': False,
-                 'browser.urlbar.newtab.variantB': False,
+                 'browser.urlbar.newtab.variantA': variant in ('a', 'both'),
+                 'browser.urlbar.newtab.variantB': variant in ('b', 'both'),
                  'browser.search.suggest.enabled': False,
                  'toolkit.legacyUserProfileCustomizations.stylesheets': True,
                  'browser.shell.checkDefaultBrowser': False}
@@ -58,6 +60,8 @@ def check(browser_nova, newtab_nova, themed):
                   newtabNova:Services.prefs.getBoolPref('browser.newtabpage.activity-stream.nova.enabled'),
                   handoff:Services.prefs.getBoolPref('browser.newtabpage.activity-stream.improvesearch.handoffToAwesomebar'),
                   gatePref:Services.prefs.getBoolPref('browser.urlbar.newtab.featureGate'),
+                  variantAPref:Services.prefs.getBoolPref('browser.urlbar.newtab.variantA'),
+                  variantBPref:Services.prefs.getBoolPref('browser.urlbar.newtab.variantB'),
                   gate:ChromeUtils.importESModule('moz-src:///browser/components/urlbar/UrlbarPrefs.sys.mjs').UrlbarPrefs.get('newtabFeatureGate'),
                   variantA:ChromeUtils.importESModule('moz-src:///browser/components/urlbar/UrlbarPrefs.sys.mjs').UrlbarPrefs.get('newtabVariantA'),
                   variantB:ChromeUtils.importESModule('moz-src:///browser/components/urlbar/UrlbarPrefs.sys.mjs').UrlbarPrefs.get('newtabVariantB')};
@@ -65,7 +69,11 @@ def check(browser_nova, newtab_nova, themed):
             if (process.poll() is not None or Path(metadata['profile']).resolve() != profile.resolve()
                     or metadata['browserNova'] != browser_nova or metadata['newtabNova'] != newtab_nova
                     or not metadata['handoff'] or not metadata['gatePref']
-                    or metadata['gate'] != browser_nova or metadata['variantA'] or metadata['variantB']):
+                    or metadata['variantAPref'] != (variant in ('a', 'both'))
+                    or metadata['variantBPref'] != (variant in ('b', 'both'))
+                    or metadata['gate'] != browser_nova
+                    or metadata['variantA'] != (browser_nova and variant in ('a', 'both'))
+                    or metadata['variantB'] != (browser_nova and variant in ('b', 'both'))):
                 raise RuntimeError('unexpected Firefox process, profile, or preferences')
             m.execute_script('gBrowser.selectedTab = gBrowser.addTrustedTab("about:newtab")', sandbox='system')
             m.set_context('content')
@@ -87,7 +95,12 @@ def check(browser_nova, newtab_nova, themed):
                         radius:s.borderTopLeftRadius,background:s.backgroundColor,outline:s.outlineStyle};
                     };
                     const root=getComputedStyle(document.documentElement);
+                    const switcher=host?.querySelector('.searchmode-switcher');
+                    if (host && (!switcher || !switcher.getBoundingClientRect().width)) return null;
                     return {moz:!!host,handoff:!!handoff,shadow:!!host?.shadowRoot,
+                      variantA:host?.hasAttribute('variant-a'),variantB:host?.hasAttribute('variant-b'),
+                      switcher:inspect(switcher), switcherType:switcher?.getAttribute('type'),
+                      wordmark:switcher?.getAttribute('wordmark'),
                       input:inspect(host?.querySelector('input.urlbar-input')),
                       background:inspect(host?.querySelector('.urlbar-background')),
                       tile:inspect(document.querySelector('.top-site-outer .tile')),
@@ -100,12 +113,68 @@ def check(browser_nova, newtab_nova, themed):
                     raise RuntimeError('in-page search fixture did not initialize')
                 time.sleep(.2)
             if browser_nova:
-                if result['handoff'] or result['shadow'] or result['input']['width'] <= 0:
+                if (result['handoff'] or result['shadow'] or result['input']['width'] <= 0
+                        or result['variantA'] != (variant == 'a')
+                        or result['variantB'] != (variant in ('b', 'both'))):
                     raise RuntimeError(f'unexpected moz-urlbar structure: {result}')
+                if variant in ('b', 'both') and result['switcher']['y'] + result['switcher']['height'] > result['input']['y'] + 1:
+                    raise RuntimeError(f'variant B switcher is not above the input: {result}')
                 if themed and (result['tfWidth'] != '7px' or result['tfRounding'] != '3px'
                                or result['input']['border'] != '7px' or result['input']['radius'] != '3px'
                                or result['tile']['border'] != '7px' or result['tile']['radius'] != '3px'):
                     raise RuntimeError(f'configured theme styles did not reach controls: {result}')
+                switcher_replacements = 0
+                if variant != 'default':
+                    switcher_selector = '.search-wrapper moz-urlbar .searchmode-switcher'
+                    deadline = time.monotonic() + 15
+                    while True:
+                        marked = m.execute_script("""
+                            const b=document.querySelector(arguments[0]);
+                            if (!b) return false;
+                            b.setAttribute('data-tf-probe-id', arguments[1]);
+                            return true;
+                            """, script_args=[switcher_selector, str(switcher_replacements)])
+                        try:
+                            if not marked:
+                                raise NoSuchElementException('in-page switcher not present')
+                            m.find_element('css selector', switcher_selector).click()
+                        except (NoSuchElementException, StaleElementException):
+                            switcher_replacements += 1
+                            if time.monotonic() >= deadline:
+                                raise
+                            time.sleep(.1)
+                            continue
+                        while True:
+                            menu = m.execute_script("""
+                                const h=document.querySelector('.search-wrapper moz-urlbar');
+                                const b=h?.querySelector('.searchmode-switcher');
+                                return {same:b?.getAttribute('data-tf-probe-id') === arguments[0],
+                                  open:!!h?.querySelector('.searchmode-switcher-panel-list:popover-open')};
+                                """, script_args=[str(switcher_replacements)])
+                            if not menu['same'] or menu['open']:
+                                break
+                            if time.monotonic() >= deadline:
+                                raise RuntimeError('search engine switcher menu did not open')
+                            time.sleep(.1)
+                        if menu['same'] and menu['open']:
+                            m.actions.sequence('key', 'keyboard').send_keys(Keys.ESCAPE).perform()
+                            while True:
+                                menu = m.execute_script("""
+                                    const h=document.querySelector('.search-wrapper moz-urlbar');
+                                    const b=h?.querySelector('.searchmode-switcher');
+                                    return {same:b?.getAttribute('data-tf-probe-id') === arguments[0],
+                                      open:!!h?.querySelector('.searchmode-switcher-panel-list:popover-open')};
+                                    """, script_args=[str(switcher_replacements)])
+                                if not menu['same'] or not menu['open']:
+                                    break
+                                if time.monotonic() >= deadline:
+                                    raise RuntimeError('Escape did not close the search engine switcher menu')
+                                time.sleep(.1)
+                            if menu['same']:
+                                break
+                        switcher_replacements += 1
+                        if time.monotonic() >= deadline:
+                            raise RuntimeError('in-page switcher was repeatedly replaced during interaction')
                 selector = '.search-wrapper moz-urlbar input.urlbar-input'
                 deadline = time.monotonic() + 15
                 replaced = 0
@@ -161,8 +230,9 @@ def check(browser_nova, newtab_nova, themed):
                 if result['moz'] or not result['handoff']:
                     raise RuntimeError(f'expected handoff fallback: {result}')
                 state=None
-            print(json.dumps({'firefox':metadata,'themed':themed,'result':result,'inputState':state,
-                              'interactionReplacements':replaced if browser_nova else None}),flush=True)
+            print(json.dumps({'firefox':metadata,'themed':themed,'variant':variant,'result':result,'inputState':state,
+                              'interactionReplacements':replaced if browser_nova else None,
+                              'switcherReplacements':switcher_replacements if browser_nova and variant != 'default' else None}),flush=True)
         finally:
             try:
                 if m:
@@ -177,7 +247,10 @@ def check(browser_nova, newtab_nova, themed):
 
 
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--variant', choices=('default', 'a', 'b', 'both'), default='default')
+    args = parser.parse_args()
     for browser_nova in (False, True):
         for newtab_nova in (False, True):
             for themed in (False, True):
-                check(browser_nova, newtab_nova, themed)
+                check(browser_nova, newtab_nova, themed, args.variant)
