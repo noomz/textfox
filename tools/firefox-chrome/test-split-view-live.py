@@ -155,6 +155,13 @@ def check(nova, themed, rtl, high_contrast):
                 return {first:{x:a.x,y:a.y,width:a.width,height:a.height},
                         second:{x:b.x,y:b.y,width:b.width,height:b.height},
                         splitter:{x:split.x,y:split.y,width:split.width,height:split.height},
+                        panelOverflow:panels.map(panel => {
+                          const container=panel.querySelector('.browserContainer');
+                          const p=getComputedStyle(panel), c=getComputedStyle(container);
+                          return {selected:panel.classList.contains('deck-selected'),
+                            panelX:p.overflowX, panelY:p.overflowY,
+                            containerX:c.overflowX, containerY:c.overflowY};
+                        }),
                         footers:panels.map(panel => {
                           const e=panel.querySelector('split-view-footer');
                           if (!e) return null;
@@ -167,6 +174,33 @@ def check(nova, themed, rtl, high_contrast):
                         })};
                 """, sandbox='system')
             print(json.dumps({'nova': nova, 'themed': themed, 'geometry': overlap}), flush=True)
+            overflow_fixture = m.execute_script("""
+                const panels=gBrowser.tabpanels.splitViewPanels.map(id => document.getElementById(id));
+                const inactive=panels.find(p => !p.classList.contains('deck-selected'));
+                const active=panels.find(p => p.classList.contains('deck-selected'));
+                const container=inactive.querySelector('.browserContainer');
+                const a=active.getBoundingClientRect(), i=inactive.getBoundingClientRect();
+                const fixture=document.createElementNS('http://www.w3.org/1999/xhtml', 'div');
+                const right=i.left < a.left;
+                Object.assign(fixture.style, {position:'absolute', top:'40px',
+                  left:right ? `${container.clientWidth + 8}px` : '-28px', width:'20px', height:'20px',
+                  background:'CanvasText', zIndex:'2147483647'});
+                container.appendChild(fixture);
+                const rect=fixture.getBoundingClientRect(), x=rect.x+rect.width/2, y=rect.y+rect.height/2;
+                const hit=document.elementFromPoint(x,y);
+                fixture.style.left='10px';
+                const controlRect=fixture.getBoundingClientRect();
+                const controlHit=document.elementFromPoint(controlRect.x+controlRect.width/2,
+                                                           controlRect.y+controlRect.height/2);
+                const result={outsidePanel:x<i.left || x>i.right, hitFixture:hit===fixture,
+                  insideControlHit:controlHit===fixture, point:{x,y}, hit:hit?.localName,
+                  panel:{left:i.left,right:i.right}};
+                fixture.remove();
+                return result;
+                """, sandbox='system')
+            print(json.dumps({'nova':nova, 'themed':themed, 'overflowFixture':overflow_fixture}), flush=True)
+            if not overflow_fixture['outsidePanel'] or not overflow_fixture['insideControlHit']:
+                raise RuntimeError(f'split overflow fixture is inconclusive: {overflow_fixture}')
             visible_footers = [f for f in overlap['footers'] if f and f['display'] != 'none' and f['visibility'] == 'visible']
             if len(visible_footers) != 1 or visible_footers[0]['width'] <= 0 or visible_footers[0]['height'] <= 0:
                 raise RuntimeError('inactive split panel footer is not visible')
