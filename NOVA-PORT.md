@@ -318,7 +318,7 @@ This index summarizes bounded evidence above, not a complete selector or variabl
 |---|---|---|
 | Tabs | `probe-tab-colors.py` found empty inputs to textfox's selected and hover color tokens. The sampled backgrounds were transparent. | Verify other tab selectors, vertical and pinned states, and color tokens across themes. |
 | Sidebar | `test-sidebar-theme-live.py`, `test-sidebar-tools-live.py`, and `test-sidebar-live.py` cover launcher, tools, and resize samples. Firefox release defines `sidebar-main` and styles `#pinned-tabs-container`; textfox still targets `#vertical-pinned-tabs-container`. | Inventory remaining sidebar selectors and states. A single pinned tab did not establish a defect. |
-| Toolbar | `test-firefox-live.sh` checks `#nav-bar` in both browser Nova states. Manual and VM baselines check configured borders. | Inventory buttons, bookmarks toolbar, window controls, and Firefox-owned variables in live states. |
+| Toolbar | `test-firefox-live.sh` checks `#nav-bar` in both browser Nova states. Manual and VM baselines check configured borders. `test-navbar-options-live.py` checks navigation buttons as described below. | Inventory remaining buttons, bookmarks toolbar, window controls, and Firefox-owned variables in live states. |
 | URL bar | `test-urlbar-live.py` checks populated results and a simulated no-results condition. | Verify naturally visible one-offs and remaining selectors and variables. |
 | Menus and panels | `probe-panel-colors.py` shows app-menu content uses `--panel-background-color`, not the configured `--panel-background`, in sampled profiles. Firefox release `toolkit/themes/shared/popup.css` uses `--panel-background-color` for popup background. | Inspect other panels and menus, including active-item states, shadow parts, foreground pairing, and actual forced colors. |
 | Findbar | `test-findbar-live.py` covers keyboard search and computed focus outline in both Nova states, two directions, and two contrast preferences. | Inventory remaining selectors and confirm painted focus and contrast. |
@@ -328,6 +328,12 @@ This index summarizes bounded evidence above, not a complete selector or variabl
 | `about:` pages | `about:preferences` font was checked in manual and assembled Nix profiles. | Identify supported pages and inspect their actual DOM and computed configuration. |
 
 On this continuation, `test-firefox-live.sh` and `test-findbar-live.py` passed again in headless Firefox. `probe-panel-colors.py` repeated the app-menu background discrepancy in both browser Nova states; forcing its background alone retained black foreground. These observations do not establish visual accessibility. T2 remains open.
+
+## Navigation button configuration
+
+Firefox release `browser/base/content/navigator-toolbox.inc.xhtml` defines `#back-button`, matching `chrome/navbar.css`. `tools/firefox-chrome/test-navbar-options-live.py` checks both navigation buttons in disposable profiles. On headless Firefox 159.0 build `20261022150525`, `--tf-display-nav-buttons: none` gave both buttons zero geometry and `flex` made them visible in both browser Nova states. With `flex`, clicking Back and Forward navigated between two local data pages in both states. This does not check keyboard focus, painted appearance, other toolbar buttons, or installed delivery paths.
+
+Run `MOZ_HEADLESS=1 "$HOME/.cache/textfox-firefox-live/venv/bin/python" tools/firefox-chrome/test-navbar-options-live.py`.
 
 ## T1 completion baseline
 
