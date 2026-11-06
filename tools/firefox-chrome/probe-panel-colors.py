@@ -41,9 +41,9 @@ def check(nova, color_preference):
         try:
             m = connect(port)
             m.set_context('chrome')
-            metadata = m.execute_script("return {profile:Services.dirsvc.get('ProfD', Ci.nsIFile).path, version:Services.appinfo.version, build:Services.appinfo.appBuildID, nova:Services.prefs.getBoolPref('browser.nova.enabled'), documentColorUse:Services.prefs.getIntPref('browser.display.document_color_use')}", sandbox='system')
+            metadata = m.execute_script("return {profile:Services.dirsvc.get('ProfD', Ci.nsIFile).path, version:Services.appinfo.version, build:Services.appinfo.appBuildID, nova:Services.prefs.getBoolPref('browser.nova.enabled'), documentColorUse:Services.prefs.getIntPref('browser.display.document_color_use'), private:PrivateBrowsingUtils.isWindowPrivate(window)}", sandbox='system')
             if (process.poll() is not None or Path(metadata['profile']).resolve() != profile.resolve()
-                    or metadata['nova'] != nova or metadata['documentColorUse'] != color_preference):
+                    or metadata['nova'] != nova or metadata['documentColorUse'] != color_preference or metadata['private']):
                 raise RuntimeError('unexpected Firefox process, profile, or preferences')
             m.execute_script('PanelUI.show()', sandbox='system')
             deadline = time.monotonic() + 20
@@ -101,6 +101,25 @@ def check(nova, color_preference):
                               'override': override, 'keyboardFocus': focused, 'afterEscape': closed}), flush=True)
             if focused['panelState'] != 'open' or not focused['inPanel'] or closed != 'closed':
                 raise RuntimeError('app menu keyboard navigation or Escape failed')
+            m.execute_script('PanelUI.show()', sandbox='system')
+            deadline = time.monotonic() + 20
+            while m.execute_script("return document.getElementById('appMenu-popup').state", sandbox='system') != 'open':
+                if time.monotonic() >= deadline:
+                    raise RuntimeError('app menu did not reopen')
+                time.sleep(.1)
+            if m.execute_script("return [...Services.wm.getEnumerator('navigator:browser')].some(w => PrivateBrowsingUtils.isWindowPrivate(w))", sandbox='system'):
+                raise RuntimeError('private window existed before menu activation')
+            m.find_element('id', 'appMenu-new-private-window-button2').click()
+            deadline = time.monotonic() + 20
+            while not m.execute_script("""
+                return [...Services.wm.getEnumerator('navigator:browser')]
+                  .some(w => PrivateBrowsingUtils.isWindowPrivate(w));
+                """, sandbox='system'):
+                if time.monotonic() >= deadline:
+                    raise RuntimeError('app menu did not open a private window')
+                time.sleep(.1)
+            print(json.dumps({'nova': nova, 'documentColorUse': color_preference,
+                              'privateWindowOpened': True}), flush=True)
         finally:
             try:
                 if m:
