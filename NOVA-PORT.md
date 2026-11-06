@@ -318,7 +318,7 @@ This index summarizes bounded evidence above, not a complete selector or variabl
 |---|---|---|
 | Tabs | `probe-tab-colors.py` found empty inputs to textfox's selected and hover color tokens. The sampled backgrounds were transparent. The vertical strip check is described below. | Verify other tab selectors, vertical and pinned states, and color tokens across themes. |
 | Sidebar | `test-sidebar-theme-live.py`, `test-sidebar-tools-live.py`, and `test-sidebar-live.py` cover launcher, tools, and resize samples. Firefox release defines `sidebar-main` and styles `#pinned-tabs-container`; textfox still targets `#vertical-pinned-tabs-container`. | Inventory remaining sidebar selectors and states. A single pinned tab did not establish a defect. |
-| Toolbar | `test-firefox-live.sh` checks `#nav-bar` in both browser Nova states. Manual and VM baselines check configured borders. Navigation and bookmarks toolbar probes are described below. | Inventory remaining buttons, window controls, and Firefox-owned variables in live states. |
+| Toolbar | `test-firefox-live.sh` checks `#nav-bar` in both browser Nova states. Manual and VM baselines check configured borders. Navigation, bookmarks, and window-control probes are described below. | Inventory remaining buttons, other window-control states and platforms, and Firefox-owned variables in live states. |
 | URL bar | `test-urlbar-live.py` checks populated results and a simulated no-results condition. | Verify naturally visible one-offs and remaining selectors and variables. |
 | Menus and panels | `probe-panel-colors.py` shows app-menu content uses `--panel-background-color`, not the configured `--panel-background`, in sampled profiles. Firefox release `toolkit/themes/shared/popup.css` uses `--panel-background-color` for popup background. | Inspect other panels and menus, including active-item states, shadow parts, foreground pairing, and actual forced colors. |
 | Findbar | `test-findbar-live.py` covers keyboard search and computed focus outline in both Nova states, two directions, and two contrast preferences. | Inventory remaining selectors and confirm painted focus and contrast. |
@@ -356,6 +356,14 @@ Run `MOZ_HEADLESS=1 "$HOME/.cache/textfox-firefox-live/venv/bin/python" tools/fi
 ## App-menu keyboard sample
 
 `probe-panel-colors.py` now removes its temporary background override before sending Arrow Down and Escape to the open app menu. On headless Firefox 159.0 build `20261022150525`, Arrow Down focused an element inside the menu and Escape closed it in both browser Nova states with document color preferences 0 and 2. The focused sign-in link computed a 2px solid outline in these samples. The menu was opened programmatically; this does not verify keyboard opening, item activation, painted focus, contrast, or actual forced colors. The sign-in link was not activated.
+
+## Horizontal tabs and window controls
+
+Firefox release `browser/base/content/titlebar-items.inc.xhtml` defines `.titlebar-buttonbox-container`. `chrome/tabs.css` applies `--tf-display-window-controls` to that selector and `--tf-display-horizontal-tabs` to `#TabsToolbar`. The README documents `block` for horizontal tabs, and the Nix `tabs.horizontal.enable` option generates `block`.
+
+`tools/firefox-chrome/probe-window-controls.py` compares vanilla Firefox with textfox profiles using `block` or `flex` for horizontal tabs. On Firefox 159.0 build `20261022150525` under a headed 1280×800 Sway headless compositor, with vertical tabs disabled and browser Nova on or off, the selected tab and close button had no vertical intersection with `block`. The close button appeared on a separate row below the tab. Vanilla and the textfox `flex` intervention placed both on the same row. The `block` and `flex` profiles both requested visible window controls. This is a verified geometry difference in that configuration; it does not establish painted appearance, hit testing, multiple tabs, RTL, other desktop environments, or other platforms. No CSS fix was applied. V4 and V5 already cover configuration and layout; a §B entry requires approval under the spec backprop protocol.
+
+The probe requires a headed Firefox session with a custom titlebar and nonzero close-button geometry. Run `"$HOME/.cache/textfox-firefox-live/venv/bin/python" tools/firefox-chrome/probe-window-controls.py` on such a display. Its output includes measured rectangles and vertical intersection. A headless Firefox run lacked `customtitlebar` and could not validate this case. The temporary Sway launcher is `/tmp/tf-sway-window-test.py` and may disappear.
 
 ## T1 completion baseline
 
