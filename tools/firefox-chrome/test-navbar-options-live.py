@@ -16,7 +16,7 @@ from ff_inspect import connect
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def check(nova, display, rtl):
+def check(nova, display, rtl, high_contrast):
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0))
         port = sock.getsockname()[1]
@@ -28,7 +28,8 @@ def check(nova, display, rtl):
         prefs = {'marionette.port': port, 'browser.nova.enabled': nova,
                  'toolkit.legacyUserProfileCustomizations.stylesheets': True,
                  'browser.shell.checkDefaultBrowser': False,
-                 'intl.l10n.pseudo': 'bidi' if rtl else ''}
+                 'intl.l10n.pseudo': 'bidi' if rtl else '',
+                 'ui.useAccessibilityTheme': 1 if high_contrast else 0}
         (profile / 'user.js').write_text(''.join(
             f'user_pref({json.dumps(k)}, {json.dumps(v)});\n' for k, v in prefs.items()))
         env = os.environ.copy()
@@ -69,14 +70,16 @@ def check(nova, display, rtl):
                 const star = document.getElementById('star-button-box');
                 if (!star || star.hidden) throw new Error('bookmark star fixture is unavailable');
                 const starRect = star.getBoundingClientRect(), starStyle = getComputedStyle(star);
-                return {direction:root.direction, option:root.getPropertyValue('--tf-display-nav-buttons').trim(), buttons,
+                return {direction:root.direction, prefersContrast:matchMedia('(prefers-contrast)').matches,
+                  option:root.getPropertyValue('--tf-display-nav-buttons').trim(), buttons,
                   iconOption:root.getPropertyValue('--tf-display-urlbar-icons').trim(),
                   star:{display:starStyle.display, visibility:starStyle.visibility,
                     width:starRect.width, height:starRect.height}};
                 """, sandbox='system')
             print(json.dumps({'firefox': metadata, 'requested': display, 'result': result}), flush=True)
-            if result['option'] != display or result['direction'] != ('rtl' if rtl else 'ltr'):
-                raise RuntimeError('requested navigation button option or direction not applied')
+            if (result['option'] != display or result['direction'] != ('rtl' if rtl else 'ltr')
+                    or result['prefersContrast'] != high_contrast):
+                raise RuntimeError('requested navigation button option, direction, or contrast not applied')
             for button in result['buttons']:
                 if button['display'] != display:
                     raise RuntimeError(f"{button['id']} does not follow configuration: {button}")
@@ -115,6 +118,19 @@ def check(nova, display, rtl):
                 m.actions.sequence('key', 'keyboard').send_keys(Keys.ARROW_LEFT if rtl else Keys.ARROW_RIGHT).perform()
                 if not m.execute_script("return document.activeElement?.id === 'back-button'", sandbox='system'):
                     raise RuntimeError('toolbar arrow navigation did not focus Back')
+                focus_style = m.execute_script("""
+                    const button = document.activeElement;
+                    const icon = button.querySelector('.toolbarbutton-icon');
+                    if (!icon) throw new Error('Back button icon missing');
+                    const style = getComputedStyle(icon);
+                    return {focusVisible:button.matches(':focus-visible'), outlineStyle:style.outlineStyle,
+                            outlineWidth:style.outlineWidth, boxShadow:style.boxShadow};
+                    """, sandbox='system')
+                print(json.dumps({'nova': nova, 'rtl': rtl, 'highContrast': high_contrast,
+                                  'backFocusStyle': focus_style}), flush=True)
+                if (not focus_style['focusVisible'] or focus_style['outlineStyle'] == 'none'
+                        or focus_style['outlineWidth'] == '0px'):
+                    raise RuntimeError(f'Back icon has no computed keyboard focus outline: {focus_style}')
                 m.actions.sequence('key', 'keyboard').send_keys(Keys.ENTER).perform()
                 deadline = time.monotonic() + 10
                 while m.execute_script('return gBrowser.currentURI.spec', sandbox='system') != first:
@@ -138,4 +154,5 @@ if __name__ == '__main__':
     for nova in (False, True):
         for display in ('none', 'flex'):
             for rtl in (False, True):
-                check(nova, display, rtl)
+                for high_contrast in (False, True):
+                    check(nova, display, rtl, high_contrast)
