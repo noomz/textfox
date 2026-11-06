@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check navigation-button configuration in disposable Firefox profiles."""
+"""Check navigation and URL bar icon configuration in disposable Firefox profiles."""
 import json
 import os
 from pathlib import Path
@@ -22,7 +22,7 @@ def check(nova, display):
         profile = Path(directory)
         shutil.copytree(ROOT / 'chrome', profile / 'chrome')
         (profile / 'chrome' / 'config.css').write_text(
-            f':root {{ --tf-display-nav-buttons: {display}; }}\n')
+            f':root {{ --tf-display-nav-buttons: {display}; --tf-display-urlbar-icons: {display}; }}\n')
         prefs = {'marionette.port': port, 'browser.nova.enabled': nova,
                  'toolkit.legacyUserProfileCustomizations.stylesheets': True,
                  'browser.shell.checkDefaultBrowser': False}
@@ -45,6 +45,14 @@ def check(nova, display):
             if (process.poll() is not None or Path(metadata['profile']).resolve() != profile.resolve()
                     or metadata['nova'] != nova):
                 raise RuntimeError('unexpected Firefox process, profile, or Nova preference')
+            m.set_context('content')
+            m.navigate('data:text/html,navbar-icon-fixture')
+            m.set_context('chrome')
+            deadline = time.monotonic() + 15
+            while not m.execute_script("return document.querySelector('.urlbar-input-container')?.getAttribute('pageproxystate') === 'valid'", sandbox='system'):
+                if time.monotonic() >= deadline:
+                    raise RuntimeError('URL bar did not reach valid page state')
+                time.sleep(.1)
             result = m.execute_script("""
                 const root = getComputedStyle(document.documentElement);
                 const buttons = ['back-button', 'forward-button'].map(id => {
@@ -55,7 +63,13 @@ def check(nova, display):
                   return {id, display:style.display, visibility:style.visibility,
                     width:rect.width, height:rect.height};
                 });
-                return {option:root.getPropertyValue('--tf-display-nav-buttons').trim(), buttons};
+                const star = document.getElementById('star-button-box');
+                if (!star || star.hidden) throw new Error('bookmark star fixture is unavailable');
+                const starRect = star.getBoundingClientRect(), starStyle = getComputedStyle(star);
+                return {option:root.getPropertyValue('--tf-display-nav-buttons').trim(), buttons,
+                  iconOption:root.getPropertyValue('--tf-display-urlbar-icons').trim(),
+                  star:{display:starStyle.display, visibility:starStyle.visibility,
+                    width:starRect.width, height:starRect.height}};
                 """, sandbox='system')
             print(json.dumps({'firefox': metadata, 'requested': display, 'result': result}), flush=True)
             if result['option'] != display:
@@ -67,6 +81,13 @@ def check(nova, display):
                     raise RuntimeError(f"{button['id']} is not visible: {button}")
                 if display == 'none' and (button['width'] != 0 or button['height'] != 0):
                     raise RuntimeError(f"{button['id']} occupies space while hidden: {button}")
+            star = result['star']
+            if result['iconOption'] != display or star['display'] != display:
+                raise RuntimeError(f'bookmark star does not follow URL bar icon configuration: {star}')
+            if display == 'flex' and (star['visibility'] != 'visible' or star['width'] <= 0 or star['height'] <= 0):
+                raise RuntimeError(f'configured bookmark star is not visible: {star}')
+            if display == 'none' and (star['width'] != 0 or star['height'] != 0):
+                raise RuntimeError(f'hidden bookmark star occupies space: {star}')
             if display == 'flex':
                 first = 'data:text/html,first-navbar-test'
                 second = 'data:text/html,second-navbar-test'
