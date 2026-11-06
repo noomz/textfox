@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Compare horizontal tab and window-control geometry in headed Firefox."""
+import argparse
 import json
 import os
 from pathlib import Path
@@ -14,7 +15,7 @@ from ff_inspect import connect
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def check(nova, mode):
+def check(nova, mode, rtl):
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0))
         port = sock.getsockname()[1]
@@ -27,7 +28,8 @@ def check(nova, mode):
         prefs = {'marionette.port': port, 'browser.nova.enabled': nova,
                  'sidebar.verticalTabs': False,
                  'toolkit.legacyUserProfileCustomizations.stylesheets': True,
-                 'browser.shell.checkDefaultBrowser': False}
+                 'browser.shell.checkDefaultBrowser': False,
+                 'intl.l10n.pseudo': 'bidi' if rtl else ''}
         (profile / 'user.js').write_text(''.join(
             f'user_pref({json.dumps(k)}, {json.dumps(v)});\n' for k, v in prefs.items()))
         env = os.environ.copy()
@@ -61,11 +63,12 @@ def check(nova, mode):
                 const rect = element => { const r = element.getBoundingClientRect();
                   return {x:r.x, y:r.y, width:r.width, height:r.height}; };
                 return {customTitlebar:root.hasAttribute('customtitlebar'),
-                  toolbarDisplay:getComputedStyle(document.getElementById('TabsToolbar')).display,
+                  direction:getComputedStyle(root).direction, toolbarDisplay:getComputedStyle(document.getElementById('TabsToolbar')).display,
                   closeDisplay:getComputedStyle(close).display,
                   tab:rect(tab), close:rect(close)};
                 """, sandbox='system')
-            if (not result['customTitlebar'] or result['closeDisplay'] == 'none'
+            if (not result['customTitlebar'] or result['direction'] != ('rtl' if rtl else 'ltr')
+                    or result['closeDisplay'] == 'none'
                     or result['tab']['width'] <= 0 or result['tab']['height'] <= 0
                     or result['close']['width'] <= 0 or result['close']['height'] <= 0):
                 raise RuntimeError(f'headed custom-titlebar fixture unavailable: {result}')
@@ -87,6 +90,9 @@ def check(nova, mode):
 
 
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--rtl', action='store_true', help='use Firefox bidi pseudo-locale')
+    args = parser.parse_args()
     for nova in (False, True):
         for mode in ('vanilla', 'block', 'flex'):
-            check(nova, mode)
+            check(nova, mode, args.rtl)
