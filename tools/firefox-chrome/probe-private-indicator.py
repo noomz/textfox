@@ -67,7 +67,20 @@ def check(nova, themed, vertical):
             result['visibleIndicators'] = sum(1 for node in result['indicators']
                                               if node['display'] != 'none' and node['visibility'] == 'visible'
                                               and node['width'] > 0 and node['height'] > 0)
-            print(json.dumps({'firefox': metadata, 'themed': themed, 'result': result}), flush=True)
+            intervention = None
+            if themed and not vertical and not result['tabsHidden']:
+                intervention = m.execute_script("""
+                    const toolbox = document.getElementById('navigator-toolbox');
+                    toolbox.setAttribute('tabs-hidden', 'true');
+                    const nodes = [...document.querySelectorAll('#nav-bar .private-browsing-indicator-with-label, #nav-bar .private-browsing-indicator-button')];
+                    const visible = nodes.filter(node => { const s=getComputedStyle(node), r=node.getBoundingClientRect();
+                      return s.display !== 'none' && s.visibility === 'visible' && r.width > 0 && r.height > 0; });
+                    const count = visible.length;
+                    toolbox.removeAttribute('tabs-hidden');
+                    return {visibleNavbarIndicators:count};
+                    """, sandbox='system')
+            print(json.dumps({'firefox': metadata, 'themed': themed, 'result': result,
+                              'tabsHiddenIntervention': intervention}), flush=True)
             if (not themed or vertical) and result['visibleIndicators'] == 0:
                 raise RuntimeError(f'positive-control indicator is not visible: {result}')
         finally:
