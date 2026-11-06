@@ -317,7 +317,7 @@ This index summarizes bounded evidence above, not a complete selector or variabl
 | Component | Existing evidence | Remaining T2 inventory |
 |---|---|---|
 | Tabs | `probe-tab-colors.py` found empty inputs to textfox's selected and hover color tokens. The sampled backgrounds were transparent. The vertical strip check is described below. | Verify other tab selectors, vertical and pinned states, and color tokens across themes. |
-| Sidebar | `test-sidebar-theme-live.py`, `test-sidebar-tools-live.py`, and `test-sidebar-live.py` cover launcher, tools, and resize samples. Firefox release defines `sidebar-main` and styles `#pinned-tabs-container`; textfox still targets `#vertical-pinned-tabs-container`. | Inventory remaining sidebar selectors and states. A single pinned tab did not establish a defect. |
+| Sidebar | `test-sidebar-theme-live.py`, `test-sidebar-tools-live.py`, and `test-sidebar-live.py` cover launcher, tools, and resize samples. Firefox release defines `sidebar-main` and styles `#pinned-tabs-container`; textfox still targets `#vertical-pinned-tabs-container`. The classic header gap is described below. | Inventory remaining sidebar selectors and states. A single pinned tab did not establish a pinned-container defect. |
 | Toolbar | `test-firefox-live.sh` checks `#nav-bar` in both browser Nova states. Manual and VM baselines check configured borders. Navigation, bookmarks, and window-control probes are described below. | Inventory remaining buttons, other window-control states and platforms, and Firefox-owned variables in live states. |
 | URL bar | `test-urlbar-live.py` checks populated results and a simulated no-results condition. | Verify naturally visible one-offs and remaining selectors and variables. |
 | Menus and panels | `probe-panel-colors.py` shows app-menu content uses `--panel-background-color`, not the configured `--panel-background`, in sampled profiles. Firefox release `toolkit/themes/shared/popup.css` uses `--panel-background-color` for popup background. | Inspect other panels and menus, including active-item states, shadow parts, foreground pairing, and actual forced colors. |
@@ -384,6 +384,14 @@ Firefox release `browser/extensions/newtab/content-src/components/TopSites/TopSi
 An initial temporary fixture attempted a programmatic click and waited for `.context-menu`; it did not observe an open matching element. A subsequent check incorrectly expected a nonempty `popovertarget` attribute; release source assigns the invoker through `popoverTargetElement`, and the inspected attribute was empty. Keyboard activation opened `panel-list`. These fixture failures do not establish a separate theme defect. V4 and V5 already cover configuration and TUI appearance; a §B entry requires approval under the spec backprop protocol. No CSS fix was applied.
 
 Run `MOZ_HEADLESS=1 "$HOME/.cache/textfox-firefox-live/venv/bin/python" tools/firefox-chrome/probe-topsite-menu.py`. Probe-only feed and widget overrides may make network requests.
+
+## Classic sidebar header
+
+Firefox release `browser/base/content/browser-box.inc.xhtml` places `#sidebar-close` and `#sidebar-switcher-target` inside `#sidebar-header`. Textfox's `chrome/sidebar.css` hides that header unconditionally. `tools/firefox-chrome/probe-sidebar-header.py` compared bookmarks sidebars in disposable vanilla and textfox profiles on headless Firefox 159.0 build `20261022150525`, with browser Nova and `sidebar.revamp` each on and off. With revamp off, the vanilla header, close button, and switcher had nonzero geometry; all three had zero geometry in textfox. With revamp on, Firefox also hid the old header in vanilla. Ctrl+B closed the bookmarks sidebar in all eight profiles, but this does not replace the missing visible close and switcher controls.
+
+A temporary inline intervention showing the header restored nonzero geometry to its children in the classic textfox profiles; the close button measured only 4px high in those runs. This is not a verified fix. The probe checks computed visibility and geometry, not painted output, pointer activation, other sidebar tools, real desktop environments, or delivery paths. It reports the missing controls rather than treating that finding as a passing support check. V5 and V6 cover visible controls and real behavior; a §B entry requires approval under the spec backprop protocol. No CSS fix was applied.
+
+Run `MOZ_HEADLESS=1 "$HOME/.cache/textfox-firefox-live/venv/bin/python" tools/firefox-chrome/probe-sidebar-header.py`.
 
 ## T1 completion baseline
 
