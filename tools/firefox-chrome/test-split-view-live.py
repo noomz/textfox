@@ -24,6 +24,8 @@ def check(nova, themed, rtl, high_contrast):
         profile = Path(directory)
         if themed:
             shutil.copytree(ROOT / 'chrome', profile / 'chrome')
+            (profile / 'chrome' / 'config.css').write_text(
+                ':root { --tf-border-width: 3px; --tf-border: rgb(32, 64, 96); --tf-display-titles: flex; }\n')
         prefs = {'marionette.port': port, 'browser.nova.enabled': nova,
                  'intl.l10n.pseudo': 'bidi' if rtl else '',
                  'ui.useAccessibilityTheme': 1 if high_contrast else 0,
@@ -65,6 +67,39 @@ def check(nova, themed, rtl, high_contrast):
                 if time.monotonic() >= deadline:
                     raise RuntimeError('split view splitter accessibility attributes did not initialize')
                 time.sleep(.1)
+            if themed:
+                styles_js = """
+                    return gBrowser.tabpanels.splitViewPanels.map(id => {
+                      const panel=document.getElementById(id), s=getComputedStyle(panel);
+                      const pseudo=getComputedStyle(panel, '::before');
+                      return {selected:panel.classList.contains('deck-selected'),
+                        borderWidth:s.borderTopWidth, borderStyle:s.borderTopStyle,
+                        outlineWidth:s.outlineWidth, outlineStyle:s.outlineStyle,
+                        title:pseudo.content, titleDisplay:pseudo.display};
+                    });
+                    """
+                panel_styles = m.execute_script(styles_js, sandbox='system')
+                m.execute_script('const split=gBrowser.selectedTab.splitview; gBrowser.selectedTab=split.tabs[1]', sandbox='system')
+                deadline = time.monotonic() + 10
+                while True:
+                    switched_styles = m.execute_script(styles_js, sandbox='system')
+                    if [p['selected'] for p in switched_styles] != [p['selected'] for p in panel_styles]:
+                        break
+                    if time.monotonic() >= deadline:
+                        raise RuntimeError('selecting second split tab did not change active panel')
+                    time.sleep(.1)
+                print(json.dumps({'nova':nova, 'panelStyles':panel_styles,
+                                  'afterSelection':switched_styles}), flush=True)
+                for states in (panel_styles, switched_styles):
+                    if sum(p['selected'] for p in states) != 1:
+                        raise RuntimeError(f'split view has unexpected selection state: {states}')
+                    for panel in states:
+                        expected_title = '"active split"' if panel['selected'] else '"split"'
+                        if (panel['borderWidth'] != '3px' or panel['borderStyle'] != 'solid'
+                                or panel['title'] != expected_title or panel['titleDisplay'] != 'flex'):
+                            raise RuntimeError(f'split panel did not apply configured border or title: {panel}')
+                        if panel['selected'] and (panel['outlineWidth'] != '3px' or panel['outlineStyle'] != 'solid'):
+                            raise RuntimeError(f'active split panel outline missing: {panel}')
             before = m.execute_script("""
                 const split = gBrowser.tabpanels.splitViewSplitter;
                 const panel = document.getElementById(gBrowser.tabpanels.splitViewPanels[0]);

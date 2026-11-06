@@ -322,7 +322,7 @@ This index summarizes bounded evidence above, not a complete selector or variabl
 | URL bar | `test-urlbar-live.py` checks populated results and a simulated no-results condition. | Verify naturally visible one-offs and remaining selectors and variables. |
 | Menus and panels | `probe-panel-colors.py` shows app-menu content uses `--panel-background-color`, not the configured `--panel-background`, in sampled profiles. Firefox release `toolkit/themes/shared/popup.css` uses `--panel-background-color` for popup background. | Inspect other panels and menus, including active-item states, shadow parts, foreground pairing, and actual forced colors. |
 | Findbar | `test-findbar-live.py` covers keyboard search and computed focus outline in both Nova states, two directions, and two contrast preferences. | Inventory remaining selectors and confirm painted focus and contrast. |
-| Split view | `test-split-view-live.py` covers keyboard resizing and findbar geometry in sampled states. | Inventory remaining selectors and variables, painted layout, and focus. |
+| Split view | `test-split-view-live.py` covers keyboard resizing, findbar geometry, and configured active-panel styling in sampled states. | Inventory remaining selectors and variables, painted layout, and focus. |
 | Private windows | `test-private-window-live.py` covers URL bar results and one local navigation. `probe-private-indicator.py` found a missing indicator in a horizontal-tab configuration, described below. | Verify a safe indicator fix, other private-window chrome, and other platforms. |
 | New-tab | `test-newtab-live.sh` checks independent Nova preference combinations. Widget menu and logo probes cover bounded interaction and layout samples. `probe-topsite-menu.py` found a shortcut-menu selector gap, described below. | Complete selector and variable inventory, logo overflow, responsive layout, and accessibility checks. |
 | `about:` pages | `about:preferences` font was checked in manual and assembled Nix profiles. `test-about-font-live.py` samples five page bodies and selected light-DOM control hosts as described below. | Identify supported pages and inspect remaining controls, shadow roots, and computed configuration. |
@@ -392,6 +392,12 @@ Firefox release `browser/base/content/browser-box.inc.xhtml` places `#sidebar-cl
 A temporary inline intervention showing the header restored nonzero geometry to its children in the classic textfox profiles; the close button measured only 4px high in those runs. This is not a verified fix. The probe checks computed visibility and geometry, not painted output, pointer activation, other sidebar tools, real desktop environments, or delivery paths. It reports the missing controls rather than treating that finding as a passing support check. V5 and V6 cover visible controls and real behavior; a §B entry requires approval under the spec backprop protocol. No CSS fix was applied.
 
 Run `MOZ_HEADLESS=1 "$HOME/.cache/textfox-firefox-live/venv/bin/python" tools/firefox-chrome/probe-sidebar-header.py`.
+
+## Split-panel active styling
+
+Firefox release `browser/themes/shared/tabbrowser/content-area.css` uses `.split-view-panel`, `.deck-selected`, and `split-view-footer`. `test-split-view-live.py` now configures a 3px border and visible titles in themed profiles, selects each split tab, and reads computed panel and pseudo-element styles. On headless Firefox 159.0 build `20261022150525`, both panels kept a 3px solid border, while the selected panel had the `active split` title and a 3px solid outline. The other panel had the `split` title. Those states followed selection across browser Nova, bidi pseudo-locale, and `prefers-contrast` preference combinations. The existing vanilla and textfox resize, findbar, and footer checks also passed in the full matrix.
+
+Selection was changed through Firefox's API. Computed pseudo-content and outline do not prove painted visibility, contrast, keyboard selection, actual OS forced colors, or real RTL locale behavior. The test uses disposable profiles and does not establish delivery-path behavior. Run `MOZ_HEADLESS=1 "$HOME/.cache/textfox-firefox-live/venv/bin/python" tools/firefox-chrome/test-split-view-live.py`.
 
 ## T1 completion baseline
 
