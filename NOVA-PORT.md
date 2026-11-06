@@ -325,7 +325,7 @@ This index summarizes bounded evidence above, not a complete selector or variabl
 | Split view | `test-split-view-live.py` covers keyboard resizing and findbar geometry in sampled states. | Inventory remaining selectors and variables, painted layout, and focus. |
 | Private windows | `test-private-window-live.py` covers URL bar results and one local navigation. | Inspect other chrome components in private windows. |
 | New-tab | `test-newtab-live.sh` checks independent Nova preference combinations. Widget menu and logo probes cover bounded interaction and layout samples. | Complete selector and variable inventory, logo overflow, responsive layout, and accessibility checks. |
-| `about:` pages | `about:preferences` font was checked in manual and assembled Nix profiles. `test-about-font-live.py` samples five page bodies as described below. | Identify supported pages and inspect their internal controls, shadow roots, and computed configuration. |
+| `about:` pages | `about:preferences` font was checked in manual and assembled Nix profiles. `test-about-font-live.py` samples five page bodies and selected light-DOM control hosts as described below. | Identify supported pages and inspect remaining controls, shadow roots, and computed configuration. |
 
 On this continuation, `test-firefox-live.sh` and `test-findbar-live.py` passed again in headless Firefox. `probe-panel-colors.py` repeated the app-menu background discrepancy in both browser Nova states; forcing its background alone retained black foreground. These observations do not establish visual accessibility. T2 remains open.
 
@@ -343,7 +343,7 @@ Run `MOZ_HEADLESS=1 "$HOME/.cache/textfox-firefox-live/venv/bin/python" tools/fi
 
 ## About-page font samples
 
-`chrome/content/about.css` applies `--tf-font-family` to elements in `about:` documents. `tools/firefox-chrome/test-about-font-live.py` opens `about:preferences`, `about:config`, `about:profiles`, `about:addons`, and `about:support` in disposable profiles. On headless Firefox 159.0 build `20261022150525`, all five page bodies computed the configured `monospace` font with browser Nova on and off. The test checks page bodies only, not internal controls, shadow DOM, visual readability, or a complete list of supported pages. It does not change settings on those pages.
+`chrome/content/about.css` applies `--tf-font-family` to elements in `about:` documents. `tools/firefox-chrome/test-about-font-live.py` opens `about:preferences`, `about:config`, `about:profiles`, `about:addons`, and `about:support` in disposable profiles. On headless Firefox 159.0 build `20261022150525`, all five page bodies computed the configured `monospace` font with browser Nova on and off. A follow-up checks selected light-DOM HTML, XUL, and `moz-*` control hosts on each page. All sampled hosts computed `monospace` in both Nova states. The initial fixture looked only for HTML controls and found none on `about:preferences`; its navigation uses `moz-page-nav-button` elements. The probe now waits for those elements and checks local names across namespaces. Those fixture failures did not establish a theme defect. The test does not inspect shadow DOM, visual readability, or a complete list of supported pages. It does not change settings on those pages.
 
 Run `MOZ_HEADLESS=1 "$HOME/.cache/textfox-firefox-live/venv/bin/python" tools/firefox-chrome/test-about-font-live.py`.
 

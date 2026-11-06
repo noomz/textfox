@@ -7,6 +7,7 @@ import shutil
 import socket
 import subprocess
 import tempfile
+import time
 
 from ff_inspect import connect
 
@@ -47,13 +48,27 @@ def check(nova):
             m.set_context('content')
             for page in PAGES:
                 m.navigate(page)
+                if page == 'about:preferences':
+                    deadline = time.monotonic() + 20
+                    while not m.execute_script("return [...document.querySelectorAll('*')].some(e => e.localName === 'moz-page-nav-button')"):
+                        if time.monotonic() >= deadline:
+                            raise RuntimeError('about:preferences navigation controls did not initialize')
+                        time.sleep(.1)
                 result = m.execute_script("""
+                    const names = new Set(['button', 'input', 'select', 'textarea', 'checkbox', 'menulist', 'moz-button', 'moz-page-nav-button']);
+                    const controls = [...document.querySelectorAll('*')].filter(node => names.has(node.localName));
                     return {url:location.href, state:document.readyState,
-                      body:!!document.body, font:document.body && getComputedStyle(document.body).fontFamily};
+                      body:!!document.body, font:document.body && getComputedStyle(document.body).fontFamily,
+                      controls:controls.length,
+                      differingControls:controls.filter(node => getComputedStyle(node).fontFamily !== 'monospace')
+                        .map(node => ({tag:node.localName, id:node.id, font:getComputedStyle(node).fontFamily}))};
                     """)
                 print(json.dumps({'firefox': metadata, 'requested': page, 'result': result}), flush=True)
-                if result['url'].split('#')[0] != page or not result['body'] or result['font'] != 'monospace':
+                if (result['url'].split('#')[0] != page or not result['body'] or result['font'] != 'monospace'
+                        or result['differingControls']):
                     raise RuntimeError(f'about page font or navigation differs from configuration: {result}')
+                if result['controls'] == 0:
+                    raise RuntimeError(f'{page} control fixture is empty')
         finally:
             try:
                 if m:
