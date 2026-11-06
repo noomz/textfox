@@ -57,13 +57,16 @@ def main():
             'script': '''
                 const p = Services.prefs, defaults = p.getDefaultBranch('');
                 const names = ['browser.nova.enabled', 'browser.newtabpage.activity-stream.nova.enabled'];
+                const readBool = (branch, name) => {
+                  try { return branch.getBoolPref(name); } catch (_) { return null; }
+                };
                 return {
                   profile: Services.dirsvc.get('ProfD', Ci.nsIFile).path,
                   version: Services.appinfo.version,
                   build: Services.appinfo.appBuildID,
                   navbarBorder: getComputedStyle(document.getElementById('nav-bar')).borderTopWidth,
                   preferences: Object.fromEntries(names.map(n => [n, {
-                    effective: p.getBoolPref(n), default: defaults.getBoolPref(n), user: p.prefHasUserValue(n)
+                    effective: readBool(p, n), default: readBool(defaults, n), user: p.prefHasUserValue(n)
                   }]))
                 };
             ''',
@@ -82,4 +85,8 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    try:
+        main()
+    except Exception as error:
+        Path('/tmp/shared/probe-error.txt').write_text(repr(error))
+        raise

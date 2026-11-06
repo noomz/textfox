@@ -25,5 +25,8 @@ if [ "$status" -eq 0 ] && [ -f "$work/shared/result" ] && [ "$(cat "$work/shared
   python3 -m json.tool "$work/shared/preferences.json"
 else
   echo "Home Manager activation VM failed (exit $status); see $work/boot.log" >&2
+  if [ -f "$work/shared/probe-error.txt" ]; then
+    python3 -c 'import pathlib,sys; print(pathlib.Path(sys.argv[1]).read_text(), file=sys.stderr)' "$work/shared/probe-error.txt"
+  fi
   exit 1
 fi
