@@ -57,18 +57,25 @@ def check(nova):
                 result = m.execute_script("""
                     const names = new Set(['button', 'input', 'select', 'textarea', 'checkbox', 'menulist', 'moz-button', 'moz-page-nav-button']);
                     const controls = [...document.querySelectorAll('*')].filter(node => names.has(node.localName));
+                    const shadowControls = controls.flatMap(host => host.shadowRoot
+                      ? [...host.shadowRoot.querySelectorAll('*')].filter(node => names.has(node.localName))
+                          .map(node => ({host:host.localName, tag:node.localName, font:getComputedStyle(node).fontFamily}))
+                      : []);
                     return {url:location.href, state:document.readyState,
                       body:!!document.body, font:document.body && getComputedStyle(document.body).fontFamily,
-                      controls:controls.length,
+                      controls:controls.length, shadowControlCount:shadowControls.length,
+                      differingShadowControls:shadowControls.filter(node => node.font !== 'monospace'),
                       differingControls:controls.filter(node => getComputedStyle(node).fontFamily !== 'monospace')
                         .map(node => ({tag:node.localName, id:node.id, font:getComputedStyle(node).fontFamily}))};
                     """)
                 print(json.dumps({'firefox': metadata, 'requested': page, 'result': result}), flush=True)
                 if (result['url'].split('#')[0] != page or not result['body'] or result['font'] != 'monospace'
-                        or result['differingControls']):
+                        or result['differingControls'] or result['differingShadowControls']):
                     raise RuntimeError(f'about page font or navigation differs from configuration: {result}')
                 if result['controls'] == 0:
                     raise RuntimeError(f'{page} control fixture is empty')
+                if page in ('about:preferences', 'about:addons') and result['shadowControlCount'] == 0:
+                    raise RuntimeError(f'{page} shadow control fixture is empty')
         finally:
             try:
                 if m:
