@@ -9,6 +9,8 @@ import subprocess
 import tempfile
 import time
 
+from marionette_driver.keys import Keys
+
 from ff_inspect import connect
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -102,6 +104,22 @@ def check(nova, display):
                         if time.monotonic() >= deadline:
                             raise RuntimeError(f'{button} did not navigate to {expected}')
                         time.sleep(.1)
+                m.actions.sequence('key', 'keyboard').send_keys(Keys.F6).perform()
+                for _ in range(30):
+                    if m.execute_script("return document.activeElement?.id === 'sidebar-button'", sandbox='system'):
+                        break
+                    m.actions.sequence('key', 'keyboard').send_keys(Keys.TAB).perform()
+                else:
+                    raise RuntimeError('keyboard traversal did not reach sidebar toolbar button')
+                m.actions.sequence('key', 'keyboard').send_keys(Keys.ARROW_RIGHT).perform()
+                if not m.execute_script("return document.activeElement?.id === 'back-button'", sandbox='system'):
+                    raise RuntimeError('toolbar arrow navigation did not focus Back')
+                m.actions.sequence('key', 'keyboard').send_keys(Keys.ENTER).perform()
+                deadline = time.monotonic() + 10
+                while m.execute_script('return gBrowser.currentURI.spec', sandbox='system') != first:
+                    if time.monotonic() >= deadline:
+                        raise RuntimeError('keyboard activation of Back did not navigate')
+                    time.sleep(.1)
         finally:
             try:
                 if m:
