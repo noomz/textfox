@@ -16,7 +16,7 @@ from ff_inspect import connect
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def check(nova, color_preference):
+def check(nova, color_preference, activation):
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0))
         port = sock.getsockname()[1]
@@ -109,7 +109,16 @@ def check(nova, color_preference):
                 time.sleep(.1)
             if m.execute_script("return [...Services.wm.getEnumerator('navigator:browser')].some(w => PrivateBrowsingUtils.isWindowPrivate(w))", sandbox='system'):
                 raise RuntimeError('private window existed before menu activation')
-            m.find_element('id', 'appMenu-new-private-window-button2').click()
+            if activation == 'pointer':
+                m.find_element('id', 'appMenu-new-private-window-button2').click()
+            else:
+                for _ in range(30):
+                    if m.execute_script("return document.activeElement?.id === 'appMenu-new-private-window-button2'", sandbox='system'):
+                        break
+                    m.actions.sequence('key', 'keyboard').send_keys(Keys.ARROW_DOWN).perform()
+                else:
+                    raise RuntimeError('keyboard navigation did not reach private window menu item')
+                m.actions.sequence('key', 'keyboard').send_keys(Keys.ENTER).perform()
             deadline = time.monotonic() + 20
             while not m.execute_script("""
                 return [...Services.wm.getEnumerator('navigator:browser')]
@@ -119,7 +128,7 @@ def check(nova, color_preference):
                     raise RuntimeError('app menu did not open a private window')
                 time.sleep(.1)
             print(json.dumps({'nova': nova, 'documentColorUse': color_preference,
-                              'privateWindowOpened': True}), flush=True)
+                              'activation': activation, 'privateWindowOpened': True}), flush=True)
         finally:
             try:
                 if m:
@@ -136,4 +145,5 @@ def check(nova, color_preference):
 if __name__ == '__main__':
     for nova in (False, True):
         for color_preference in (0, 2):
-            check(nova, color_preference)
+            for activation in ('pointer', 'keyboard'):
+                check(nova, color_preference, activation)
