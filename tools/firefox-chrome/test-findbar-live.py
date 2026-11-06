@@ -82,7 +82,8 @@ def check(nova, themed, high_contrast, rtl):
                         prefersContrast:matchMedia('(prefers-contrast)').matches,
                         direction:getComputedStyle(document.documentElement).direction,
                         outlineStyle:getComputedStyle(bar._findField).outlineStyle,
-                        outlineWidth:getComputedStyle(bar._findField).outlineWidth};
+                        outlineWidth:getComputedStyle(bar._findField).outlineWidth,
+                        fieldBackground:getComputedStyle(bar._findField).backgroundColor};
                 """, sandbox='system')
             print(json.dumps({'firefox': meta, 'themed': themed, 'result': result}), flush=True)
             if result['prefersContrast'] != high_contrast or result['direction'] != ('rtl' if rtl else 'ltr'):
@@ -91,6 +92,47 @@ def check(nova, themed, high_contrast, rtl):
                 raise RuntimeError('findbar state does not reflect keyboard search')
             if result['outlineStyle'] == 'none' or result['outlineWidth'] == '0px':
                 raise RuntimeError('focused findbar field has no computed outline')
+            field.send_keys(Keys.CONTROL, 'a')
+            field.send_keys('textfox-definitely-absent')
+            deadline = time.monotonic() + 10
+            while not m.execute_script("return document.querySelector('findbar:not([hidden]) .findbar-textbox')?.getAttribute('status') === 'notfound'", sandbox='system'):
+                if time.monotonic() >= deadline:
+                    raise RuntimeError('findbar did not report the absent text')
+                time.sleep(.1)
+            deadline = time.monotonic() + 10
+            while not m.execute_script("const e=document.querySelector('findbar:not([hidden]) .findbar-find-status'); return !!e?.textContent.trim() && e.getBoundingClientRect().width > 0", sandbox='system'):
+                if time.monotonic() >= deadline:
+                    raise RuntimeError('findbar not-found status text did not appear')
+                time.sleep(.1)
+            missing = m.execute_script("""
+                const bar=document.querySelector('findbar:not([hidden])');
+                const field=bar.querySelector('.findbar-textbox');
+                const status=bar.querySelector('.findbar-find-status');
+                const fs=getComputedStyle(field), ss=getComputedStyle(status), rect=status.getBoundingClientRect();
+                return {value:field.value, fieldStatus:field.getAttribute('status'),
+                  fieldBackground:fs.backgroundColor, fieldColor:fs.color,
+                  label:status.textContent, labelStatus:status.getAttribute('status'),
+                  labelDisplay:ss.display, labelVisibility:ss.visibility, labelWidth:rect.width, labelHeight:rect.height};
+                """, sandbox='system')
+            print(json.dumps({'nova':nova, 'themed':themed, 'notFound':missing}), flush=True)
+            if (missing['value'] != 'textfox-definitely-absent' or missing['labelStatus'] != 'notfound'
+                    or missing['labelDisplay'] == 'none' or missing['labelVisibility'] != 'visible'
+                    or missing['labelWidth'] <= 0 or missing['labelHeight'] <= 0):
+                raise RuntimeError(f'findbar not-found feedback is unavailable: {missing}')
+            field.send_keys(Keys.CONTROL, 'a')
+            field.send_keys('unique-find-target')
+            deadline = time.monotonic() + 10
+            while m.execute_script("return document.querySelector('findbar:not([hidden]) .findbar-textbox')?.getAttribute('status') === 'notfound'", sandbox='system'):
+                if time.monotonic() >= deadline:
+                    raise RuntimeError('findbar did not clear not-found status after a match')
+                time.sleep(.1)
+            m.set_context('content')
+            deadline = time.monotonic() + 10
+            while m.execute_script('return window.getSelection().toString()') != 'unique-find-target':
+                if time.monotonic() >= deadline:
+                    raise RuntimeError('findbar did not select the matching text after a miss')
+                time.sleep(.1)
+            m.set_context('chrome')
             m.actions.sequence('key', 'keyboard').send_keys(Keys.ESCAPE).perform()
             if m.execute_script("return !!document.querySelector('findbar:not([hidden])')", sandbox='system'):
                 raise RuntimeError('Escape did not close findbar')
