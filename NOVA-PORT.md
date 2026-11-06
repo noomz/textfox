@@ -337,7 +337,7 @@ Run `MOZ_HEADLESS=1 "$HOME/.cache/textfox-firefox-live/venv/bin/python" tools/fi
 
 ## Bookmarks toolbar alignment
 
-Firefox release `browser/base/content/navigator-toolbox.inc.xhtml` defines `#PlacesToolbarItems`, matching `chrome/navbar.css`. `tools/firefox-chrome/test-bookmarks-toolbar-live.py` opens the bookmarks toolbar and inserts a bookmark into each disposable profile. On headless Firefox 159.0 build `20261022150525`, `--tf-bookmarks-alignment: center` and `left` produced the requested computed alignment and placed the bookmark near the center or left edge respectively, with browser Nova on and off. This covers one bookmark and viewport, not overflow, RTL, keyboard use, painted appearance, or delivery paths.
+Firefox release `browser/base/content/navigator-toolbox.inc.xhtml` defines `#PlacesToolbarItems`, matching `chrome/navbar.css`. `tools/firefox-chrome/test-bookmarks-toolbar-live.py` opens the bookmarks toolbar and inserts a bookmark into each disposable profile. On headless Firefox 159.0 build `20261022150525`, `--tf-bookmarks-alignment: center` and `left` produced the requested computed alignment and placed the bookmark near the center or left edge respectively, with browser Nova on and off. Clicking the bookmark navigated to its local `about:robots` target in all four cases. This covers one bookmark and viewport, not overflow, RTL, keyboard use, painted appearance, or delivery paths.
 
 Run `MOZ_HEADLESS=1 "$HOME/.cache/textfox-firefox-live/venv/bin/python" tools/firefox-chrome/test-bookmarks-toolbar-live.py`.
 

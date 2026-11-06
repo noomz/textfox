@@ -54,7 +54,7 @@ def check(nova, alignment):
                 const done = arguments[arguments.length - 1];
                 setToolbarVisibility(document.getElementById('PersonalToolbar'), true);
                 PlacesUtils.bookmarks.insert({parentGuid:PlacesUtils.bookmarks.toolbarGuid,
-                  url:'https://example.com/', title:'Textfox bookmark fixture'})
+                  url:'about:robots', title:'Textfox bookmark fixture'})
                   .then(() => done(true), error => done(String(error)));
                 """, sandbox='system')
             if inserted is not True:
@@ -87,6 +87,12 @@ def check(nova, alignment):
                 offset = abs(item['left'] - container['left'])
             if offset > 4:
                 raise RuntimeError(f'bookmark is not positioned at requested alignment: {result}')
+            m.find_element('css selector', '#PlacesToolbarItems .bookmark-item[label="Textfox bookmark fixture"]').click()
+            deadline = time.monotonic() + 15
+            while m.execute_script('return gBrowser.currentURI.spec', sandbox='system') != 'about:robots':
+                if time.monotonic() >= deadline:
+                    raise RuntimeError('bookmark did not navigate to its local target')
+                time.sleep(.1)
         finally:
             try:
                 if m:
