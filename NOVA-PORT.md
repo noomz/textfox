@@ -449,6 +449,14 @@ In those samples, vanilla changed the field's computed background on a miss whil
 
 Run `MOZ_HEADLESS=1 "$HOME/.cache/textfox-firefox-live/venv/bin/python" tools/firefox-chrome/test-findbar-live.py`. The comparison reports the field-background difference; it does not assert that difference as a passing support check. The temporary intervention script `/tmp/tf-findbar-background-control.py` may disappear.
 
+## Findbar checkbox selector and match-case control
+
+Firefox release `toolkit/content/widgets/findbar.js` places the findbar checkboxes directly inside `.findbar-container`, matching `chrome/findbar.css`. `test-findbar-live.py` now sets `--tf-text-transform: uppercase` in themed disposable profiles and checks visible checkbox hosts. On headless Firefox 159.0 build `20261022150525`, those hosts computed uppercase in both browser Nova states, both bidi pseudo-locale directions, and both sampled `prefers-contrast` states; vanilla hosts computed `none`.
+
+The test also clicks Match Case for an uppercase query against lowercase fixture text. It observes a not-found state when enabled and a selected match when disabled in all sampled profiles. The test uses a disposable case-sensitivity preference and pointer activation. It does not prove painted text, checkbox keyboard traversal, split-view checkbox behavior, actual OS forced colors, real RTL locales, or delivery paths.
+
+Run `MOZ_HEADLESS=1 "$HOME/.cache/textfox-firefox-live/venv/bin/python" tools/firefox-chrome/test-findbar-live.py`.
+
 ## T1 completion baseline
 
 T1 baseline checks passed again: `test-firefox-live.sh`, `test-newtab-live.sh`, and `test-manual-install-live.py` on host Firefox 159.0 build `20261022150525`; `test-nixos-autoconfig-vm.sh` and `test-home-manager-vm.sh` on locked nixpkgs revision `1d060086d60cb76a40cf37109f979d88a5bd6396`, Firefox 159.0.1 build `20261102144711`. The host new-tab probe covers all independent browser/new-tab Nova combinations in vanilla and textfox disposable profiles. The NixOS VM compares vanilla and wrapped Firefox; the Home Manager VM tests a configured activated profile. Both VM probes read effective/default preferences, but neither verifies initialized new-tab content or visuals. Manual and Home Manager hosts, and the NixOS package option, can select different builds; the build IDs here identify tested baselines rather than restricting user overrides. Probe automation may affect user preferences. T1 closes the baseline task only. T2–T8 retain the remaining port, visual, accessibility, migration, update-safety, platform and full delivery checks. Nova remains disabled and support remains unclaimed.

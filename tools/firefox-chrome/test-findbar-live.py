@@ -24,9 +24,11 @@ def check(nova, themed, high_contrast, rtl):
         profile = Path(directory)
         if themed:
             shutil.copytree(ROOT / 'chrome', profile / 'chrome')
+            (profile / 'chrome' / 'config.css').write_text(':root { --tf-text-transform: uppercase; }\n')
         prefs = {'marionette.port': port, 'browser.nova.enabled': nova,
                  'toolkit.legacyUserProfileCustomizations.stylesheets': True,
                  'browser.shell.checkDefaultBrowser': False,
+                 'accessibility.typeaheadfind.casesensitive': 0,
                  'ui.useAccessibilityTheme': 1 if high_contrast else 0,
                  'intl.l10n.pseudo': 'bidi' if rtl else ''}
         (profile / 'user.js').write_text(''.join(
@@ -83,7 +85,11 @@ def check(nova, themed, high_contrast, rtl):
                         direction:getComputedStyle(document.documentElement).direction,
                         outlineStyle:getComputedStyle(bar._findField).outlineStyle,
                         outlineWidth:getComputedStyle(bar._findField).outlineWidth,
-                        fieldBackground:getComputedStyle(bar._findField).backgroundColor};
+                        fieldBackground:getComputedStyle(bar._findField).backgroundColor,
+                        checkboxes:[...bar.querySelectorAll('.findbar-container > checkbox')].map(e=>{
+                          const s=getComputedStyle(e), r=e.getBoundingClientRect();
+                          return {transform:s.textTransform, display:s.display, width:r.width, height:r.height};
+                        })};
                 """, sandbox='system')
             print(json.dumps({'firefox': meta, 'themed': themed, 'result': result}), flush=True)
             if result['prefersContrast'] != high_contrast or result['direction'] != ('rtl' if rtl else 'ltr'):
@@ -92,6 +98,35 @@ def check(nova, themed, high_contrast, rtl):
                 raise RuntimeError('findbar state does not reflect keyboard search')
             if result['outlineStyle'] == 'none' or result['outlineWidth'] == '0px':
                 raise RuntimeError('focused findbar field has no computed outline')
+            visible_checkboxes = [c for c in result['checkboxes'] if c['display'] != 'none' and c['width'] > 0 and c['height'] > 0]
+            if not visible_checkboxes:
+                raise RuntimeError('findbar checkbox fixture is unavailable')
+            if themed and any(c['transform'] != 'uppercase' for c in visible_checkboxes):
+                raise RuntimeError(f'findbar checkbox text transform did not apply: {visible_checkboxes}')
+            field.send_keys(Keys.CONTROL, 'a')
+            field.send_keys('UNIQUE-FIND-TARGET')
+            case_checkbox = m.find_element('css selector', 'findbar:not([hidden]) .findbar-case-sensitive')
+            if m.execute_script("return document.querySelector('findbar:not([hidden]) .findbar-case-sensitive').checked", sandbox='system'):
+                raise RuntimeError('case-sensitive fixture started enabled')
+            case_checkbox.click()
+            deadline = time.monotonic() + 10
+            while not m.execute_script("const b=document.querySelector('findbar:not([hidden])'); return b.querySelector('.findbar-case-sensitive').checked && b._findField.getAttribute('status') === 'notfound'", sandbox='system'):
+                if time.monotonic() >= deadline:
+                    raise RuntimeError('match-case control did not produce a case-sensitive miss')
+                time.sleep(.1)
+            case_checkbox.click()
+            deadline = time.monotonic() + 10
+            while m.execute_script("const b=document.querySelector('findbar:not([hidden])'); return b.querySelector('.findbar-case-sensitive').checked || b._findField.getAttribute('status') === 'notfound'", sandbox='system'):
+                if time.monotonic() >= deadline:
+                    raise RuntimeError('disabling match-case did not restore the match')
+                time.sleep(.1)
+            m.set_context('content')
+            deadline = time.monotonic() + 10
+            while m.execute_script('return window.getSelection().toString()') != 'unique-find-target':
+                if time.monotonic() >= deadline:
+                    raise RuntimeError('case-insensitive search did not select the matching text')
+                time.sleep(.1)
+            m.set_context('chrome')
             field.send_keys(Keys.CONTROL, 'a')
             field.send_keys('textfox-definitely-absent')
             deadline = time.monotonic() + 10
