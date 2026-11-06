@@ -16,7 +16,7 @@ from ff_inspect import connect
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def check(nova, display):
+def check(nova, display, rtl):
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0))
         port = sock.getsockname()[1]
@@ -27,7 +27,8 @@ def check(nova, display):
             f':root {{ --tf-display-nav-buttons: {display}; --tf-display-urlbar-icons: {display}; }}\n')
         prefs = {'marionette.port': port, 'browser.nova.enabled': nova,
                  'toolkit.legacyUserProfileCustomizations.stylesheets': True,
-                 'browser.shell.checkDefaultBrowser': False}
+                 'browser.shell.checkDefaultBrowser': False,
+                 'intl.l10n.pseudo': 'bidi' if rtl else ''}
         (profile / 'user.js').write_text(''.join(
             f'user_pref({json.dumps(k)}, {json.dumps(v)});\n' for k, v in prefs.items()))
         env = os.environ.copy()
@@ -68,14 +69,14 @@ def check(nova, display):
                 const star = document.getElementById('star-button-box');
                 if (!star || star.hidden) throw new Error('bookmark star fixture is unavailable');
                 const starRect = star.getBoundingClientRect(), starStyle = getComputedStyle(star);
-                return {option:root.getPropertyValue('--tf-display-nav-buttons').trim(), buttons,
+                return {direction:root.direction, option:root.getPropertyValue('--tf-display-nav-buttons').trim(), buttons,
                   iconOption:root.getPropertyValue('--tf-display-urlbar-icons').trim(),
                   star:{display:starStyle.display, visibility:starStyle.visibility,
                     width:starRect.width, height:starRect.height}};
                 """, sandbox='system')
             print(json.dumps({'firefox': metadata, 'requested': display, 'result': result}), flush=True)
-            if result['option'] != display:
-                raise RuntimeError('requested navigation button option not applied')
+            if result['option'] != display or result['direction'] != ('rtl' if rtl else 'ltr'):
+                raise RuntimeError('requested navigation button option or direction not applied')
             for button in result['buttons']:
                 if button['display'] != display:
                     raise RuntimeError(f"{button['id']} does not follow configuration: {button}")
@@ -111,7 +112,7 @@ def check(nova, display):
                     m.actions.sequence('key', 'keyboard').send_keys(Keys.TAB).perform()
                 else:
                     raise RuntimeError('keyboard traversal did not reach sidebar toolbar button')
-                m.actions.sequence('key', 'keyboard').send_keys(Keys.ARROW_RIGHT).perform()
+                m.actions.sequence('key', 'keyboard').send_keys(Keys.ARROW_LEFT if rtl else Keys.ARROW_RIGHT).perform()
                 if not m.execute_script("return document.activeElement?.id === 'back-button'", sandbox='system'):
                     raise RuntimeError('toolbar arrow navigation did not focus Back')
                 m.actions.sequence('key', 'keyboard').send_keys(Keys.ENTER).perform()
@@ -136,4 +137,5 @@ def check(nova, display):
 if __name__ == '__main__':
     for nova in (False, True):
         for display in ('none', 'flex'):
-            check(nova, display)
+            for rtl in (False, True):
+                check(nova, display, rtl)
