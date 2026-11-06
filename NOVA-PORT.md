@@ -324,7 +324,7 @@ This index summarizes bounded evidence above, not a complete selector or variabl
 | Findbar | `test-findbar-live.py` covers keyboard search, no-match feedback, recovery, and computed focus outline in both Nova states, two directions, and two contrast preferences. The no-match color difference is described below. | Inventory remaining selectors and confirm painted focus and contrast. |
 | Split view | `test-split-view-live.py` covers keyboard resizing, findbar geometry, and configured active-panel styling. `test-split-fullscreen-live.py` samples window fullscreen styling. A real-dialog clipping gap is described below. | Inventory remaining selectors and variables, DOM fullscreen, painted layout, and focus. |
 | Private windows | `test-private-window-live.py` covers URL bar results and one local navigation. `probe-private-indicator.py` found a missing indicator in a horizontal-tab configuration, described below. | Verify a safe indicator fix, other private-window chrome, and other platforms. |
-| New-tab | `test-newtab-live.sh` checks independent Nova preference combinations. Widget menu and logo probes cover bounded interaction and layout samples. `probe-topsite-menu.py` found a shortcut-menu selector gap, described below. | Complete selector and variable inventory, logo overflow, responsive layout, and accessibility checks. |
+| New-tab | `test-newtab-live.sh` checks independent Nova preference combinations. Widget menu, shortcut hover, and logo probes cover bounded interaction and layout samples. `probe-topsite-menu.py` found a shortcut-menu selector gap, described below. | Complete selector and variable inventory, logo overflow, responsive layout, and accessibility checks. |
 | `about:` pages | `about:preferences` font was checked in manual and assembled Nix profiles. `test-about-font-live.py` samples five page bodies and selected light-DOM control hosts as described below. | Identify supported pages and inspect remaining controls, shadow roots, and computed configuration. |
 
 On this continuation, `test-firefox-live.sh` and `test-findbar-live.py` passed again in headless Firefox. `probe-panel-colors.py` repeated the app-menu background discrepancy in both browser Nova states; forcing its background alone retained black foreground. These observations do not establish visual accessibility. T2 remains open.
@@ -456,6 +456,16 @@ Firefox release `toolkit/content/widgets/findbar.js` places the findbar checkbox
 The test also clicks Match Case for an uppercase query against lowercase fixture text. It observes a not-found state when enabled and a selected match when disabled in all sampled profiles. The test uses a disposable case-sensitivity preference and pointer activation. It does not prove painted text, checkbox keyboard traversal, split-view checkbox behavior, actual OS forced colors, real RTL locales, or delivery paths.
 
 Run `MOZ_HEADLESS=1 "$HOME/.cache/textfox-firefox-live/venv/bin/python" tools/firefox-chrome/test-findbar-live.py`.
+
+## New-tab shortcut hover selectors
+
+Firefox release `browser/extensions/newtab/content-src/components/TopSites/_TopSites.scss` styles the tile when `.top-site-inner:hover` or a keyboard-focused descendant matches; Nova adds scoped expansion and control-reveal rules in `styles/nova/_TopSites.scss`. Textfox sets the tile background to `--newtab-element-hover-color` only for `.tile:hover`, while also overriding Firefox's `--newtab-background-color-secondary` and hover token on the body.
+
+`probe-newtab-shortcut-hover.py` moves a pointer first over a shortcut title, then its tile, checking the actual `:hover` states. In sampled Firefox 159.0 build `20261022150525` profiles, all eight combinations of browser Nova, new-tab Nova, and theme passed in headless and headed Sway runs. Themed tile-hover computed backgrounds matched textfox's hover token. With the pointer over the title instead, the same tile computed a different background; vanilla samples computed the same tile color for both positions. This is a selector and state difference, not proof of a visual defect: icons or other layers may cover the background, and no painted comparison or contrast assessment was performed. No production CSS was changed.
+
+An initial probe failure exposed a moving fixture: the tile center moved from y=393.75 to y=253 after coordinates were captured, so the pointer missed. The probe now re-targets only when target geometry moves and reports that count; it still fails if the expected hover state is not reached. This is an inventory-fixture issue rather than evidence of a product invariant gap; §B recording requires approval under the spec backprop protocol. The sample does not cover drag-and-drop, keyboard focus styling, actual forced colors, wallpaper variants, or other platforms. Disposable feeds may access the network.
+
+Run `MOZ_HEADLESS=1 "$HOME/.cache/textfox-firefox-live/venv/bin/python" tools/firefox-chrome/probe-newtab-shortcut-hover.py`. The headed Sway launcher used for this sample was `/tmp/tf-sway-shortcut-hover.py` and may disappear.
 
 ## T1 completion baseline
 
