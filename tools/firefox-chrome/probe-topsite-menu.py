@@ -88,7 +88,20 @@ def check(browser_nova, newtab_nova, themed):
                 raise RuntimeError(f'shortcut menu fixture is not visible: {result}')
             if themed and (result['configuredWidth'] != '7px' or result['configuredRounding'] != '3px'):
                 raise RuntimeError('requested custom properties did not reach new-tab document')
-            print(json.dumps({'firefox': metadata, 'themed': themed, 'result': result}), flush=True)
+            m.find_element('tag name', 'body').send_keys(Keys.ARROW_DOWN)
+            focus = m.execute_script("""
+                const active = document.activeElement, inner = active?.shadowRoot?.activeElement;
+                const style = inner && getComputedStyle(inner);
+                return {active:active?.outerHTML.slice(0, 400), inner:inner?.outerHTML.slice(0, 400),
+                  focusVisible:inner?.matches(':focus-visible'), outlineStyle:style?.outlineStyle,
+                  outlineWidth:style?.outlineWidth};
+                """)
+            print(json.dumps({'firefox': metadata, 'themed': themed, 'result': result,
+                              'focus': focus}), flush=True)
+            if (not focus.get('inner') or 'role="menuitem"' not in focus['inner']
+                    or not focus.get('focusVisible') or focus.get('outlineStyle') == 'none'
+                    or focus.get('outlineWidth') == '0px'):
+                raise RuntimeError(f'shortcut menu item has no computed keyboard focus outline: {focus}')
             m.find_element('tag name', 'body').send_keys(Keys.ESCAPE)
             deadline = time.monotonic() + 10
             while m.execute_script("return !!document.querySelector('.top-site-outer panel-list:popover-open')"):
