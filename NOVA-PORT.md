@@ -310,6 +310,25 @@ With operator approval, `flake.lock` now records the channel tarball declared by
 
 The NixOS VM regression now runs a second unthemed Firefox profile alongside the wrapped textfox profile and reads both using guest-local Marionette. Against locked Firefox 159.0.1 build `20261102144711`, the test passed: vanilla reported both Nova effective/default values true and a 1px navbar border; textfox reported browser Nova effective false/default true, new-tab Nova effective/default true, and a 2px navbar border. The vanilla profile had no user values for either Nova preference; the textfox profile reported a browser Nova user value under automation. This is a computed-style and preference baseline, not proof of painted appearance or full new-tab initialization. The Home Manager activation VM test also passed after the shared probe gained profile and port arguments.
 
+## T2 coverage checkpoint
+
+This index summarizes bounded evidence above, not a complete selector or variable inventory. Live results refer to disposable Linux Firefox 159.0 build `20261022150525` unless otherwise stated. Searchfox `firefox-release` moves independently of that build.
+
+| Component | Existing evidence | Remaining T2 inventory |
+|---|---|---|
+| Tabs | `probe-tab-colors.py` found empty inputs to textfox's selected and hover color tokens. The sampled backgrounds were transparent. | Verify other tab selectors, vertical and pinned states, and color tokens across themes. |
+| Sidebar | `test-sidebar-theme-live.py`, `test-sidebar-tools-live.py`, and `test-sidebar-live.py` cover launcher, tools, and resize samples. Firefox release defines `sidebar-main` and styles `#pinned-tabs-container`; textfox still targets `#vertical-pinned-tabs-container`. | Inventory remaining sidebar selectors and states. A single pinned tab did not establish a defect. |
+| Toolbar | `test-firefox-live.sh` checks `#nav-bar` in both browser Nova states. Manual and VM baselines check configured borders. | Inventory buttons, bookmarks toolbar, window controls, and Firefox-owned variables in live states. |
+| URL bar | `test-urlbar-live.py` checks populated results and a simulated no-results condition. | Verify naturally visible one-offs and remaining selectors and variables. |
+| Menus and panels | `probe-panel-colors.py` shows app-menu content uses `--panel-background-color`, not the configured `--panel-background`, in sampled profiles. Firefox release `toolkit/themes/shared/popup.css` uses `--panel-background-color` for popup background. | Inspect other panels and menus, including active-item states, shadow parts, foreground pairing, and actual forced colors. |
+| Findbar | `test-findbar-live.py` covers keyboard search and computed focus outline in both Nova states, two directions, and two contrast preferences. | Inventory remaining selectors and confirm painted focus and contrast. |
+| Split view | `test-split-view-live.py` covers keyboard resizing and findbar geometry in sampled states. | Inventory remaining selectors and variables, painted layout, and focus. |
+| Private windows | `test-private-window-live.py` covers URL bar results and one local navigation. | Inspect other chrome components in private windows. |
+| New-tab | `test-newtab-live.sh` checks independent Nova preference combinations. Widget menu and logo probes cover bounded interaction and layout samples. | Complete selector and variable inventory, logo overflow, responsive layout, and accessibility checks. |
+| `about:` pages | `about:preferences` font was checked in manual and assembled Nix profiles. | Identify supported pages and inspect their actual DOM and computed configuration. |
+
+On this continuation, `test-firefox-live.sh` and `test-findbar-live.py` passed again in headless Firefox. `probe-panel-colors.py` repeated the app-menu background discrepancy in both browser Nova states; forcing its background alone retained black foreground. These observations do not establish visual accessibility. T2 remains open.
+
 ## T1 completion baseline
 
 T1 baseline checks passed again: `test-firefox-live.sh`, `test-newtab-live.sh`, and `test-manual-install-live.py` on host Firefox 159.0 build `20261022150525`; `test-nixos-autoconfig-vm.sh` and `test-home-manager-vm.sh` on locked nixpkgs revision `1d060086d60cb76a40cf37109f979d88a5bd6396`, Firefox 159.0.1 build `20261102144711`. The host new-tab probe covers all independent browser/new-tab Nova combinations in vanilla and textfox disposable profiles. The NixOS VM compares vanilla and wrapped Firefox; the Home Manager VM tests a configured activated profile. Both VM probes read effective/default preferences, but neither verifies initialized new-tab content or visuals. Manual and Home Manager hosts, and the NixOS package option, can select different builds; the build IDs here identify tested baselines rather than restricting user overrides. Probe automation may affect user preferences. T1 closes the baseline task only. T2–T8 retain the remaining port, visual, accessibility, migration, update-safety, platform and full delivery checks. Nova remains disabled and support remains unclaimed.
