@@ -58,10 +58,28 @@ def check(nova, color_preference):
                 const s = getComputedStyle(slot);
                 const root = getComputedStyle(document.documentElement);
                 const properties = ['--lwt-text-color', '--toolbar-color', '--panel-text-color', '--tf-bg'];
+                const privateButton = document.getElementById('appMenu-new-private-window-button2');
+                if (!privateButton) throw new Error('private window menu item not found');
+                const rect = privateButton.getBoundingClientRect(), buttonStyle = getComputedStyle(privateButton);
                 return {background:s.backgroundColor, color:s.color, border:s.border,
                         radius:s.borderRadius, forcedColors:matchMedia('(forced-colors: active)').matches,
+                        privateButton:{image:buttonStyle.listStyleImage, display:buttonStyle.display,
+                          width:rect.width, height:rect.height},
                         rootProperties:Object.fromEntries(properties.map(p => [p, root.getPropertyValue(p).trim()]))};
                 """, sandbox='system')
+            button = result['privateButton']
+            if (button['image'] != 'url("chrome://browser/skin/privateBrowsing.svg")'
+                    or button['display'] == 'none' or button['width'] <= 0 or button['height'] <= 0):
+                raise RuntimeError(f'private window menu item or icon style missing: {button}')
+            image = m.execute_async_script("""
+                const done = arguments[arguments.length - 1];
+                const image = new Image();
+                image.onload = () => done({loaded:true, width:image.naturalWidth, height:image.naturalHeight});
+                image.onerror = () => done({loaded:false});
+                image.src = 'chrome://browser/skin/privateBrowsing.svg';
+                """, sandbox='system')
+            if not image.get('loaded') or image.get('width', 0) <= 0 or image.get('height', 0) <= 0:
+                raise RuntimeError(f'private window icon resource did not load: {image}')
             override = m.execute_script("""
                 const panel = document.getElementById('appMenu-popup');
                 panel.style.setProperty('--panel-background-color', 'var(--tf-bg)', 'important');
@@ -79,8 +97,8 @@ def check(nova, color_preference):
                 """, sandbox='system')
             m.actions.sequence('key', 'keyboard').send_keys(Keys.ESCAPE).perform()
             closed = m.execute_script("return document.getElementById('appMenu-popup').state", sandbox='system')
-            print(json.dumps({'firefox': metadata, 'baseline': result, 'override': override,
-                              'keyboardFocus': focused, 'afterEscape': closed}), flush=True)
+            print(json.dumps({'firefox': metadata, 'baseline': result, 'privateIconResource': image,
+                              'override': override, 'keyboardFocus': focused, 'afterEscape': closed}), flush=True)
             if focused['panelState'] != 'open' or not focused['inPanel'] or closed != 'closed':
                 raise RuntimeError('app menu keyboard navigation or Escape failed')
         finally:

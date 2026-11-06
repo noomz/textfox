@@ -357,6 +357,10 @@ Run `MOZ_HEADLESS=1 "$HOME/.cache/textfox-firefox-live/venv/bin/python" tools/fi
 
 `probe-panel-colors.py` now removes its temporary background override before sending Arrow Down and Escape to the open app menu. On headless Firefox 159.0 build `20261022150525`, Arrow Down focused an element inside the menu and Escape closed it in both browser Nova states with document color preferences 0 and 2. The focused sign-in link computed a 2px solid outline in these samples. The menu was opened programmatically; this does not verify keyboard opening, item activation, painted focus, contrast, or actual forced colors. The sign-in link was not activated.
 
+## Private-window app-menu icon
+
+Firefox release `browser/base/content/appmenu-viewcache.inc.xhtml` defines `#appMenu-new-private-window-button2`, and `browser/themes/shared/jar.inc.mn` registers `chrome://browser/skin/privateBrowsing.svg`. On headless Firefox 159.0 build `20261022150525`, `probe-panel-colors.py` found the app-menu item with nonzero geometry and the expected computed icon URL in both browser Nova states and both sampled document color preferences. A separate image load in the same browser successfully decoded the resource at 16×16 pixels. This does not prove the icon is painted, has adequate contrast, or that the menu action works. It is separate from the missing private-window indicator described below.
+
 ## Horizontal tabs and window controls
 
 Firefox release `browser/base/content/titlebar-items.inc.xhtml` defines `.titlebar-buttonbox-container`. `chrome/tabs.css` applies `--tf-display-window-controls` to that selector and `--tf-display-horizontal-tabs` to `#TabsToolbar`. The README documents `block` for horizontal tabs, and the Nix `tabs.horizontal.enable` option generates `block`.
