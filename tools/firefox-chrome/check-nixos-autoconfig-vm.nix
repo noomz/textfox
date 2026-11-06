@@ -38,6 +38,22 @@ let
               exec /run/current-system/sw/bin/firefox --marionette -remote-allow-system-access --new-instance --profile /home/probe/profile about:blank
             '';
           };
+          systemd.services.firefox-vanilla = {
+            wantedBy = [ "multi-user.target" ];
+            serviceConfig = {
+              User = "probe";
+              Environment = [
+                "HOME=/home/probe"
+                "MOZ_HEADLESS=1"
+                "MOZ_REMOTE_ALLOW_SYSTEM_ACCESS=1"
+              ];
+            };
+            script = ''
+              mkdir -p /home/probe/vanilla
+              echo 'user_pref("marionette.port", 2829);' > /home/probe/vanilla/user.js
+              exec ${pkgs.firefox}/bin/firefox --marionette -remote-allow-system-access --new-instance --profile /home/probe/vanilla about:blank
+            '';
+          };
           systemd.services.verify-firefox-probe = {
             path = [
               pkgs.coreutils
@@ -46,7 +62,10 @@ let
               pkgs.systemd
             ];
             wantedBy = [ "multi-user.target" ];
-            after = [ "firefox-probe.service" ];
+            after = [
+              "firefox-probe.service"
+              "firefox-vanilla.service"
+            ];
             serviceConfig = {
               Type = "oneshot";
             };
@@ -56,7 +75,8 @@ let
                    test -s /home/probe/profile/chrome/userContent.css &&
                    find /home/probe/profile/chrome -maxdepth 1 -name '*-textfox-chrome' -print -quit | grep -q . &&
                    grep -q '0100007F:0B0C .* 0A ' /proc/net/tcp; then
-                  if ${pkgs.python3}/bin/python3 ${./probe-vm-preferences.py} --profile /home/probe/profile; then
+                  if ${pkgs.python3}/bin/python3 ${./probe-vm-preferences.py} --profile /home/probe/profile &&
+                     ${pkgs.python3}/bin/python3 ${./probe-vm-preferences.py} --profile /home/probe/vanilla --port 2829 --expect-nova on --output /tmp/shared/vanilla-preferences.json; then
                     echo PASS > /tmp/shared/result
                   else
                     echo FAIL > /tmp/shared/result

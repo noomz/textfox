@@ -38,11 +38,14 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--profile', required=True)
     parser.add_argument('--border')
+    parser.add_argument('--port', type=int, default=2828)
+    parser.add_argument('--output', default='/tmp/shared/preferences.json')
+    parser.add_argument('--expect-nova', choices=('on', 'off'), default='off')
     args = parser.parse_args()
     deadline = time.monotonic() + 110
     while True:
         try:
-            sock = socket.create_connection(('127.0.0.1', 2828), timeout=3)
+            sock = socket.create_connection(('127.0.0.1', args.port), timeout=3)
             break
         except OSError:
             if time.monotonic() >= deadline:
@@ -72,13 +75,13 @@ def main():
             ''',
             'args': [], 'sandbox': 'system', 'newSandbox': True,
         })['value']
-    Path('/tmp/shared/preferences.json').write_text(json.dumps(result))
+    Path(args.output).write_text(json.dumps(result))
     if result['profile'] != args.profile:
         raise RuntimeError('unexpected Firefox profile')
     if args.border is not None and result['navbarBorder'] != args.border:
         raise RuntimeError('configured navbar border not applied')
-    if result['preferences']['browser.nova.enabled']['effective']:
-        raise RuntimeError('browser Nova preference not disabled')
+    if result['preferences']['browser.nova.enabled']['effective'] != (args.expect_nova == 'on'):
+        raise RuntimeError('browser Nova preference did not match expectation')
     for preference in result['preferences'].values():
         if not isinstance(preference['default'], bool) or not isinstance(preference['effective'], bool):
             raise RuntimeError('Nova preference is not boolean')

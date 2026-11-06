@@ -22,6 +22,7 @@ set -e
 if [ "$status" -eq 0 ] && [ -f "$work/shared/result" ] && [ "$(cat "$work/shared/result")" = PASS ]; then
   echo 'NixOS autoconfig VM passed'
   python3 -m json.tool "$work/shared/preferences.json"
+  python3 -m json.tool "$work/shared/vanilla-preferences.json"
 else
   echo "NixOS autoconfig VM failed (exit $status); see $work/boot.log" >&2
   if [ -f "$work/shared/probe-error.txt" ]; then
