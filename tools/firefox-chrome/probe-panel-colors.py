@@ -9,6 +9,8 @@ import subprocess
 import tempfile
 import time
 
+from marionette_driver.keys import Keys
+
 from ff_inspect import connect
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -66,7 +68,21 @@ def check(nova, color_preference):
                 const s = getComputedStyle(panel.shadowRoot.querySelector('slot[part="content"]'));
                 return {background:s.backgroundColor, color:s.color};
                 """, sandbox='system')
-            print(json.dumps({'firefox': metadata, 'baseline': result, 'override': override}), flush=True)
+            m.execute_script("document.getElementById('appMenu-popup').style.removeProperty('--panel-background-color')", sandbox='system')
+            m.actions.sequence('key', 'keyboard').send_keys(Keys.ARROW_DOWN).perform()
+            focused = m.execute_script("""
+                const active = document.activeElement, panel = document.getElementById('appMenu-popup');
+                const style = getComputedStyle(active);
+                return {tag:active?.localName, id:active?.id, classes:active?.className,
+                        inPanel:panel.contains(active), panelState:panel.state,
+                        outlineStyle:style.outlineStyle, outlineWidth:style.outlineWidth};
+                """, sandbox='system')
+            m.actions.sequence('key', 'keyboard').send_keys(Keys.ESCAPE).perform()
+            closed = m.execute_script("return document.getElementById('appMenu-popup').state", sandbox='system')
+            print(json.dumps({'firefox': metadata, 'baseline': result, 'override': override,
+                              'keyboardFocus': focused, 'afterEscape': closed}), flush=True)
+            if focused['panelState'] != 'open' or not focused['inPanel'] or closed != 'closed':
+                raise RuntimeError('app menu keyboard navigation or Escape failed')
         finally:
             try:
                 if m:

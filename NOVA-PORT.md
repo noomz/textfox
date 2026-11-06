@@ -353,6 +353,10 @@ Firefox release `browser/base/content/browser-box.inc.xhtml` defines `box#vertic
 
 Run `MOZ_HEADLESS=1 "$HOME/.cache/textfox-firefox-live/venv/bin/python" tools/firefox-chrome/test-sidebar-tools-live.py`.
 
+## App-menu keyboard sample
+
+`probe-panel-colors.py` now removes its temporary background override before sending Arrow Down and Escape to the open app menu. On headless Firefox 159.0 build `20261022150525`, Arrow Down focused an element inside the menu and Escape closed it in both browser Nova states with document color preferences 0 and 2. The focused sign-in link computed a 2px solid outline in these samples. The menu was opened programmatically; this does not verify keyboard opening, item activation, painted focus, contrast, or actual forced colors. The sign-in link was not activated.
+
 ## T1 completion baseline
 
 T1 baseline checks passed again: `test-firefox-live.sh`, `test-newtab-live.sh`, and `test-manual-install-live.py` on host Firefox 159.0 build `20261022150525`; `test-nixos-autoconfig-vm.sh` and `test-home-manager-vm.sh` on locked nixpkgs revision `1d060086d60cb76a40cf37109f979d88a5bd6396`, Firefox 159.0.1 build `20261102144711`. The host new-tab probe covers all independent browser/new-tab Nova combinations in vanilla and textfox disposable profiles. The NixOS VM compares vanilla and wrapped Firefox; the Home Manager VM tests a configured activated profile. Both VM probes read effective/default preferences, but neither verifies initialized new-tab content or visuals. Manual and Home Manager hosts, and the NixOS package option, can select different builds; the build IDs here identify tested baselines rather than restricting user overrides. Probe automation may affect user preferences. T1 closes the baseline task only. T2–T8 retain the remaining port, visual, accessibility, migration, update-safety, platform and full delivery checks. Nova remains disabled and support remains unclaimed.
