@@ -55,9 +55,13 @@ def check(nova, mode):
                 if time.monotonic() >= deadline:
                     raise RuntimeError('Firefox startup did not finish')
                 time.sleep(.1)
+            m.set_context('content')
+            m.navigate("data:text/html,<body style='height:100vh'><script>addEventListener('pointerdown',()=>document.title='active-pointer')</script></body>")
+            m.set_context('chrome')
             m.execute_script("""
                 window.resizeTo(720, 600);
                 const active = gBrowser.selectedTab;
+                window.__tfActiveBrowser = active.linkedBrowser;
                 const alertTab = gBrowser.addTrustedTab("data:text/html,<script>setTimeout(()=>alert('split-probe-alert'),5000)</script>");
                 gBrowser.addTabSplitView([alertTab, active], {insertBefore:active});
                 gBrowser.selectedTab = active;
@@ -114,6 +118,25 @@ def check(nova, mode):
                     or not (content['left'] < point['x'] < content['right']
                             and content['top'] < point['y'] < content['bottom'])):
                 raise RuntimeError(f'alert or hit-test fixture is inconclusive: {result}')
+            m.execute_script("""
+                const browser=document.querySelector('browser[tabDialogShowing]');
+                const dialog=gBrowser.getTabDialogBox(browser).getContentDialogManager()._dialogs[0];
+                window.__tfDialogPointer=0;
+                dialog._frame.contentDocument.addEventListener('pointerdown', () => window.__tfDialogPointer++, true);
+                """, sandbox='system')
+            m.actions.sequence('pointer', 'mouse', {'pointerType':'mouse'}).pointer_move(
+                round(point['x']), round(point['y'])).pointer_down().pointer_up().perform()
+            deadline = time.monotonic() + 5
+            while True:
+                pointer = m.execute_script("return {activeTitle:window.__tfActiveBrowser.contentTitle, dialogPointers:window.__tfDialogPointer}", sandbox='system')
+                if pointer['activeTitle'] == 'active-pointer' or pointer['dialogPointers']:
+                    break
+                if time.monotonic() >= deadline:
+                    raise RuntimeError(f'pointer event was not observed: {pointer}')
+                time.sleep(.1)
+            if (pointer['activeTitle'] == 'active-pointer') == (pointer['dialogPointers'] > 0):
+                raise RuntimeError(f'pointer event receiver is ambiguous: {pointer}')
+            print(json.dumps({'nova': nova, 'mode': mode, 'pointer': pointer}), flush=True)
         finally:
             try:
                 if m:
