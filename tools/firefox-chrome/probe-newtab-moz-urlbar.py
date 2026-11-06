@@ -21,7 +21,7 @@ from ff_inspect import connect
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def check(browser_nova, newtab_nova, themed, variant):
+def check(browser_nova, newtab_nova, themed, variant, contrast_cycle=False):
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0))
         port = sock.getsockname()[1]
@@ -42,6 +42,9 @@ def check(browser_nova, newtab_nova, themed, variant):
                  'browser.search.suggest.enabled': False,
                  'toolkit.legacyUserProfileCustomizations.stylesheets': True,
                  'browser.shell.checkDefaultBrowser': False}
+        if contrast_cycle:
+            prefs['ui.useAccessibilityTheme'] = 0
+            prefs['browser.display.document_color_use'] = 0
         (profile / 'user.js').write_text(''.join(
             f'user_pref({json.dumps(k)}, {json.dumps(v)});\n' for k, v in prefs.items()))
         env = os.environ.copy()
@@ -230,7 +233,59 @@ def check(browser_nova, newtab_nova, themed, variant):
                 if result['moz'] or not result['handoff']:
                     raise RuntimeError(f'expected handoff fallback: {result}')
                 state=None
+            contrast = None
+            if browser_nova and contrast_cycle:
+                selector = '.search-wrapper moz-urlbar'
+                m.execute_script("document.querySelector(arguments[0]).setAttribute('data-tf-contrast-cycle', 'same')", script_args=[selector])
+                def read_switcher():
+                    return m.execute_script("""
+                        const h=document.querySelector('.search-wrapper moz-urlbar');
+                        const b=h?.querySelector('.searchmode-switcher');
+                        const title=b?.querySelector('.searchmode-switcher-title');
+                        const word=b?.querySelector('.searchmode-switcher-wordmark');
+                        const tr=title?.getBoundingClientRect(), wr=word?.getBoundingClientRect();
+                        return {same:h?.getAttribute('data-tf-contrast-cycle') === 'same',
+                          contrast:matchMedia('(prefers-contrast)').matches,
+                          forced:matchMedia('(forced-colors: active)').matches,
+                          wordmark:b?.getAttribute('wordmark'), icon:!!b?.getAttribute('iconsrc'),
+                          label:b?.getAttribute('aria-label'), title:title?.textContent.trim(),
+                          titleDisplay:title && getComputedStyle(title).display,
+                          titleWidth:tr?.width, titleHeight:tr?.height,
+                          wordmarkImage:word && getComputedStyle(word).backgroundImage,
+                          wordmarkWidth:wr?.width, wordmarkHeight:wr?.height};
+                        """)
+                def wait_switcher(high):
+                    deadline = time.monotonic() + 15
+                    while True:
+                        sample = read_switcher()
+                        if not sample['same']:
+                            raise RuntimeError(f'search host changed during contrast cycle: {sample}')
+                        media_matches = sample['contrast'] == high and sample['forced'] == high
+                        if high:
+                            ready = (sample['wordmark'] is None and sample['icon'] and sample['title'] == 'Google'
+                                     and sample['titleDisplay'] != 'none' and sample['titleWidth'] > 0
+                                     and sample['titleHeight'] > 0)
+                        else:
+                            ready = (sample['wordmark'] == 'google' and sample['wordmarkWidth'] > 0
+                                     and sample['wordmarkHeight'] > 0 and '/engine-wordmarks/' in sample['wordmarkImage'])
+                        ready = media_matches and ready
+                        if ready:
+                            return sample
+                        if time.monotonic() >= deadline:
+                            raise RuntimeError(f'search switcher did not reach expected contrast state: {sample}')
+                        time.sleep(.1)
+                normal = wait_switcher(False)
+                m.set_context('chrome')
+                m.execute_script("Services.prefs.setIntPref('ui.useAccessibilityTheme', 1); Services.prefs.setIntPref('browser.display.document_color_use', 2);", sandbox='system')
+                m.set_context('content')
+                high = wait_switcher(True)
+                m.set_context('chrome')
+                m.execute_script("Services.prefs.setIntPref('ui.useAccessibilityTheme', 0); Services.prefs.setIntPref('browser.display.document_color_use', 0);", sandbox='system')
+                m.set_context('content')
+                restored = wait_switcher(False)
+                contrast = {'normal': normal, 'high': high, 'restored': restored}
             print(json.dumps({'firefox':metadata,'themed':themed,'variant':variant,'result':result,'inputState':state,
+                              'contrastCycle':contrast,
                               'interactionReplacements':replaced if browser_nova else None,
                               'switcherReplacements':switcher_replacements if browser_nova and variant != 'default' else None}),flush=True)
         finally:
@@ -249,8 +304,11 @@ def check(browser_nova, newtab_nova, themed, variant):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--variant', choices=('default', 'a', 'b', 'both'), default='default')
+    parser.add_argument('--contrast-cycle', action='store_true')
     args = parser.parse_args()
+    if args.contrast_cycle and args.variant == 'default':
+        parser.error('--contrast-cycle requires a, b, or both')
     for browser_nova in (False, True):
         for newtab_nova in (False, True):
             for themed in (False, True):
-                check(browser_nova, newtab_nova, themed, args.variant)
+                check(browser_nova, newtab_nova, themed, args.variant, args.contrast_cycle)
