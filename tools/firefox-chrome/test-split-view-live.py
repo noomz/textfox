@@ -160,7 +160,10 @@ def check(nova, themed, rtl, high_contrast):
                           if (!e) return null;
                           const r=e.getBoundingClientRect(), s=getComputedStyle(e);
                           return {x:r.x,y:r.y,width:r.width,height:r.height,display:s.display,
-                                  visibility:s.visibility, direction:s.direction};
+                                  visibility:s.visibility, direction:s.direction,
+                                  borderTopWidth:s.borderTopWidth, borderLeftWidth:s.borderLeftWidth,
+                                  borderRightWidth:s.borderRightWidth, borderLeftStyle:s.borderLeftStyle,
+                                  borderRightStyle:s.borderRightStyle, position:s.position};
                         })};
                 """, sandbox='system')
             print(json.dumps({'nova': nova, 'themed': themed, 'geometry': overlap}), flush=True)
