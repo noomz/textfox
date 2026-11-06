@@ -102,6 +102,17 @@ def check(nova, display, vertical):
                     """, sandbox='system')
                 if drag['expanded'] or drag['height'] <= 0:
                     raise RuntimeError(f'collapsed tools fixture invalid: {drag}')
+                vertical_strip = m.execute_script("""
+                    const strip = document.querySelector('box#vertical-tabs');
+                    if (!strip) throw new Error('vertical tab strip selector did not match');
+                    const style = getComputedStyle(strip), rect = strip.getBoundingClientRect();
+                    return {display:style.display, border:style.borderTopWidth,
+                            width:rect.width, height:rect.height};
+                    """, sandbox='system')
+                print(json.dumps({'nova': nova, 'verticalStrip': vertical_strip}), flush=True)
+                if (vertical_strip['display'] == 'none' or vertical_strip['border'] != '2px'
+                        or vertical_strip['width'] <= 0 or vertical_strip['height'] <= 0):
+                    raise RuntimeError(f'vertical tab strip is not styled or visible: {vertical_strip}')
                 m.execute_script('gBrowser.pinTab(gBrowser.addTrustedTab("about:blank"))', sandbox='system')
                 pinned = m.execute_script("""
                     const tabs = document.getElementById('tabbrowser-tabs');

@@ -316,7 +316,7 @@ This index summarizes bounded evidence above, not a complete selector or variabl
 
 | Component | Existing evidence | Remaining T2 inventory |
 |---|---|---|
-| Tabs | `probe-tab-colors.py` found empty inputs to textfox's selected and hover color tokens. The sampled backgrounds were transparent. | Verify other tab selectors, vertical and pinned states, and color tokens across themes. |
+| Tabs | `probe-tab-colors.py` found empty inputs to textfox's selected and hover color tokens. The sampled backgrounds were transparent. The vertical strip check is described below. | Verify other tab selectors, vertical and pinned states, and color tokens across themes. |
 | Sidebar | `test-sidebar-theme-live.py`, `test-sidebar-tools-live.py`, and `test-sidebar-live.py` cover launcher, tools, and resize samples. Firefox release defines `sidebar-main` and styles `#pinned-tabs-container`; textfox still targets `#vertical-pinned-tabs-container`. | Inventory remaining sidebar selectors and states. A single pinned tab did not establish a defect. |
 | Toolbar | `test-firefox-live.sh` checks `#nav-bar` in both browser Nova states. Manual and VM baselines check configured borders. Navigation and bookmarks toolbar probes are described below. | Inventory remaining buttons, window controls, and Firefox-owned variables in live states. |
 | URL bar | `test-urlbar-live.py` checks populated results and a simulated no-results condition. | Verify naturally visible one-offs and remaining selectors and variables. |
@@ -346,6 +346,12 @@ Run `MOZ_HEADLESS=1 "$HOME/.cache/textfox-firefox-live/venv/bin/python" tools/fi
 `chrome/content/about.css` applies `--tf-font-family` to elements in `about:` documents. `tools/firefox-chrome/test-about-font-live.py` opens `about:preferences`, `about:config`, `about:profiles`, `about:addons`, and `about:support` in disposable profiles. On headless Firefox 159.0 build `20261022150525`, all five page bodies computed the configured `monospace` font with browser Nova on and off. The test checks page bodies only, not internal controls, shadow DOM, visual readability, or a complete list of supported pages. It does not change settings on those pages.
 
 Run `MOZ_HEADLESS=1 "$HOME/.cache/textfox-firefox-live/venv/bin/python" tools/firefox-chrome/test-about-font-live.py`.
+
+## Vertical tab strip selector
+
+Firefox release `browser/base/content/browser-box.inc.xhtml` defines `box#vertical-tabs`, matching `chrome/tabs.css`. `test-sidebar-tools-live.py` now checks that selector after enabling vertical tabs and collapsing the launcher. On headless Firefox 159.0 build `20261022150525`, the strip had nonzero geometry and a 2px computed top border in both browser Nova states. This covers the default border width in one sidebar configuration, not painted borders, other tab states, keyboard behavior, or delivery paths. The existing sidebar tools and splitter checks passed in the same run.
+
+Run `MOZ_HEADLESS=1 "$HOME/.cache/textfox-firefox-live/venv/bin/python" tools/firefox-chrome/test-sidebar-tools-live.py`.
 
 ## T1 completion baseline
 
