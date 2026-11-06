@@ -51,7 +51,7 @@ let
             path = [ pkgs.systemd ];
             serviceConfig.Type = "oneshot";
             script = ''
-              if ${pkgs.python3}/bin/python3 ${./probe-vm-preferences.py}; then
+              if ${pkgs.python3}/bin/python3 ${./probe-vm-preferences.py} --profile /home/probe/.config/mozilla/firefox/test --border 7px; then
                 echo PASS > /tmp/shared/result
               else
                 echo FAIL > /tmp/shared/result

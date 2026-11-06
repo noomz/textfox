@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Read Firefox chrome state from Marionette inside a disposable VM."""
+import argparse
 import json
 from pathlib import Path
 import socket
@@ -34,6 +35,10 @@ def command(sock, number, name, params):
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--profile', required=True)
+    parser.add_argument('--border')
+    args = parser.parse_args()
     deadline = time.monotonic() + 110
     while True:
         try:
@@ -65,10 +70,15 @@ def main():
             'args': [], 'sandbox': 'system', 'newSandbox': True,
         })['value']
     Path('/tmp/shared/preferences.json').write_text(json.dumps(result))
-    if result['profile'] != '/home/probe/.config/mozilla/firefox/test':
+    if result['profile'] != args.profile:
         raise RuntimeError('unexpected Firefox profile')
-    if result['navbarBorder'] != '7px' or result['preferences']['browser.nova.enabled']['effective']:
-        raise RuntimeError('Home Manager theme or Nova preference not applied')
+    if args.border is not None and result['navbarBorder'] != args.border:
+        raise RuntimeError('configured navbar border not applied')
+    if result['preferences']['browser.nova.enabled']['effective']:
+        raise RuntimeError('browser Nova preference not disabled')
+    for preference in result['preferences'].values():
+        if not isinstance(preference['default'], bool) or not isinstance(preference['effective'], bool):
+            raise RuntimeError('Nova preference is not boolean')
 
 
 if __name__ == '__main__':

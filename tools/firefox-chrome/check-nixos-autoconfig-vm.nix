@@ -56,7 +56,11 @@ let
                    test -s /home/probe/profile/chrome/userContent.css &&
                    find /home/probe/profile/chrome -maxdepth 1 -name '*-textfox-chrome' -print -quit | grep -q . &&
                    grep -q '0100007F:0B0C .* 0A ' /proc/net/tcp; then
-                  echo PASS > /tmp/shared/result
+                  if ${pkgs.python3}/bin/python3 ${./probe-vm-preferences.py} --profile /home/probe/profile; then
+                    echo PASS > /tmp/shared/result
+                  else
+                    echo FAIL > /tmp/shared/result
+                  fi
                   systemctl poweroff
                   exit 0
                 fi
