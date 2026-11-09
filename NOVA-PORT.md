@@ -469,6 +469,12 @@ A headed run on a 1280×800 Sway headless compositor repeated the same compariso
 
 Run `MOZ_HEADLESS=1 "$HOME/.cache/textfox-firefox-live/venv/bin/python" tools/firefox-chrome/probe-urlbar-colors.py`. The probe reports the mismatch rather than treating it as a passing support check.
 
+## Keyboard-active synthetic menu item
+
+`tools/firefox-chrome/probe-menu-active.py` creates a two-item XUL menupopup in disposable Firefox profiles, opens it, sends Arrow Down, checks an enabled `menuitem[_moz-menuactive="true"]` with nonzero geometry, and sends Escape. On headless Firefox 159.0 build `20261022150525`, both browser Nova states produced a blue computed background for the active item in vanilla and a transparent background in textfox. In those themed samples `--tab-selected-bgcolor`, `--toolbar-field-color`, and `--toolbar-bgcolor` computed empty. The menu rule consumes the first property; the textfox root definition derives it from the latter two. Setting only `--tab-selected-bgcolor` on the active item to system `Highlight` in the disposable fixture changed its computed background to blue. This intervention supports a variable dependency in that fixture, not a safe production fix or a contrast claim.
+
+The fixture is synthetic and tests computed style, not painted focus visibility or a built-in menu. It does not cover disabled menu items, pointer activation, actual OS forced colors, or other themes and platforms. V5 already requires visible focus and contrast; whether a real menu has a painted defect remains unverified, so no new spec invariant or product change was made. Run `MOZ_HEADLESS=1 "$HOME/.cache/textfox-firefox-live/venv/bin/python" tools/firefox-chrome/probe-menu-active.py`.
+
 ## Findbar no-match feedback
 
 Firefox release `toolkit/content/widgets/findbar.js` defines `.findbar-textbox` and `.findbar-find-status`. Release `toolkit/themes/shared/findbar.css` changes the field background for `[status="notfound"]`; textfox's `chrome/findbar.css` sets the field background from `--tf-bg` with `!important`. `test-findbar-live.py` now searches for absent text, waits for the status label, then searches for matching text again. On headless Firefox 159.0 build `20261022150525`, the full Nova, bidi pseudo-locale, and contrast-preference matrix passed: the not-found status text had nonzero visible geometry, the next matching search selected its text, and Escape closed the bar.
