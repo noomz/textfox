@@ -70,7 +70,12 @@ def check(nova, display, rtl, high_contrast):
                 const star = document.getElementById('star-button-box');
                 if (!star || star.hidden) throw new Error('bookmark star fixture is unavailable');
                 const starRect = star.getBoundingClientRect(), starStyle = getComputedStyle(star);
-                return {direction:root.direction, prefersContrast:matchMedia('(prefers-contrast)').matches,
+                const urlbar = document.getElementById('urlbar');
+                const urlbarStyle = getComputedStyle(urlbar), urlbarRect = urlbar.getBoundingClientRect();
+                const heights = {toolbar:urlbarStyle.getPropertyValue('--urlbar-toolbar-height').trim(),
+                  container:urlbarStyle.getPropertyValue('--urlbar-container-height').trim(),
+                  urlbarHeight:urlbarRect.height};
+                return {heights, direction:root.direction, prefersContrast:matchMedia('(prefers-contrast)').matches,
                   option:root.getPropertyValue('--tf-display-nav-buttons').trim(), buttons,
                   iconOption:root.getPropertyValue('--tf-display-urlbar-icons').trim(),
                   star:{display:starStyle.display, visibility:starStyle.visibility,
