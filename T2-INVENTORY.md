@@ -46,6 +46,20 @@ The sidebar's `--lwt-text-color` and `--lwt-accent-color` come from Firefox them
 
 Menu colors reuse `--tab-selected-bgcolor` and `--tab-hover-background-color` from `overwrites.css`; those depend on Firefox theme inputs that were empty in the sampled profiles. The intervention is not a proposed fix or evidence of contrast across themes.
 
+## New-tab and `about:` content
+
+| textfox rule group | Source and live evidence | Unresolved |
+|---|---|---|
+| `about:home`/`about:newtab` body wallpaper classes, new-tab color tokens, and forced-colors border | New-tab probes initialize both independent Nova preferences. Existing generated-CSS probes test a solid wallpaper and content forced-colors media query, including a border-color negative control. | Image wallpapers, weather and secondary-background uses, actual OS high contrast, other themes, and painted contrast. |
+| `.logo-and-wordmark .logo`, `.wordmark`, and `.wordmark::before` | Tagged [logo component](https://github.com/mozilla-firefox/firefox/blob/9a2dc53c369c7ae5172018b35988e1d2ffeff402/browser/extensions/newtab/content-src/components/Logo/Logo.jsx) defines these elements. Existing probes inspect generated logo content and painted-pixel differences. | Responsive geometry, overlap, readability, font overrides, and real RTL. |
+| `.search-wrapper .search-handoff-button`, `input`, and hover | Tagged [search handoff code](https://github.com/mozilla-firefox/firefox/blob/9a2dc53c369c7ae5172018b35988e1d2ffeff402/browser/components/search/content/contentSearchHandoffUI.mjs) locates the handoff button inside a shadow root. Existing handoff, non-handoff, and gated `moz-urlbar` probes document selector/configuration differences. | Safe shadow-boundary fix, hover and focus painting, search submission, and other variants. |
+| `.top-site-outer .tile`, hover, and `.top-site-icon` | Tagged [top-site component](https://github.com/mozilla-firefox/firefox/blob/9a2dc53c369c7ae5172018b35988e1d2ffeff402/browser/extensions/newtab/content-src/components/TopSites/TopSite.jsx) defines top-site structures. Existing probes check tile borders and compare hover over title versus tile. | Painted hover and focus, drag/drop, all wallpaper states, and icon-background matching. |
+| `.context-menu` | Existing new-tab widget and shortcut-menu probes distinguish actual shadow/selector behavior and exercise menu opening. | Full target matching, menu item activation, painted appearance, and accessibility. |
+| `.card-outer`, `.card`, `.card-preview-image-outer`, `.card-context` | Tagged [card component](https://github.com/mozilla-firefox/firefox/blob/9a2dc53c369c7ae5172018b35988e1d2ffeff402/browser/extensions/newtab/content-src/components/Card/Card.jsx) defines card outer, preview, and context elements. | Initialized history-card fixture, full selector matching, configured borders, hidden context, and painted readability. |
+| `@-moz-document url-prefix(about:) { * }` font rule | `test-about-font-live.py` samples five pages and selected hosts/shadow controls in both browser Nova states. | Full supported-page boundary, other shadow roots, interaction, and painted readability. |
+
+The new-tab rule defines `--newtab-background-color-secondary`, `--newtab-border-color`, `--newtab-element-hover-color`, and `--newtab-weather-background-color`, using Firefox's `--newtab-wallpaper-color`, `--newtab-background-color`, and `--newtab-contextual-text-primary-color`. Existing probes cover only some consumers and wallpaper states; full custom-property inventory remains open. Disposable new-tab feeds may use network.
+
 ## URL bar
 
 | textfox rule group | Source and live evidence | Unresolved |
