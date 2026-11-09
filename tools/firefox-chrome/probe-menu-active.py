@@ -17,7 +17,7 @@ from ff_inspect import connect
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def check(nova, themed, builtin):
+def check(nova, themed, builtin, overflow):
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0))
         port = sock.getsockname()[1]
@@ -25,7 +25,7 @@ def check(nova, themed, builtin):
         profile = Path(directory)
         if themed:
             shutil.copytree(ROOT / 'chrome', profile / 'chrome')
-            (profile / 'chrome' / 'config.css').write_text(':root { --tf-rounding: 7px; }\n')
+            (profile / 'chrome' / 'config.css').write_text(':root { --tf-rounding: 7px; --tf-border-width: 5px; }\n')
         prefs = {'marionette.port': port, 'browser.nova.enabled': nova,
                  'toolkit.legacyUserProfileCustomizations.stylesheets': True,
                  'browser.shell.checkDefaultBrowser': False}
@@ -53,7 +53,8 @@ def check(nova, themed, builtin):
                   popup = document.getElementById('toolbar-context-menu');
                 } else {
                   popup = document.createXULElement('menupopup');
-                  for (const label of ['First', 'Second']) {
+                  const labels = arguments[1] ? Array.from({length:80}, (_, i) => `Item ${i + 1}`) : ['First', 'Second'];
+                  for (const label of labels) {
                     const item = document.createXULElement('menuitem');
                     item.setAttribute('label', label);
                     popup.append(item);
@@ -62,7 +63,7 @@ def check(nova, themed, builtin):
                 }
                 popup.setAttribute('data-textfox-probe', 'true');
                 popup.openPopup(document.getElementById('PanelUI-menu-button'), 'after_end');
-                """, script_args=[builtin], sandbox='system')
+                """, script_args=[builtin, overflow], sandbox='system')
             deadline = time.monotonic() + 15
             while not m.execute_script("return document.querySelector('menupopup[data-textfox-probe]').state === 'open'", sandbox='system'):
                 if time.monotonic() >= deadline:
@@ -103,6 +104,36 @@ def check(nova, themed, builtin):
                     active.style.removeProperty('--tab-selected-bgcolor');
                     return result;
                     """, sandbox='system')
+            overflow_state = None
+            if overflow:
+                overflow_state = m.execute_script("""
+                    const popup=document.querySelector('menupopup[data-textfox-probe]');
+                    const arrow=popup.shadowRoot?.querySelector('.menupopup-arrowscrollbox');
+                    const scroll=arrow?.scrollbox;
+                    if (!arrow || !scroll) throw new Error('menu overflow scrollbox missing');
+                    const s=getComputedStyle(arrow), r=arrow.getBoundingClientRect();
+                    return {hostBorder:s.borderTopWidth, hostBorderStyle:s.borderTopStyle,
+                      hostWidth:r.width, hostHeight:r.height, scrollHeight:scroll.scrollHeight,
+                      clientHeight:scroll.clientHeight, scrollTop:scroll.scrollTop};
+                    """, sandbox='system')
+                if overflow_state['scrollHeight'] <= overflow_state['clientHeight'] or overflow_state['clientHeight'] <= 0:
+                    raise RuntimeError(f'menu overflow fixture is inconclusive: {overflow_state}')
+                if themed and (overflow_state['hostBorder'] != '5px' or overflow_state['hostBorderStyle'] != 'solid'):
+                    raise RuntimeError(f'configured menu scrollbox border missing: {overflow_state}')
+                m.actions.sequence('key', 'keyboard').send_keys(Keys.END).perform()
+                deadline = time.monotonic() + 10
+                while True:
+                    scrolled = m.execute_script("""
+                        const box=document.querySelector('menupopup[data-textfox-probe]').shadowRoot
+                          .querySelector('.menupopup-arrowscrollbox').scrollbox;
+                        return box.scrollTop;
+                        """, sandbox='system')
+                    if scrolled > overflow_state['scrollTop']:
+                        break
+                    if time.monotonic() >= deadline:
+                        raise RuntimeError(f'keyboard did not scroll overflow menu: {overflow_state}, {scrolled}')
+                    time.sleep(.1)
+                overflow_state['afterEnd'] = scrolled
             m.actions.sequence('key', 'keyboard').send_keys(Keys.ESCAPE).perform()
             deadline = time.monotonic() + 10
             while m.execute_script("return document.querySelector('menupopup[data-textfox-probe]').state", sandbox='system') != 'closed':
@@ -110,7 +141,7 @@ def check(nova, themed, builtin):
                     raise RuntimeError('Escape did not close fixture menu')
                 time.sleep(.1)
             print(json.dumps({'firefox':metadata, 'themed':themed, 'builtin':builtin, 'active':sample,
-                              'intervention':intervention}), flush=True)
+                              'intervention':intervention, 'overflow':overflow_state}), flush=True)
         finally:
             try:
                 if m:
@@ -127,7 +158,10 @@ def check(nova, themed, builtin):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--builtin', action='store_true')
+    parser.add_argument('--overflow', action='store_true')
     args = parser.parse_args()
+    if args.builtin and args.overflow:
+        parser.error('--overflow requires the synthetic menu')
     for nova in (False, True):
         for themed in (False, True):
-            check(nova, themed, args.builtin)
+            check(nova, themed, args.builtin, args.overflow)
