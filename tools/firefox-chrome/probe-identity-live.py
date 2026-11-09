@@ -100,6 +100,8 @@ def check(nova, display):
                  'geo.prompt.testing':False,
                  'geo.provider.testing':True, 'geo.wifi.scan':False,
                  'geo.provider.network.url':f'http://127.0.0.1:{http.server_port}/geo',
+                 'media.navigator.streams.fake':True, 'media.navigator.permission.fake':True,
+                 'media.navigator.permission.disabled':False,
                  'toolkit.legacyUserProfileCustomizations.stylesheets':True,
                  'browser.shell.checkDefaultBrowser':False}
         (profile / 'user.js').write_text(''.join(
@@ -120,10 +122,14 @@ def check(nova, display):
                   nova:Services.prefs.getBoolPref('browser.nova.enabled'),
                   geoProviderTesting:Services.prefs.getBoolPref('geo.provider.testing'),
                   geoWifiScan:Services.prefs.getBoolPref('geo.wifi.scan'),
-                  geoProviderURL:Services.prefs.getStringPref('geo.provider.network.url')};
+                  geoProviderURL:Services.prefs.getStringPref('geo.provider.network.url'),
+                  fakeMedia:Services.prefs.getBoolPref('media.navigator.streams.fake'),
+                  mediaPermissionDisabled:Services.prefs.getBoolPref('media.navigator.permission.disabled'),
+                  mediaPermissionFake:Services.prefs.getBoolPref('media.navigator.permission.fake')};
                 """, sandbox='system')
             if (process.poll() is not None or Path(meta['profile']).resolve() != profile.resolve() or meta['nova'] != nova
                     or not meta['geoProviderTesting'] or meta['geoWifiScan']
+                    or not meta['fakeMedia'] or not meta['mediaPermissionFake'] or meta['mediaPermissionDisabled']
                     or meta['geoProviderURL'] != f'http://127.0.0.1:{http.server_port}/geo'):
                 raise RuntimeError(f'unexpected Firefox process, profile, or preferences: {meta}')
             samples = {}
@@ -248,8 +254,96 @@ def check(nova, display):
                 raise RuntimeError(f'geolocation sharing selector fixture failed: {sharing}, requests={Handler.geo_requests}')
             m.set_context('content')
             m.execute_script("navigator.geolocation.clearWatch(Number(document.documentElement.getAttribute('data-textfox-geo-watch')))")
+            m.set_context('chrome')
+            media_url = f'https://{HOST}:{https.server_port}/secure?media=1'
+            m.execute_script('gBrowser.selectedTab=gBrowser.addTrustedTab(arguments[0])', script_args=[media_url], sandbox='system')
+            m.set_context('content')
+            m.switch_to_window(m.window_handles[-1])
+            deadline = time.monotonic() + 15
+            while m.execute_script('return location.href') != media_url:
+                if time.monotonic() >= deadline:
+                    raise RuntimeError('fake-media fixture page did not load')
+                time.sleep(.1)
+            m.execute_script("""
+                const root=document.documentElement;
+                navigator.mediaDevices.getUserMedia({video:true,audio:true}).then(stream=>{
+                  root.setAttribute('data-textfox-media-tracks',stream.getTracks().map(t=>t.kind).sort().join(','));
+                  document.addEventListener('textfox-stop-stream',()=>{
+                    stream.getTracks().forEach(t=>t.stop());
+                    root.setAttribute('data-textfox-media-stopped',String(stream.getTracks().every(t=>t.readyState === 'ended')));
+                  },{once:true});
+                },error=>root.setAttribute('data-textfox-media-error',`${error.name}: ${error.message}`));
+                """)
+            m.set_context('chrome')
+            deadline = time.monotonic() + 15
+            while not m.execute_script("return !!PopupNotifications.getNotification('webRTC-shareDevices') && PopupNotifications.panel.state === 'open' && !!PopupNotifications.panel.querySelector('.popup-notification-primary-button')", sandbox='system'):
+                if time.monotonic() >= deadline:
+                    raise RuntimeError('fake-media permission prompt did not open')
+                time.sleep(.1)
+            allow = m.find_element('css selector', '#notification-popup .popup-notification-primary-button')
+            m.actions.sequence('pointer', 'mouse', {'pointerType':'mouse'}).click(allow).perform()
+            m.set_context('content')
+            deadline = time.monotonic() + 20
+            while True:
+                media = m.execute_script("""
+                    const r=document.documentElement;
+                    return {url:location.href,tracks:r.getAttribute('data-textfox-media-tracks'),
+                      error:r.getAttribute('data-textfox-media-error')};
+                    """)
+                if media['tracks'] == 'audio,video':
+                    break
+                if media['error'] or time.monotonic() >= deadline:
+                    raise RuntimeError(f'fake media did not initialize: {media}')
+                time.sleep(.1)
+            m.set_context('chrome')
+            deadline = time.monotonic() + 15
+            while True:
+                media_sharing = m.execute_script("""
+                    const box=document.getElementById('identity-box');
+                    const permission=document.getElementById('identity-permission-box');
+                    const granted=document.getElementById('permissions-granted-icon');
+                    const icon=document.getElementById('webrtc-sharing-icon'), sibling=granted.nextElementSibling;
+                    const r=permission.getBoundingClientRect();
+                    return {classes:[...box.classList],pageProxy:box.getAttribute('pageproxystate'),
+                      hasSharingIcon:permission.hasAttribute('hasSharingIcon'),sharing:icon.getAttribute('sharing'),
+                      siblingMatches:sibling?.matches('box:has(image[sharing="true"])'),
+                      siblingMarginLeft:sibling && getComputedStyle(sibling).marginLeft,
+                      permissionDisplay:getComputedStyle(permission).display,
+                      grantedDisplay:getComputedStyle(granted).display,
+                      permissionWidth:r.width,permissionHeight:r.height};
+                    """, sandbox='system')
+                if media_sharing['hasSharingIcon'] and media_sharing['sharing']:
+                    break
+                if time.monotonic() >= deadline:
+                    raise RuntimeError(f'fake-media sharing indicator did not initialize: {media_sharing}')
+                time.sleep(.1)
+            if (media_sharing['sharing'] != 'camera' or media_sharing['siblingMatches']
+                    or media_sharing['permissionDisplay'] == 'none' or media_sharing['permissionWidth'] <= 0
+                    or media_sharing['permissionHeight'] <= 0 or (display is not None and media_sharing['grantedDisplay'] != display)):
+                raise RuntimeError(f'fake-media identity selector fixture failed: {media_sharing}')
+            media_control = None
+            if display is not None:
+                media_control = m.execute_script("""
+                    const sibling=document.getElementById('permissions-granted-icon').nextElementSibling;
+                    const css='#identity-box[pageproxystate="valid"].verifiedDomain #permissions-granted-icon + box:has(image[sharing]) { margin-left: -4px !important; }';
+                    const uri='data:text/css,'+encodeURIComponent(css);
+                    window.windowUtils.loadSheetUsingURIString(uri, Ci.nsIDOMWindowUtils.USER_SHEET);
+                    try { return getComputedStyle(sibling).marginLeft; }
+                    finally { window.windowUtils.removeSheetUsingURIString(uri, Ci.nsIDOMWindowUtils.USER_SHEET); }
+                    """, sandbox='system')
+                if media_control != '-4px':
+                    raise RuntimeError(f'fake-media sharing selector intervention failed: {media_control}')
+            m.set_context('content')
+            stopped = m.execute_script("""
+                document.dispatchEvent(new Event('textfox-stop-stream'));
+                return document.documentElement.getAttribute('data-textfox-media-stopped');
+                """)
+            if stopped != 'true':
+                raise RuntimeError(f'fake media tracks did not stop: {stopped}')
             print(json.dumps({'firefox':meta,'display':display,'samples':samples,
-                              'geo':geo,'sharing':sharing,'geoRequests':Handler.geo_requests}),flush=True)
+                              'geo':geo,'sharing':sharing,'geoRequests':Handler.geo_requests,
+                              'media':media,'mediaSharing':media_sharing,'mediaControl':media_control,
+                              'mediaStopped':stopped}),flush=True)
         finally:
             try:
                 if m:
