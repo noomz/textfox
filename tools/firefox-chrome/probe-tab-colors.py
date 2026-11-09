@@ -41,7 +41,7 @@ def check(nova, dark, source, forced, mismatch):
         bg = 'rgb(23, 47, 71)' if dark != mismatch else 'rgb(232, 240, 248)'
         (profile / 'chrome' / 'config.css').write_text(
             f':root {{ --tf-bg: {bg}; --tf-display-horizontal-tabs: block; --tf-text-transform: uppercase; '
-            '--tf-accent: rgb(19, 83, 137); }\n')
+            '--tf-accent: rgb(19, 83, 137); --tf-rounding: 5px; }\n')
         theme = profile / 'probe-theme.xpi'
         manifest = {'manifest_version': 2, 'name': 'textfox tab probe', 'version': '1.0',
                     'browser_specific_settings': {'gecko': {'id': 'textfox-tab-probe@example.invalid'}},
@@ -90,6 +90,8 @@ def check(nova, dark, source, forced, mismatch):
                     '--tab-background-color-selected', '--tab-background-color-hover',
                     '--tab-text-color-selected'];
                 return {background:bg.backgroundColor, color:text.color,
+                        backgroundRadius:bg.borderTopLeftRadius,
+                        backgroundRadiusToken:bg.getPropertyValue('--tab-border-radius').trim(),
                         prefersContrast:matchMedia('(prefers-contrast)').matches,
                         forcedColors:matchMedia('(forced-colors: active)').matches,
                         targetSelected:bg.getPropertyValue('--tab-selected-bgcolor').trim(),
@@ -154,6 +156,8 @@ def check(nova, dark, source, forced, mismatch):
             if m.execute_script("return document.getElementById('TabsToolbar').matches(':hover')", sandbox='system'):
                 raise RuntimeError('pointer did not leave the horizontal tab toolbar')
             before = m.execute_script(js, sandbox='system')
+            if before['backgroundRadiusToken'] != '5px' or before['backgroundRadius'] != '5px':
+                raise RuntimeError(f'configured tab radius missing: {before}')
             hover = m.execute_script("""
                 const tab=gBrowser.addTrustedTab('about:blank');
                 InspectorUtils.addPseudoClassLock(tab, ':hover');
