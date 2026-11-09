@@ -35,6 +35,16 @@ The tab-specific identifiers `--tab-selected-bgcolor` and `--tab-hover-backgroun
 
 The sidebar's `--lwt-text-color` and `--lwt-accent-color` come from Firefox theme state. `--border-width` is assigned from `--tf-border-width` in `overwrites.css`. Existing probes do not establish readable contrast for arbitrary configured colors. Other shared Firefox variables remain open in the shared-rule inventory.
 
+## Findbar
+
+| textfox rule group | Source and live evidence | Unresolved |
+|---|---|---|
+| `findbar`, `:hover`, `::before`, `:hover::before`, and `:where([hidden])` | [Tagged findbar widget](https://github.com/mozilla-firefox/firefox/blob/9a2dc53c369c7ae5172018b35988e1d2ffeff402/toolkit/content/widgets/findbar.js) supplies the element internals. `test-findbar-live.py` opens the bar by keyboard, searches, and closes it in both Nova states with vanilla and textfox profiles. | Hover and generated-title painting, explicit hidden-style matching, and other platform layouts. |
+| `.findbar-textbox` | Tagged widget defines the input and [tagged findbar CSS](https://github.com/mozilla-firefox/firefox/blob/9a2dc53c369c7ae5172018b35988e1d2ffeff402/toolkit/themes/shared/findbar.css) styles its not-found state. Live probe exercises search, focus outline, miss feedback, and recovery. | Painted focus, color contrast, actual OS forced colors, and safe restoration of Firefox's background feedback without losing configuration. |
+| `.findbar-container > checkbox` | Tagged widget places the checkbox hosts directly inside the container. Live probe verifies uppercase text transform on visible hosts and exercises Match Case by pointer. | Checkbox keyboard traversal, split-view behavior, hidden controls, and painted text. |
+
+The findbar uses `--border-width` assigned by `overwrites.css` and textfox's own `--tf-*` properties. Existing live checks do not cover all shared-rule variables or accessibility states.
+
 ## Toolbar
 
 | textfox rule group | Source and live evidence | Unresolved |
