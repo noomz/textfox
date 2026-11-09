@@ -37,6 +37,7 @@ def check(browser_nova, newtab_nova, themed, variant, contrast_cycle=False):
                  'browser.newtabpage.activity-stream.widgets.enabled': True,
                  'browser.newtabpage.activity-stream.improvesearch.handoffToAwesomebar': True,
                  'browser.urlbar.newtab.featureGate': True,
+                 'browser.urlbar.searchModeSwitcher.skipTabStop': True,
                  'browser.urlbar.newtab.variantA': variant in ('a', 'both'),
                  'browser.urlbar.newtab.variantB': variant in ('b', 'both'),
                  'browser.search.suggest.enabled': False,
@@ -62,6 +63,7 @@ def check(browser_nova, newtab_nova, themed, variant, contrast_cycle=False):
                   browserNova:Services.prefs.getBoolPref('browser.nova.enabled'),
                   newtabNova:Services.prefs.getBoolPref('browser.newtabpage.activity-stream.nova.enabled'),
                   handoff:Services.prefs.getBoolPref('browser.newtabpage.activity-stream.improvesearch.handoffToAwesomebar'),
+                  skipTabStop:Services.prefs.getBoolPref('browser.urlbar.searchModeSwitcher.skipTabStop'),
                   gatePref:Services.prefs.getBoolPref('browser.urlbar.newtab.featureGate'),
                   variantAPref:Services.prefs.getBoolPref('browser.urlbar.newtab.variantA'),
                   variantBPref:Services.prefs.getBoolPref('browser.urlbar.newtab.variantB'),
@@ -71,7 +73,7 @@ def check(browser_nova, newtab_nova, themed, variant, contrast_cycle=False):
                 """, sandbox='system')
             if (process.poll() is not None or Path(metadata['profile']).resolve() != profile.resolve()
                     or metadata['browserNova'] != browser_nova or metadata['newtabNova'] != newtab_nova
-                    or not metadata['handoff'] or not metadata['gatePref']
+                    or not metadata['handoff'] or not metadata['gatePref'] or not metadata['skipTabStop']
                     or metadata['variantAPref'] != (variant in ('a', 'both'))
                     or metadata['variantBPref'] != (variant in ('b', 'both'))
                     or metadata['gate'] != browser_nova
@@ -233,6 +235,33 @@ def check(browser_nova, newtab_nova, themed, variant, contrast_cycle=False):
                 if result['moz'] or not result['handoff']:
                     raise RuntimeError(f'expected handoff fallback: {result}')
                 state=None
+            keyboard = None
+            if browser_nova and variant != 'default':
+                input_element = m.find_element('css selector', '.search-wrapper moz-urlbar input.urlbar-input')
+                input_element.click()
+                m.actions.sequence('key', 'keyboard').key_down(Keys.SHIFT).key_down(Keys.TAB).key_up(Keys.TAB).key_up(Keys.SHIFT).perform()
+                keyboard = m.execute_script("""
+                    const h=document.querySelector('.search-wrapper moz-urlbar');
+                    const b=h?.querySelector('.searchmode-switcher');
+                    const s=b && getComputedStyle(b);
+                    return {focused:document.activeElement === b,
+                      focusVisible:!!b?.matches(':focus-visible'),
+                      outlineStyle:s?.outlineStyle,outlineWidth:s?.outlineWidth,
+                      outlineColor:s?.outlineColor,boxShadow:s?.boxShadow};
+                    """)
+                if keyboard['focused']:
+                    m.actions.sequence('key', 'keyboard').send_keys(Keys.ENTER).perform()
+                    deadline = time.monotonic() + 15
+                    while True:
+                        keyboard['menuOpen'] = m.execute_script("""
+                            return !!document.querySelector('.search-wrapper moz-urlbar .searchmode-switcher-panel-list:popover-open');
+                            """)
+                        if keyboard['menuOpen'] or time.monotonic() >= deadline:
+                            break
+                        time.sleep(.1)
+                    m.actions.sequence('key', 'keyboard').send_keys(Keys.ESCAPE).perform()
+                if not keyboard['focused'] or not keyboard.get('menuOpen'):
+                    raise RuntimeError(f'keyboard switcher interaction failed: {keyboard}')
             contrast = None
             if browser_nova and contrast_cycle:
                 selector = '.search-wrapper moz-urlbar'
@@ -285,7 +314,7 @@ def check(browser_nova, newtab_nova, themed, variant, contrast_cycle=False):
                 restored = wait_switcher(False)
                 contrast = {'normal': normal, 'high': high, 'restored': restored}
             print(json.dumps({'firefox':metadata,'themed':themed,'variant':variant,'result':result,'inputState':state,
-                              'contrastCycle':contrast,
+                              'contrastCycle':contrast,'keyboard':keyboard,
                               'interactionReplacements':replaced if browser_nova else None,
                               'switcherReplacements':switcher_replacements if browser_nova and variant != 'default' else None}),flush=True)
         finally:
