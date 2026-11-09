@@ -12,7 +12,9 @@ import time
 from ff_inspect import connect
 
 ROOT = Path(__file__).resolve().parents[2]
-PAGES = ('about:preferences', 'about:config', 'about:profiles', 'about:addons', 'about:support', 'about:about', 'about:downloads')
+PAGES = ('about:preferences', 'about:config', 'about:profiles', 'about:addons', 'about:support',
+         'about:about', 'about:downloads', 'about:firefoxview', 'about:protections',
+         'about:processes', 'about:memory', 'about:robots')
 
 
 def check(nova):
