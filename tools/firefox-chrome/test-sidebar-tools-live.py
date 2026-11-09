@@ -127,6 +127,27 @@ def check(nova, display, vertical):
                         or pinned['pinnedTabs'] < 1 or pinned['pinnedWidth'] <= 0
                         or abs(pinned['pinnedWidth'] - pinned['tabsWidth']) > 1):
                     raise RuntimeError('collapsed pinned tabs do not fill the tab strip')
+                m.execute_script('for (let i = 0; i < 3; i++) gBrowser.pinTab(gBrowser.addTrustedTab("about:blank"))', sandbox='system')
+                deadline = time.monotonic() + 10
+                while True:
+                    multiple = m.execute_script("""
+                        const tabs = document.getElementById('tabbrowser-tabs');
+                        const container = document.getElementById('pinned-tabs-container');
+                        const rect = container.getBoundingClientRect();
+                        return {count:gBrowser.tabs.filter(tab => tab.pinned).length,
+                          orient:container.getAttribute('orient'), expanded:tabs.hasAttribute('expanded'),
+                          containerWidth:rect.width, tabsWidth:tabs.getBoundingClientRect().width,
+                          scrollWidth:container.scrollWidth, clientWidth:container.clientWidth};
+                        """, sandbox='system')
+                    if multiple['count'] == 4 and multiple['containerWidth'] > 0:
+                        break
+                    if time.monotonic() >= deadline:
+                        raise RuntimeError(f'multiple pinned tabs did not initialize: {multiple}')
+                    time.sleep(.1)
+                print(json.dumps({'nova': nova, 'multiplePinned': multiple}), flush=True)
+                if (multiple['orient'] != 'vertical' or multiple['expanded']
+                        or abs(multiple['containerWidth'] - multiple['tabsWidth']) > 1):
+                    raise RuntimeError(f'unexpected multiple pinned tab geometry: {multiple}')
                 actions = m.actions.sequence('pointer', 'mouse', {'pointerType': 'mouse'})
                 actions.pointer_move(round(drag['x']), round(drag['y'])).pointer_down()
                 actions.pointer_move(round(drag['x']), round(drag['y'] + 100), duration=500).pointer_up().perform()
