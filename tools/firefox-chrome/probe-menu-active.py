@@ -116,6 +116,38 @@ def check(nova, themed, builtin, overflow):
                     """, sandbox='system')
             disabled_state = None
             separator_state = None
+            builtin_separators = None
+            builtin_separator_control = None
+            if builtin:
+                builtin_separators = m.execute_script("""
+                    return [...document.querySelectorAll('menupopup[data-textfox-probe] menuseparator')].map(e=>{
+                      const r=e.getBoundingClientRect(), s=getComputedStyle(e), p=getComputedStyle(e,'::before');
+                      return {id:e.id,hidden:e.hidden,width:r.width,height:r.height,display:s.display,
+                        visibility:s.visibility,token:s.getPropertyValue('--panel-separator-color').trim(),
+                        pseudoBorderStyle:p.borderTopStyle,pseudoBorderWidth:p.borderTopWidth,
+                        pseudoBorderColor:p.borderTopColor};
+                    });
+                    """, sandbox='system')
+                visible_separators = [s for s in builtin_separators if not s['hidden'] and s['display'] != 'none'
+                                      and s['visibility'] == 'visible' and s['width'] > 0 and s['height'] > 0]
+                if not visible_separators:
+                    raise RuntimeError(f'built-in menu has no visible separator: {builtin_separators}')
+                if themed and any(s['token'] != 'rgb(71, 31, 111)' or s['pseudoBorderColor'] != 'rgb(71, 31, 111)'
+                                  or s['pseudoBorderStyle'] != 'solid' or s['pseudoBorderWidth'] == '0px'
+                                  for s in visible_separators):
+                    raise RuntimeError(f'built-in separator did not follow configured border: {visible_separators}')
+                builtin_separator_control = m.execute_script("""
+                    const e=[...document.querySelectorAll('menupopup[data-textfox-probe] menuseparator')]
+                      .find(e=>{const s=getComputedStyle(e),r=e.getBoundingClientRect();
+                        return !e.hidden && s.display !== 'none' && s.visibility === 'visible' && r.width > 0 && r.height > 0;});
+                    const before=getComputedStyle(e,'::before').borderTopColor;
+                    e.style.setProperty('--panel-separator-color','rgb(20, 90, 150)','important');
+                    try { return {before,during:getComputedStyle(e,'::before').borderTopColor}; }
+                    finally { e.style.removeProperty('--panel-separator-color'); }
+                    """, sandbox='system')
+                if (builtin_separator_control['during'] != 'rgb(20, 90, 150)'
+                        or builtin_separator_control['before'] == builtin_separator_control['during']):
+                    raise RuntimeError(f'built-in separator token intervention inconclusive: {builtin_separator_control}')
             if not builtin and not overflow:
                 separator_state = m.execute_script("""
                     const e=document.querySelector('menupopup[data-textfox-probe] menuseparator[data-textfox-separator]');
@@ -196,7 +228,8 @@ def check(nova, themed, builtin, overflow):
                 time.sleep(.1)
             print(json.dumps({'firefox':metadata, 'themed':themed, 'builtin':builtin, 'active':sample,
                               'intervention':intervention, 'disabledHover':disabled_state,
-                              'separator':separator_state, 'overflow':overflow_state}), flush=True)
+                              'separator':separator_state, 'builtinSeparators':builtin_separators,
+                              'builtinSeparatorControl':builtin_separator_control, 'overflow':overflow_state}), flush=True)
         finally:
             try:
                 if m:
