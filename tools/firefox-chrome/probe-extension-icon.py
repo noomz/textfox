@@ -23,7 +23,7 @@ PREFERENCE = 'shyfox.enable.ext.mono.toolbar.icons'
 CONTEXT_PREFERENCE = 'shyfox.enable.ext.mono.context.icons'
 
 
-def check(nova, enabled):
+def check(nova, enabled, context_enabled):
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0))
         port = sock.getsockname()[1]
@@ -38,8 +38,8 @@ def check(nova, enabled):
         with zipfile.ZipFile(addon, 'w') as archive:
             archive.writestr('manifest.json', json.dumps(manifest))
             archive.writestr('fixture.svg', '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"><path fill="black" d="M0 0h16v16H0z"/></svg>')
-            archive.writestr('background.js', 'browser.menus.create({id:"uBlock0-fixture",title:"Textfox context fixture",contexts:["link"]});')
-        prefs = {'marionette.port':port, 'browser.nova.enabled':nova, PREFERENCE:enabled, CONTEXT_PREFERENCE:enabled,
+            archive.writestr('background.js', 'browser.menus.create({id:"uBlock0-fixture",title:"Textfox context fixture",contexts:["link"]}); browser.browserAction.setBadgeText({text:"7"});')
+        prefs = {'marionette.port':port, 'browser.nova.enabled':nova, PREFERENCE:enabled, CONTEXT_PREFERENCE:context_enabled,
                  'toolkit.legacyUserProfileCustomizations.stylesheets':True,
                  'browser.shell.checkDefaultBrowser':False}
         (profile / 'user.js').write_text(''.join(
@@ -61,7 +61,7 @@ def check(nova, enabled):
                   contextPref:Services.prefs.getBoolPref(arguments[1])};
                 """, script_args=[PREFERENCE, CONTEXT_PREFERENCE], sandbox='system')
             if (process.poll() is not None or Path(metadata['profile']).resolve() != profile.resolve()
-                    or metadata['nova'] != nova or metadata['iconPref'] != enabled or metadata['contextPref'] != enabled):
+                    or metadata['nova'] != nova or metadata['iconPref'] != enabled or metadata['contextPref'] != context_enabled):
                 raise RuntimeError('unexpected Firefox process, profile, or preferences')
             installed = m.execute_async_script("""
                 const done=arguments[arguments.length-1];
@@ -82,19 +82,24 @@ def check(nova, enabled):
                 sample = m.execute_script("""
                     const button=document.querySelector('#nav-bar .webextension-browser-action[data-extensionid="uBlock0@raymondhill.net"]');
                     const icon=button?.querySelector('.toolbarbutton-icon');
-                    if (!icon) return null;
+                    const badge=button?.querySelector('.toolbarbutton-badge');
+                    if (!icon || !badge) return null;
                     const s=getComputedStyle(icon),r=icon.getBoundingClientRect();
+                    const bs=getComputedStyle(badge),br=badge.getBoundingClientRect();
                     return {id:button.id, widget:button.closest('toolbaritem')?.id, image:s.listStyleImage, display:s.display,
                       visibility:s.visibility,width:r.width,height:r.height,
+                      badge:{text:badge.textContent,display:bs.display,visibility:bs.visibility,width:br.width,height:br.height},
                       legacy:matchMedia('(-moz-bool-pref: "shyfox.enable.ext.mono.toolbar.icons")').matches,
                       modern:matchMedia('-moz-pref("shyfox.enable.ext.mono.toolbar.icons")').matches};
                     """, sandbox='system')
-                if sample and sample['width'] > 0 and sample['height'] > 0:
+                if sample and sample['badge']['text'] == '7' and sample['width'] > 0 and sample['height'] > 0:
                     break
                 if time.monotonic() >= deadline:
                     raise RuntimeError(f'extension toolbar fixture unavailable: {sample}')
                 time.sleep(.1)
-            if sample['modern'] != enabled or sample['widget'] != widget_id:
+            if (sample['modern'] != enabled or sample['widget'] != widget_id
+                    or sample['badge']['display'] == 'none' or sample['badge']['visibility'] != 'visible'
+                    or sample['badge']['width'] <= 0 or sample['badge']['height'] <= 0):
                 raise RuntimeError(f'extension selector or preference control failed: {sample}, expected {widget_id}')
             target = (profile / 'chrome/icons/ublock.svg').as_uri()
             script = """
@@ -109,6 +114,15 @@ def check(nova, enabled):
                        for priority, important in (('normal', False), ('important', True))}
             if any((target in value) != enabled for value in control.values()):
                 raise RuntimeError(f'extension icon intervention inconclusive: {sample}, {control}')
+            badge_control = m.execute_script("""
+                const css='@media -moz-pref("shyfox.enable.ext.mono.toolbar.icons") { .toolbarbutton-badge { display:none; } }';
+                const uri='data:text/css,'+encodeURIComponent(css);
+                window.windowUtils.loadSheetUsingURIString(uri, Ci.nsIDOMWindowUtils.USER_SHEET);
+                try { return getComputedStyle(document.querySelector('#nav-bar .webextension-browser-action[data-extensionid="uBlock0@raymondhill.net"] .toolbarbutton-badge')).display; }
+                finally { window.windowUtils.removeSheetUsingURIString(uri, Ci.nsIDOMWindowUtils.USER_SHEET); }
+                """, sandbox='system')
+            if (badge_control == 'none') != enabled:
+                raise RuntimeError(f'extension badge intervention inconclusive: {sample}, {badge_control}')
             m.set_context('content')
             m.navigate('data:text/html,<a href="https://example.invalid/">textfox extension link fixture</a>')
             link=m.find_element('css selector', 'a')
@@ -137,7 +151,7 @@ def check(nova, enabled):
                 try { return getComputedStyle(document.querySelector('#contentAreaContextMenu menuitem[id*="ublock0_raymondhill_net-menuitem-_uBlock0-"]')).backgroundImage; }
                 finally { window.windowUtils.removeSheetUsingURIString(uri, Ci.nsIDOMWindowUtils.USER_SHEET); }
                 """, script_args=[target], sandbox='system')
-            if context['modern'] != enabled or (target in context_control) != enabled:
+            if context['modern'] != context_enabled or (target in context_control) != context_enabled:
                 raise RuntimeError(f'extension context icon intervention inconclusive: {context}, {context_control}')
             m.actions.sequence('key', 'keyboard').send_keys(Keys.ESCAPE).perform()
             deadline = time.monotonic() + 10
@@ -146,7 +160,7 @@ def check(nova, enabled):
                     raise RuntimeError('Escape did not close the extension context menu')
                 time.sleep(.1)
             print(json.dumps({'firefox':metadata,'extension':installed,'sample':sample,'control':control,
-                              'context':context,'contextControl':context_control}), flush=True)
+                              'badgeControl':badge_control,'context':context,'contextControl':context_control}), flush=True)
         finally:
             try:
                 if m:
@@ -163,4 +177,5 @@ def check(nova, enabled):
 if __name__ == '__main__':
     for nova in (False, True):
         for enabled in (False, True):
-            check(nova, enabled)
+            for context_enabled in (False, True):
+                check(nova, enabled, context_enabled)
