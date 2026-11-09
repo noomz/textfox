@@ -419,6 +419,10 @@ An initial temporary fixture attempted a programmatic click and waited for `.con
 
 Run `MOZ_HEADLESS=1 "$HOME/.cache/textfox-firefox-live/venv/bin/python" tools/firefox-chrome/probe-topsite-menu.py`. Probe-only feed and widget overrides may make network requests.
 
+## Sidebar-revamp media condition
+
+`probe-sidebar-header.py` now also compares `(-moz-bool-pref: "sidebar.revamp")` and `-moz-pref("sidebar.revamp")` in Firefox 159.0 build `20261022150525`. Across eight vanilla/textfox, browser Nova, and sidebar-revamp combinations, the legacy query never matched; the modern query matched the effective sidebar preference. A temporary user-origin modern-query rule changed the navbar title's computed `left` value only when revamp was enabled. In the themed samples the unmodified title's `margin-top` remained `-16px` for both revamp values. This verifies the old condition is inactive in these samples, not whether the intended title or spacer geometry would be correct after changing it. The control uses an arbitrary diagnostic `left` value and is not a production fix. Painted layout, other Firefox builds, and actual titlebar spacer behavior remain unverified. V4–V6 cover configuration and layout; a §B entry is pending spec-protocol approval. Run `MOZ_HEADLESS=1 "$HOME/.cache/textfox-firefox-live/venv/bin/python" tools/firefox-chrome/probe-sidebar-header.py`.
+
 ## Classic sidebar header
 
 Firefox release `browser/base/content/browser-box.inc.xhtml` places `#sidebar-close` and `#sidebar-switcher-target` inside `#sidebar-header`. Textfox's `chrome/sidebar.css` hides that header unconditionally. `tools/firefox-chrome/probe-sidebar-header.py` compared bookmarks sidebars in disposable vanilla and textfox profiles on headless Firefox 159.0 build `20261022150525`, with browser Nova and `sidebar.revamp` each on and off. With revamp off, the vanilla header, close button, and switcher had nonzero geometry; all three had zero geometry in textfox. With revamp on, Firefox also hid the old header in vanilla. Ctrl+B closed the bookmarks sidebar in all eight profiles, but this does not replace the missing visible close and switcher controls.

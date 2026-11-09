@@ -65,6 +65,24 @@ def check(nova, revamp, themed):
                 """, sandbox='system')
             for item in result.values():
                 item['hasGeometry'] = item['display'] != 'none' and item['visibility'] == 'visible' and item['width'] > 0 and item['height'] > 0
+            media = m.execute_script("""
+                const navbar=document.getElementById('nav-bar');
+                const measure=()=>{const s=getComputedStyle(navbar,'::before');
+                  return {marginTop:s.marginTop,left:s.left};};
+                const before=measure();
+                const css='@media -moz-pref("sidebar.revamp") { #nav-bar::before { left: 3px !important; } }';
+                const uri='data:text/css,' + encodeURIComponent(css);
+                window.windowUtils.loadSheetUsingURIString(uri, Ci.nsIDOMWindowUtils.USER_SHEET);
+                try {
+                  return {legacy:matchMedia('(-moz-bool-pref: "sidebar.revamp")').matches,
+                    modern:matchMedia('-moz-pref("sidebar.revamp")').matches,
+                    before, intervention:measure()};
+                } finally {
+                  window.windowUtils.removeSheetUsingURIString(uri, Ci.nsIDOMWindowUtils.USER_SHEET);
+                }
+                """, sandbox='system')
+            if media['modern'] != revamp or (media['intervention']['left'] == '3px') != revamp:
+                raise RuntimeError(f'sidebar preference media control failed: {media}')
             intervention = None
             if themed and not revamp:
                 intervention = m.execute_script("""
@@ -79,7 +97,7 @@ def check(nova, revamp, themed):
                     return measured;
                     """, sandbox='system')
             print(json.dumps({'firefox': metadata, 'themed': themed, 'result': result,
-                              'headerIntervention': intervention}), flush=True)
+                              'media':media, 'headerIntervention': intervention}), flush=True)
             if not revamp and not themed and not all(item['hasGeometry'] for item in result.values()):
                 raise RuntimeError(f'classic vanilla header positive control is not visible: {result}')
             m.actions.sequence('key', 'keyboard').key_down(Keys.CONTROL).key_down('b').key_up('b').key_up(Keys.CONTROL).perform()
