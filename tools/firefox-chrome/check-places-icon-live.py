@@ -32,12 +32,15 @@ def compare_live(ids, samples):
     for sample in samples:
         if 'placesContext' not in sample:
             continue
+        kind = sample.get('placesKind')
+        if kind not in ('bookmark', 'folder'):
+            raise ValueError(f'unknown Places fixture kind: {kind}')
         items = sample['placesContext']['items']
         present = {item['id'] for item in items}
         visible = {item['id'] for item in items if not item['hidden'] and item['display'] != 'none'
                    and item['visibility'] == 'visible' and item['width'] > 0 and item['height'] > 0}
         meta = sample['firefox']
-        profiles.append({'nova':meta['nova'], 'iconPref':meta['iconPref'], 'version':meta['version'],
+        profiles.append({'kind':kind, 'nova':meta['nova'], 'iconPref':meta['iconPref'], 'version':meta['version'],
                          'build':meta['build'], 'candidatePresent':sorted(ids & present),
                          'candidateVisible':sorted(ids & visible), 'candidateAbsent':sorted(ids - present),
                          'candidateVisibleImages':{item['id']:item['image'] for item in items

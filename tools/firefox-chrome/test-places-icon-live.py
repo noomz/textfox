@@ -14,7 +14,7 @@ rules = [
 ]
 ids = module.candidate_ids(rules)
 assert ids == {'placesContext_open:newtab', 'placesContext_copy'}, ids
-sample = {'firefox':{'nova':True, 'iconPref':True, 'version':'fixture', 'build':'fixture'},
+sample = {'firefox':{'nova':True, 'iconPref':True, 'version':'fixture', 'build':'fixture'}, 'placesKind':'folder',
           'placesContext':{'items':[
               {'id':'placesContext_open:newtab', 'hidden':False, 'display':'block',
                'visibility':'visible', 'width':10, 'height':10, 'image':'none'},
@@ -23,4 +23,5 @@ sample = {'firefox':{'nova':True, 'iconPref':True, 'version':'fixture', 'build':
 joined = module.compare_live(ids, [sample])
 assert joined[0]['candidateVisibleImages'] == {'placesContext_open:newtab':'none'}, joined
 assert joined[0]['candidateAbsent'] == [], joined
+assert joined[0]['kind'] == 'folder', joined
 print('Places icon join fixture passed')
