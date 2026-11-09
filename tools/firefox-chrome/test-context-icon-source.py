@@ -1,0 +1,19 @@
+#!/usr/bin/env python3
+"""Check context icon source comparison against a minimal markup fixture."""
+import importlib.util
+from pathlib import Path
+import tempfile
+
+HERE = Path(__file__).resolve().parent
+spec = importlib.util.spec_from_file_location('context_icon_source', HERE / 'check-context-icon-source.py')
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+
+with tempfile.TemporaryDirectory() as directory:
+    source = Path(directory) / 'fixture.xhtml'
+    source.write_text('<menuitem id="context-openlinkprivate"/><menuitem id="not-in-theme"/>')
+    result = module.compare(source)
+    assert result['found'] == ['context-openlinkprivate'], result
+    assert 'context-back' in result['notInFile'], result
+    assert 'not-in-theme' not in result['found'], result
+print('Context icon source fixture passed')
