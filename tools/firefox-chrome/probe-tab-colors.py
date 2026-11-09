@@ -100,11 +100,23 @@ def check(nova, dark, source, forced, mismatch):
                 if (!tabs || !items) throw new Error('tab toolbar fixture missing');
                 const label=document.querySelector('#TabsToolbar .tabbrowser-tab[selected] .tab-label');
                 if (!label) throw new Error('selected tab label missing');
+                const normalSelector=':root:not([privatebrowsingmode], [firefoxviewhidden]) :is(toolbarbutton, toolbarpaletteitem) + #tabbrowser-tabs';
+                const previous=tabs.previousElementSibling, root=document.documentElement;
+                const before=document.querySelectorAll(normalSelector).length;
+                const control=document.createXULElement('toolbarbutton');
+                tabs.before(control);
+                const controlMatches=document.querySelectorAll(normalSelector).length;
+                control.remove();
                 return {tag:tabs.localName, transform:getComputedStyle(tabs).textTransform,
+                  normalAdjacencyMatches:before, normalAdjacencyControl:controlMatches,
+                  firefoxViewHidden:root.hasAttribute('firefoxviewhidden'), privateRoot:root.hasAttribute('privatebrowsingmode'),
+                  previousSibling:previous && {tag:previous.localName,id:previous.id},
                   labelTransform:getComputedStyle(label).textTransform, itemsMargin:getComputedStyle(items).margin};
                 """, sandbox='system')
             if (toolbar['tag'] != 'tabs' or toolbar['transform'] != 'uppercase'
-                    or toolbar['labelTransform'] != 'uppercase' or toolbar['itemsMargin'] != '3px'):
+                    or toolbar['labelTransform'] != 'uppercase' or toolbar['itemsMargin'] != '3px'
+                    or toolbar['privateRoot'] or toolbar['firefoxViewHidden']
+                    or toolbar['normalAdjacencyControl'] != 1):
                 raise RuntimeError(f'configured tab toolbar styles did not apply: {toolbar}')
             before = m.execute_script(js, sandbox='system')
             hover = m.execute_script("""

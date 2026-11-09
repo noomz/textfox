@@ -56,12 +56,25 @@ def check(nova, themed, vertical):
             result = m.execute_script("""
                 const toolbox = document.getElementById('navigator-toolbox');
                 const nodes = [...document.querySelectorAll('.private-browsing-indicator-with-label, .private-browsing-indicator-button')];
+                const privateSelector=':root[privatebrowsingmode]:not([firefoxviewhidden]) :is(toolbarbutton:not(#firefox-view-button), toolbarpaletteitem:not(#wrapper-firefox-view-button)) + #tabbrowser-tabs';
+                const tabs=document.getElementById('tabbrowser-tabs'), previous=tabs.previousElementSibling;
+                const root=document.documentElement, before=document.querySelectorAll(privateSelector).length;
+                const control=document.createXULElement('toolbarbutton');
+                tabs.before(control);
+                const controlMatches=document.querySelectorAll(privateSelector).length;
+                control.remove();
                 return {tabsHidden:toolbox.hasAttribute('tabs-hidden'),
+                  privateAdjacencyMatches:before, privateAdjacencyControl:controlMatches,
+                  firefoxViewHidden:root.hasAttribute('firefoxviewhidden'), privateRoot:root.hasAttribute('privatebrowsingmode'),
+                  previousSibling:previous && {tag:previous.localName,id:previous.id},
                   tabsDisplay:getComputedStyle(document.getElementById('TabsToolbar')).display,
                   indicators:nodes.map(node => { const style=getComputedStyle(node), rect=node.getBoundingClientRect();
                     return {classes:node.className, parent:node.parentElement?.id,
                       display:style.display, visibility:style.visibility, width:rect.width, height:rect.height}; })};
                 """, sandbox='system')
+            if (not result['privateRoot'] or result['firefoxViewHidden']
+                    or result['privateAdjacencyControl'] != 1):
+                raise RuntimeError(f'private adjacency control failed: {result}')
             if len(result['indicators']) != 4:
                 raise RuntimeError(f'private indicator fixture changed: {result}')
             result['visibleIndicators'] = sum(1 for node in result['indicators']
