@@ -64,7 +64,11 @@ def check(nova, enabled):
                     const item=document.getElementById('context-openlinkprivate');
                     if (popup.state !== 'open' || !item || item.hidden) return null;
                     const style=getComputedStyle(item), rect=item.getBoundingClientRect();
+                    const legacyPdf=popup.querySelectorAll('#context-pdfjs-selectall');
+                    const currentPdf=popup.querySelectorAll('#context-pdfjs-select-all');
                     return {state:popup.state, hidden:item.hidden, image:style.backgroundImage,
+                      pdfSelectAll:{legacyCount:legacyPdf.length,currentCount:currentPdf.length,
+                        currentHidden:currentPdf[0]?.hidden},
                       legacyMedia:matchMedia('(-moz-bool-pref: "shyfox.enable.context.menu.icons")').matches,
                       modernMedia:matchMedia('-moz-pref("shyfox.enable.context.menu.icons")').matches,
                       display:style.display, width:rect.width, height:rect.height};
@@ -91,9 +95,18 @@ def check(nova, enabled):
                   window.windowUtils.removeSheetUsingURIString(uri, Ci.nsIDOMWindowUtils.USER_SHEET);
                 }
                 """, sandbox='system')
+            pdf_control = m.execute_script("""
+                const item=document.getElementById('context-pdfjs-select-all');
+                if (!item) return null;
+                const css='@media -moz-pref("shyfox.enable.context.menu.icons") { #contentAreaContextMenu #context-pdfjs-select-all { background-image: url("chrome://browser/skin/privateBrowsing.svg") !important; } }';
+                const uri='data:text/css,'+encodeURIComponent(css);
+                window.windowUtils.loadSheetUsingURIString(uri, Ci.nsIDOMWindowUtils.USER_SHEET);
+                try { return getComputedStyle(item).backgroundImage; }
+                finally { window.windowUtils.removeSheetUsingURIString(uri, Ci.nsIDOMWindowUtils.USER_SHEET); }
+                """, sandbox='system')
             expected = 'url("chrome://browser/skin/privateBrowsing.svg")' if enabled else 'none'
-            if state['modernMedia'] != enabled or intervention != expected:
-                raise RuntimeError(f'modern preference intervention was inconclusive: {state}, {intervention}')
+            if state['modernMedia'] != enabled or intervention != expected or pdf_control != expected:
+                raise RuntimeError(f'modern preference intervention was inconclusive: {state}, {intervention}, {pdf_control}')
             m.actions.sequence('key', 'keyboard').send_keys(Keys.ESCAPE).perform()
             deadline = time.monotonic() + 10
             while m.execute_script("return document.getElementById('contentAreaContextMenu').state", sandbox='system') != 'closed':
@@ -101,7 +114,7 @@ def check(nova, enabled):
                     raise RuntimeError('Escape did not close context menu')
                 time.sleep(.1)
             print(json.dumps({'firefox':metadata, 'item':state, 'extensionMedia':extension_media,
-                              'modernIntervention':intervention}), flush=True)
+                              'modernIntervention':intervention, 'pdfSelectorControl':pdf_control}), flush=True)
         finally:
             try:
                 if m:
