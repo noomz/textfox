@@ -22,6 +22,16 @@ Unless noted otherwise, source links use Firefox `FIREFOX_159_0_RELEASE` commit 
 
 The tab-specific identifiers `--tab-selected-bgcolor` and `--tab-hover-background-color` are defined by textfox in `chrome/overwrites.css`, using Firefox inputs `--toolbar-field-color` and `--toolbar-bgcolor`. Existing live probes found the inputs empty and selected/hover backgrounds transparent in sampled temporary themes. Tagged Firefox tab CSS uses `--tab-background-color-selected` for selected tabs instead. These observations do not establish a safe replacement or cover all themes. `--border-width` is assigned from `--tf-border-width` in `overwrites.css` and is also consumed by Firefox tab CSS. Remaining custom-property inventory for shared rules remains open.
 
+## Shared root and container rules
+
+| textfox rule group | Source and live evidence | Unresolved |
+|---|---|---|
+| `defaults.css` root and `userChrome.css` universal/body/placeholder rules | `check-config-defaults.py` compares manual and Nix-generated defaults in Firefox; about-page and new-tab probes sample font and background consumers. | Every custom option across delivery paths belongs to T6; all universal targets, placeholder states, and painted behavior are not covered. |
+| `overwrites.css` root aliases for borders, radii, toolbar, links, tabs, buttons, and opacity | Component probes exercise selected border, radius, tab and panel consumers. Several tab color inputs were empty in sampled themes. | All Firefox-owned property definitions and consumers, inactive windows, contrast, and other themes. |
+| Eight nested `[data-color]` / `.identity-color-*` container rules | Tagged [Firefox identity CSS](https://github.com/mozilla-firefox/firefox/blob/9a2dc53c369c7ae5172018b35988e1d2ffeff402/browser/components/contextualidentity/content/usercontext.css) defines identity color variables. `probe-container-colors.py` samples four real container identities, vanilla/textfox and both Nova states. | Other colors, custom identities, selected/pinned/vertical states, painted indicators, and resolution of pre-existing hard-coded colors against the project constraint. |
+
+The shared root declares or references `--toolbar-color`, `--link-color`, `--urlbarView-highlight-background`, `--toolbox-non-lwt-bgcolor`, `--toolbar-field-background-color`, `--border-width`, `--border-radius-small`, `--border-radius-medium`, `--toolbarbutton-border-radius`, `--tab-border-radius`, `--tab-selected-outline-color`, `--tab-selected-bgcolor`, `--tab-hover-background-color`, `--tab-min-height`, `--toolbarbutton-hover-background`, `--button-background-color-active`, `--inactive-titlebar-opacity`, and identity variables. `--toolbar-field-color` and `--toolbar-bgcolor` are inputs to textfox's tab colors. This list records names, not verified consumers. Nova also defines `--identity-stroke-color` and uses it for container strokes; textfox's sampled legacy identity overrides do not change that token.
+
 ## Sidebar
 
 | textfox rule group | Source and live evidence | Unresolved |
