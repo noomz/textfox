@@ -357,6 +357,10 @@ This index summarizes bounded evidence above, not a complete selector or variabl
 
 On this continuation, `test-firefox-live.sh` and `test-findbar-live.py` passed again in headless Firefox. `probe-panel-colors.py` repeated the app-menu background discrepancy in both browser Nova states; forcing its background alone retained black foreground. These observations do not establish visual accessibility. T2 remains open.
 
+## Multiselected tab background
+
+`probe-tab-colors.py` now adds an unselected tab to Firefox's multiselection using `gBrowser.addToMultiSelectedTabs`. On headless Firefox 159.0 build `20261022150525`, both temporary light and dark themes in both browser Nova states produced an unselected, multiselected tab and a `.tab-background[multiselected]` with nonzero geometry. The background computed transparent. Setting `--tab-selected-bgcolor` only on that background to a diagnostic color changed its computed background in all four samples, confirming the variable's effect on this state. Geometry was sampled during tab initialization and is not a layout measurement. This programmatic multiselection does not test keyboard or pointer selection, painted visibility, contrast, other themes, or delivery paths. Run `MOZ_HEADLESS=1 "$HOME/.cache/textfox-firefox-live/venv/bin/python" tools/firefox-chrome/probe-tab-colors.py`.
+
 ## Container tab colors
 
 Tagged Firefox 159.0 [`usercontext.css`](https://github.com/mozilla-firefox/firefox/blob/9a2dc53c369c7ae5172018b35988e1d2ffeff402/browser/components/contextualidentity/content/usercontext.css) defines `--identity-tab-color` and `--identity-icon-color`, plus Nova's `--identity-stroke-color`. Tagged [`tabs.css`](https://github.com/mozilla-firefox/firefox/blob/9a2dc53c369c7ae5172018b35988e1d2ffeff402/browser/themes/shared/tabbrowser/tabs.css) uses the icon color for classic container strokes and the stroke color for Nova strokes. `chrome/overwrites.css` contains existing fixed color values for eight identity colors; these predate this probe and conflict with the project's no-hard-coded-colors constraint.

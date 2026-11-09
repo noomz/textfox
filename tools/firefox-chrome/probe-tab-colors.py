@@ -104,6 +104,38 @@ def check(nova, dark, source, forced, mismatch):
                 return result;
                 """, sandbox='system')
             m.execute_script("""
+                const tab=gBrowser.addTrustedTab('about:blank');
+                tab.setAttribute('data-textfox-multi-probe','true');
+                gBrowser.addToMultiSelectedTabs(tab);
+                """, sandbox='system')
+            deadline = time.monotonic() + 10
+            while True:
+                multi = m.execute_script("""
+                    const tab=document.querySelector('.tabbrowser-tab[data-textfox-multi-probe]');
+                    const bg=tab?.querySelector('.tab-background');
+                    if (!tab || !bg) return null;
+                    const s=getComputedStyle(bg), r=bg.getBoundingClientRect();
+                    return {selected:tab.selected, multiselected:tab.multiselected,
+                      tabAttr:tab.hasAttribute('multiselected'), bgAttr:bg.hasAttribute('multiselected'),
+                      background:s.backgroundColor, width:r.width,height:r.height};
+                    """, sandbox='system')
+                if multi and multi['multiselected'] and multi['bgAttr'] and multi['width'] > 0 and multi['height'] > 0:
+                    break
+                if time.monotonic() >= deadline:
+                    raise RuntimeError(f'multiselected tab fixture did not initialize: {multi}')
+                time.sleep(.1)
+            if multi['selected']:
+                raise RuntimeError(f'multiselected fixture unexpectedly selected: {multi}')
+            multi_intervention = m.execute_script("""
+                const bg=document.querySelector('.tabbrowser-tab[data-textfox-multi-probe] .tab-background');
+                bg.style.setProperty('--tab-selected-bgcolor','rgb(19, 83, 137)','important');
+                const result=getComputedStyle(bg).backgroundColor;
+                bg.style.removeProperty('--tab-selected-bgcolor');
+                return result;
+                """, sandbox='system')
+            if multi_intervention != 'rgb(19, 83, 137)':
+                raise RuntimeError(f'multiselected background intervention failed: {multi_intervention}')
+            m.execute_script("""
                 const bg = document.querySelector('#TabsToolbar .tabbrowser-tab[selected] .tab-background');
                 bg.style.setProperty('--tab-selected-bgcolor', 'var(--tab-background-color-selected)', 'important');
                 """, sandbox='system')
@@ -111,6 +143,7 @@ def check(nova, dark, source, forced, mismatch):
             if before['prefersContrast'] != forced:
                 raise RuntimeError('requested contrast preference state not active')
             print(json.dumps({'firefox': meta, 'dark': dark, 'forced':forced, 'mismatch':mismatch, 'before': before, 'hover':hover, 'after': after,
+                              'multi':multi, 'multiIntervention':multi_intervention,
                               'computedSelectedContrast':contrast(before['background'], before['color']),
                               'computedHoverContrast':contrast(hover['background'], hover['color'])}), flush=True)
         finally:
