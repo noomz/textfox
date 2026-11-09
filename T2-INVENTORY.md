@@ -46,6 +46,29 @@ The sidebar's `--lwt-text-color` and `--lwt-accent-color` come from Firefox them
 
 Menu colors reuse `--tab-selected-bgcolor` and `--tab-hover-background-color` from `overwrites.css`; those depend on Firefox theme inputs that were empty in the sampled profiles. The intervention is not a proposed fix or evidence of contrast across themes.
 
+## URL bar
+
+| textfox rule group | Source and live evidence | Unresolved |
+|---|---|---|
+| `#urlbar` text alignment and `#urlbar-background, .urlbar-background` reset | Tagged [toolbar markup](https://github.com/mozilla-firefox/firefox/blob/9a2dc53c369c7ae5172018b35988e1d2ffeff402/browser/base/content/navigator-toolbox.inc.xhtml) defines `#urlbar`. Existing URL bar tests open results and inspect configured borders in both Nova states. | Complete background selector matching, input alignment, popup appearance, and painted output. |
+| `.urlbarView` alignment, margin, background, border and radius | `test-urlbar-live.py` verifies configured view border and accent. `probe-urlbar-colors.py` measures view and background-child colors in vanilla and textfox profiles. | Foreground/background pairing, hover, focus and painted contrast in other themes. |
+| `#urlbar[open] > .urlbarView > .urlbarView-results` | Live result fixture matches this direct-child selector and checks the separator reset in both Nova states. | Other result layouts and painted separator. |
+| `#urlbar:not([noresults]) > .urlbarView > .search-one-offs:not([hidden])` | Live fixture toggles the real root `noresults` attribute and one-offs `hidden` attribute and checks configured border response in both Nova states. | Naturally displayed one-offs and no-results states, keyboard interaction, and painted output. |
+
+The rules consume `--border-width` from `overwrites.css` and textfox options. `overwrites.css` also assigns `--urlbarView-highlight-background`; the separate URL bar color probe found a different Firefox selection variable in its sampled profiles. Full shared-variable inventory remains open.
+
+## Browser content and split view
+
+| textfox rule group | Source and live evidence | Unresolved |
+|---|---|---|
+| `.browserContainer`, `.browser-toolbox-background`, and `browser` | Tagged [content-area CSS](https://github.com/mozilla-firefox/firefox/blob/9a2dc53c369c7ae5172018b35988e1d2ffeff402/browser/themes/shared/tabbrowser/content-area.css) styles `.browserContainer`. Existing split-view tests inspect container overflow. | Normal and private container background/radius, all uses of `browser`, and painted behavior. |
+| `#tabbrowser-tabbox` and `.split-view-panel` border, title, hover | Tagged [browser markup](https://github.com/mozilla-firefox/firefox/blob/9a2dc53c369c7ae5172018b35988e1d2ffeff402/browser/base/content/browser-box.inc.xhtml) defines the tabbox; tagged content-area CSS styles split panels. `test-split-view-live.py` verifies configured border and title for selected and unselected split panels in both Nova states. | Hover, normal tabbox title, painted title geometry, and other configurations. |
+| `:root[inFullscreen="true"]` tabbox/panel decoration and footer reset | `test-split-fullscreen-live.py` checks entering and leaving window fullscreen in both Nova states. | DOM fullscreen, real desktop/window-manager fullscreen, and painted output. |
+| `#browser:not(.browser-toolbox-background)` under `:root[lwtheme]` | The rule exists; relevant live theme and browser state matching is not established. | Tagged source and live matching, image/background behavior, and themes. |
+| Split-panel hover, `.deck-selected`, nested `.browserContainer`, and `split-view-footer` | Tagged content-area CSS styles these nodes. Split tests measure panel selection, outline, findbar geometry, footer, resizing, and overflow. The bidi footer-border discrepancy and dialog clipping evidence are recorded in `NOVA-PORT.md`. | Painted clipping/focus, real RTL, other configurations, and safe fixes for recorded gaps. |
+
+`--splitborder` is local to textfox's split-panel rule and derives from `--tf-border` or `--tf-accent`. `--lwt-accent-color` and `--lwt-text-color` are Firefox theme inputs; contrast across arbitrary themes is not established.
+
 ## Findbar
 
 | textfox rule group | Source and live evidence | Unresolved |
