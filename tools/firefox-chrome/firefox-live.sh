@@ -17,6 +17,7 @@
 #   firefox-live.sh --nova on nav-bar          # force Nova on (or off)
 #   firefox-live.sh --nova on --newtab        # inspect initialized new-tab
 #   firefox-live.sh --nova off --newtab-nova on --newtab  # set prefs independently
+#   firefox-live.sh --newtab --newtab-page about:home  # inspect home content
 #   firefox-live.sh back-button -- --html --children
 #
 # Cross-platform: detects firefox on macOS / Linux (native, snap, flatpak).
@@ -33,12 +34,14 @@ NEWTAB_NOVA=""
 QUERY=""
 SELECTOR=""
 NEWTAB=0
+NEWTAB_PAGE=""
 WAIT_FOR=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --vanilla)  SEED=0; shift ;;
     --newtab)   NEWTAB=1; shift ;;
+    --newtab-page) NEWTAB_PAGE="${2:?--newtab-page needs about:newtab or about:home}"; shift 2 ;;
     --wait-for) WAIT_FOR="${2:?--wait-for needs a selector}"; shift 2 ;;
     --nova)     NOVA="${2:?--nova needs on or off}"; shift 2 ;;
     --newtab-nova) NEWTAB_NOVA="${2:?--newtab-nova needs on or off}"; shift 2 ;;
@@ -59,6 +62,15 @@ case "$NEWTAB_NOVA" in
   ""|on|off) ;;
   *) echo "error: --newtab-nova must be on or off" >&2; exit 1 ;;
 esac
+case "$NEWTAB_PAGE" in
+  ""|about:newtab|about:home) ;;
+  *) echo "error: --newtab-page must be about:newtab or about:home" >&2; exit 1 ;;
+esac
+if [ -n "$NEWTAB_PAGE" ] && [ "$NEWTAB" -ne 1 ]; then
+  echo "error: --newtab-page requires --newtab" >&2
+  exit 1
+fi
+NEWTAB_PAGE="${NEWTAB_PAGE:-about:newtab}"
 if [ -n "$WAIT_FOR" ] && [ "$NEWTAB" -ne 1 ]; then
   echo "error: --wait-for requires --newtab" >&2
   exit 1
@@ -152,9 +164,9 @@ FF_PID=$!
 # "$@" here = passthrough flags after `--` (e.g. --html --children)
 if [ "$NEWTAB" -eq 1 ]; then
   if [ -n "$WAIT_FOR" ]; then
-    "$VENV/bin/python" "$TOOL_DIR/ff_newtab.py" --port "$PORT" --profile "$PROFILE" --pid "$FF_PID" --wait-for "$WAIT_FOR"
+    "$VENV/bin/python" "$TOOL_DIR/ff_newtab.py" --port "$PORT" --profile "$PROFILE" --pid "$FF_PID" --page "$NEWTAB_PAGE" --wait-for "$WAIT_FOR"
   else
-    "$VENV/bin/python" "$TOOL_DIR/ff_newtab.py" --port "$PORT" --profile "$PROFILE" --pid "$FF_PID"
+    "$VENV/bin/python" "$TOOL_DIR/ff_newtab.py" --port "$PORT" --profile "$PROFILE" --pid "$FF_PID" --page "$NEWTAB_PAGE"
   fi
 elif [ -n "$SELECTOR" ]; then
   "$VENV/bin/python" "$TOOL_DIR/ff_inspect.py" --port "$PORT" --selector "$SELECTOR" "$@" --profile "$PROFILE" --pid "$FF_PID"

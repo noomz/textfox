@@ -41,6 +41,7 @@ def main():
     parser.add_argument("--profile", required=True)
     parser.add_argument("--pid", type=int, required=True)
     parser.add_argument("--wait-for", help="selector that must appear before reporting")
+    parser.add_argument("--page", choices=("about:newtab", "about:home"), default="about:newtab")
     args = parser.parse_args()
     m = connect(args.port)
     try:
@@ -52,17 +53,17 @@ def main():
             sys.exit("error: launched Firefox has exited")
         if Path(profile).resolve() != Path(args.profile).resolve():
             sys.exit("error: Marionette connected to an unexpected Firefox profile")
-        m.execute_script('gBrowser.selectedTab = gBrowser.addTrustedTab("about:newtab")', sandbox="system")
+        m.execute_script('gBrowser.selectedTab = gBrowser.addTrustedTab(arguments[0])', script_args=[args.page], sandbox="system")
         m.set_context("content")
         m.switch_to_window(m.window_handles[-1])
         deadline = time.monotonic() + 30
         while True:
             result = m.execute_script(JS)
-            if (result["url"] == "about:newtab" and result["initialized"]
+            if (result and result["url"] == args.page and result["initialized"]
                     and (not args.wait_for or m.execute_script('return !!document.querySelector(arguments[0])', script_args=[args.wait_for]))):
                 break
             if time.monotonic() >= deadline:
-                sys.exit(f"error: new-tab or requested selector did not initialize: {result['url']}, {args.wait_for}")
+                sys.exit(f"error: new-tab or requested selector did not initialize: {result}, {args.wait_for}")
             time.sleep(0.25)
         m.set_context("chrome")
         result["preferences"] = m.execute_script(
