@@ -17,10 +17,12 @@ from ff_inspect import connect
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def check_context(m, selector, expected_id):
+def check_context(m, selector, expected_id, expected_selection=None):
     m.set_context('content')
     target = m.find_element('css selector', selector)
     m.actions.sequence('pointer', 'mouse', {'pointerType':'mouse'}).click(target, button=2).perform()
+    if expected_selection is not None and m.execute_script('return window.getSelection().toString()') != expected_selection:
+        raise RuntimeError(f'context fixture {selector} lost its selected text')
     m.set_context('chrome')
     deadline = time.monotonic() + 15
     while True:
@@ -178,7 +180,7 @@ def check(nova, enabled, pdf):
                     or metadata['extensionContextPref'] != enabled or metadata['extensionToolbarPref'] != enabled):
                 raise RuntimeError('unexpected Firefox process, profile, or preferences')
             m.set_context('content')
-            m.navigate('data:text/html,<a href="https://example.invalid/">textfox link fixture</a><p id="page">textfox page fixture</p><input id="edit" value="textfox edit fixture">')
+            m.navigate('data:text/html,<a href="https://example.invalid/">textfox link fixture</a><p id="page">textfox page fixture</p><input id="edit" value="textfox edit fixture"><img id="image" width="60" height="60" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==">')
             link = m.find_element('css selector', 'a')
             m.actions.sequence('pointer', 'mouse', {'pointerType':'mouse'}).click(link, button=2).perform()
             m.set_context('chrome')
@@ -245,6 +247,20 @@ def check(nova, enabled, pdf):
                 time.sleep(.1)
             other_contexts = {'page':check_context(m, '#page', 'context-savepage'),
                               'input':check_context(m, '#edit', 'context-selectall')}
+            m.set_context('content')
+            image = m.execute_script("const e=document.getElementById('image'); return {loaded:e.complete && e.naturalWidth > 0, width:e.getBoundingClientRect().width}")
+            if not image['loaded'] or image['width'] <= 0:
+                raise RuntimeError(f'image context fixture unavailable: {image}')
+            other_contexts['image'] = check_context(m, '#image', 'context-saveimage')
+            m.set_context('content')
+            selected = m.execute_script("""
+                const text=document.querySelector('#page').firstChild, range=document.createRange(), selection=window.getSelection();
+                range.selectNodeContents(text); selection.removeAllRanges(); selection.addRange(range);
+                return selection.toString();
+                """)
+            if selected != 'textfox page fixture':
+                raise RuntimeError(f'selection context fixture unavailable: {selected}')
+            other_contexts['selection'] = check_context(m, '#page', 'context-searchselect', selected)
             pdf_result = check_pdf(m, profile, enabled) if pdf else None
             print(json.dumps({'firefox':metadata, 'item':state, 'otherContexts':other_contexts,
                               'extensionMedia':extension_media, 'modernIntervention':intervention,
