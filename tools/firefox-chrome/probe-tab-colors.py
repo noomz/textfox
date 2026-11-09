@@ -165,10 +165,45 @@ def check(nova, dark, source, forced, mismatch):
                 bg.style.setProperty('--tab-selected-bgcolor', 'var(--tab-background-color-selected)', 'important');
                 """, sandbox='system')
             after = m.execute_script(js, sandbox='system')
+            m.execute_script("CustomizableUI.addWidgetToArea('firefox-view-button', CustomizableUI.AREA_TABSTRIP)", sandbox='system')
+            deadline = time.monotonic() + 15
+            while not m.execute_script("return !!document.querySelector('#TabsToolbar #firefox-view-button .toolbarbutton-icon')", sandbox='system'):
+                if time.monotonic() >= deadline:
+                    raise RuntimeError('Firefox View button did not initialize in tab strip')
+                time.sleep(.1)
+            m.find_element('id', 'firefox-view-button').click()
+            deadline = time.monotonic() + 15
+            while True:
+                view = m.execute_script("""
+                    const button=document.querySelector('#TabsToolbar #firefox-view-button');
+                    const icon=button?.querySelector('.toolbarbutton-icon');
+                    if (!button || !icon || !button.hasAttribute('open')) return null;
+                    const s=getComputedStyle(icon), r=icon.getBoundingClientRect();
+                    return {open:button.hasAttribute('open'),pressed:button.getAttribute('aria-pressed'),
+                      uri:gBrowser.selectedBrowser.currentURI.spec,
+                      background:s.backgroundColor, token:s.getPropertyValue('--tab-selected-bgcolor').trim(),
+                      width:r.width,height:r.height};
+                    """, sandbox='system')
+                if (view and view['width'] > 0 and view['height'] > 0
+                        and view['pressed'] == 'true' and view['uri'].startswith('about:firefoxview')):
+                    break
+                if time.monotonic() >= deadline:
+                    raise RuntimeError(f'Firefox View button did not open: {view}')
+                time.sleep(.1)
+            view_intervention = m.execute_script("""
+                const icon=document.querySelector('#TabsToolbar #firefox-view-button .toolbarbutton-icon');
+                icon.style.setProperty('--tab-selected-bgcolor','rgb(19, 83, 137)','important');
+                const color=getComputedStyle(icon).backgroundColor;
+                icon.style.removeProperty('--tab-selected-bgcolor');
+                return color;
+                """, sandbox='system')
+            if view_intervention != 'rgb(19, 83, 137)':
+                raise RuntimeError(f'Firefox View background intervention failed: {view_intervention}')
             if before['prefersContrast'] != forced:
                 raise RuntimeError('requested contrast preference state not active')
             print(json.dumps({'firefox': meta, 'dark': dark, 'forced':forced, 'mismatch':mismatch, 'before': before, 'hover':hover, 'after': after,
                               'multi':multi, 'multiIntervention':multi_intervention, 'toolbar':toolbar,
+                              'firefoxView':view, 'firefoxViewIntervention':view_intervention,
                               'computedSelectedContrast':contrast(before['background'], before['color']),
                               'computedHoverContrast':contrast(hover['background'], hover['color'])}), flush=True)
         finally:
