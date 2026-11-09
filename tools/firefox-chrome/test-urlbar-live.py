@@ -80,7 +80,9 @@ def check(nova):
                 const anchorStyle = getComputedStyle(anchor);
                 const anchorRect = anchor.getBoundingClientRect();
                 return {anchor:{id:anchor.id, urlbarTag:document.getElementById('urlbar').localName,
-                      popoverOpen:document.getElementById('urlbar').matches(':popover-open'),
+                      hostPopoverOpen:document.getElementById('urlbar').matches(':popover-open'),
+                      hostPopoverAttribute:document.getElementById('urlbar').hasAttribute('popover-open'),
+                      panelPopoverOpen:gURLBar.panel.matches(':popover-open'),
                       inlineHeight:anchor.style.getPropertyValue('--urlbar-container-height').trim(),
                       computedHeight:anchorStyle.getPropertyValue('--urlbar-container-height').trim(),
                       measuredHeight:anchorRect.height},
@@ -90,6 +92,8 @@ def check(nova):
                     viewBorderTopColor:vs.borderTopColor};
                 """, sandbox='system')
             print(json.dumps({'firefox': metadata, 'result': result}), flush=True)
+            if not result['anchor']['hostPopoverAttribute'] or not result['anchor']['panelPopoverOpen']:
+                raise RuntimeError(f'URL bar results popover did not open: {result["anchor"]}')
             if result['resultsBorderTopWidth'] != '0px':
                 raise RuntimeError('unexpected result separator border')
             if result['viewBorderTopWidth'] != '3px' or result['viewBorderTopStyle'] != 'solid':
