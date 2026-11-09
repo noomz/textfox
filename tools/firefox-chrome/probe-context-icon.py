@@ -19,7 +19,7 @@ from ff_inspect import connect
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def check_context(m, selector, expected_id, expected_selection=None, action_id=None):
+def check_context(m, selector, expected_id, expected_selection=None, action_id=None, keyboard=False):
     m.set_context('content')
     target = m.find_element('css selector', selector)
     m.actions.sequence('pointer', 'mouse', {'pointerType':'mouse'}).click(target, button=2).perform()
@@ -49,8 +49,18 @@ def check_context(m, selector, expected_id, expected_selection=None, action_id=N
         actionable = m.execute_script("const e=document.getElementById(arguments[0]); const r=e?.getBoundingClientRect(); return !!e && !e.hidden && !e.disabled && r.width > 0 && r.height > 0", script_args=[action_id], sandbox='system')
         if not actionable:
             raise RuntimeError(f'context action {action_id} is unavailable')
-        action = m.find_element('id', action_id)
-        m.actions.sequence('pointer', 'mouse', {'pointerType':'mouse'}).click(action).perform()
+        if keyboard:
+            for _ in range(80):
+                active = m.execute_script("return document.querySelector('#contentAreaContextMenu menuitem[_moz-menuactive=\"true\"]')?.id", sandbox='system')
+                if active == action_id:
+                    break
+                m.actions.sequence('key', 'keyboard').send_keys(Keys.ARROW_DOWN).perform()
+            else:
+                raise RuntimeError(f'keyboard did not reach context action {action_id}')
+            m.actions.sequence('key', 'keyboard').send_keys(Keys.ENTER).perform()
+        else:
+            action = m.find_element('id', action_id)
+            m.actions.sequence('pointer', 'mouse', {'pointerType':'mouse'}).click(action).perform()
     else:
         m.actions.sequence('key', 'keyboard').send_keys(Keys.ESCAPE).perform()
     deadline = time.monotonic() + 10
@@ -59,6 +69,7 @@ def check_context(m, selector, expected_id, expected_selection=None, action_id=N
             raise RuntimeError(f'context fixture {selector} did not close after {action_id or "Escape"}')
         time.sleep(.1)
     result['activated'] = action_id
+    result['activatedBy'] = ('keyboard' if keyboard else 'pointer') if action_id else None
     return result
 
 
@@ -152,7 +163,7 @@ def check_pdf(m, profile, enabled):
     return result
 
 
-def check(nova, enabled, pdf, media):
+def check(nova, enabled, pdf, media, keyboard_media):
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0))
         port = sock.getsockname()[1]
@@ -289,7 +300,7 @@ def check(nova, enabled, pdf, media):
                     time.sleep(.1)
                 if not video['paused'] or video['muted']:
                     raise RuntimeError(f'video fixture is not paused and unmuted: {video}')
-                other_contexts['video'] = check_context(m, '#video', 'context-savevideo', '', 'context-media-play')
+                other_contexts['video'] = check_context(m, '#video', 'context-savevideo', '', 'context-media-play', keyboard_media)
                 other_contexts['video']['mediaState'] = video
 
                 def wait_media(paused, muted):
@@ -304,13 +315,13 @@ def check(nova, enabled, pdf, media):
                         time.sleep(.1)
 
                 playing_unmuted = wait_media(False, False)
-                other_contexts['video-playing-unmuted'] = check_context(m, '#video', 'context-media-pause', '', 'context-media-mute')
+                other_contexts['video-playing-unmuted'] = check_context(m, '#video', 'context-media-pause', '', 'context-media-mute', keyboard_media)
                 other_contexts['video-playing-unmuted']['mediaState'] = playing_unmuted
                 playing_muted = wait_media(False, True)
-                other_contexts['video-playing'] = check_context(m, '#video', 'context-media-unmute', '', 'context-media-unmute')
+                other_contexts['video-playing'] = check_context(m, '#video', 'context-media-unmute', '', 'context-media-unmute', keyboard_media)
                 other_contexts['video-playing']['mediaState'] = playing_muted
                 wait_media(False, False)
-                other_contexts['video-before-pause'] = check_context(m, '#video', 'context-media-pause', '', 'context-media-pause')
+                other_contexts['video-before-pause'] = check_context(m, '#video', 'context-media-pause', '', 'context-media-pause', keyboard_media)
                 paused = wait_media(True, False)
                 other_contexts['video-before-pause']['afterMediaState'] = paused
                 for name, required in (('video', ('context-media-play', 'context-media-mute')),
@@ -342,9 +353,12 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--pdf', action='store_true', help='also generate a PDF using ps2pdf and inspect its editor menu')
     parser.add_argument('--media', action='store_true', help='also generate a local WebM using ffmpeg and inspect its menu')
+    parser.add_argument('--keyboard-media', action='store_true', help='activate media actions with keyboard navigation')
     args = parser.parse_args()
     if args.pdf and not shutil.which('ps2pdf'):
         parser.error('--pdf requires ps2pdf')
+    if args.keyboard_media and not args.media:
+        parser.error('--keyboard-media requires --media')
     if args.media and not shutil.which('ffmpeg'):
         parser.error('--media requires ffmpeg with libvpx and libvorbis')
     with tempfile.TemporaryDirectory(prefix='tf-context-media-') as directory:
@@ -359,4 +373,4 @@ if __name__ == '__main__':
             media = base64.b64encode(path.read_bytes()).decode('ascii')
         for nova in (False, True):
             for enabled in (False, True):
-                check(nova, enabled, args.pdf, media)
+                check(nova, enabled, args.pdf, media, args.keyboard_media)
