@@ -379,7 +379,7 @@ On this continuation, `test-firefox-live.sh` and `test-findbar-live.py` passed a
 
 ## Horizontal tab toolbar hover
 
-`probe-tab-colors.py` now locks `:hover` on `#TabsToolbar` with a non-default accent and waits for its border transition. In both browser Nova states and temporary light/dark themes on headless Firefox 159.0 build `20261022150525`, the toolbar border and generated `"tabs"` title computed the configured accent; the title computed `display: flex`. The same assertions passed with the accessibility-theme preference and deliberately mismatched background probe variants. The probe removes the lock before subsequent interactions. This does not test real pointer hover, toolbar focus, title painting, contrast, or other platforms. Run `MOZ_HEADLESS=1 "$HOME/.cache/textfox-firefox-live/venv/bin/python" tools/firefox-chrome/probe-tab-colors.py`.
+`probe-tab-colors.py` now locks `:hover` on `#TabsToolbar` with a non-default accent and waits for its border transition. In both browser Nova states and temporary light/dark themes on headless Firefox 159.0 build `20261022150525`, the toolbar border and generated `"tabs"` title computed the configured accent; the title computed `display: flex`. The same assertions passed with the accessibility-theme preference and deliberately mismatched background probe variants. The probe removes the lock, then moves a Marionette pointer over the toolbar and away; the toolbar matched real `:hover` and reached the configured border color in those samples. This does not test a physical pointer, toolbar focus, title painting, contrast, or other platforms. Run `MOZ_HEADLESS=1 "$HOME/.cache/textfox-firefox-live/venv/bin/python" tools/firefox-chrome/probe-tab-colors.py`.
 
 ## Tab toolbar selectors and text transform
 

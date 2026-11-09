@@ -137,6 +137,22 @@ def check(nova, dark, source, forced, mismatch):
                     or toolbar_hover['title'] != '"tabs"' or toolbar_hover['titleDisplay'] != 'flex'
                     or toolbar_hover['titleColor'] != 'rgb(19, 83, 137)'):
                 raise RuntimeError(f'horizontal tab toolbar hover styles did not apply: {toolbar_hover}')
+            bar = m.find_element('id', 'TabsToolbar')
+            m.actions.sequence('pointer', 'mouse', {'pointerType':'mouse'}).pointer_move(0, 0, origin=bar).perform()
+            deadline = time.monotonic() + 5
+            while True:
+                pointer_hover = m.execute_script("""
+                    const bar=document.getElementById('TabsToolbar');
+                    return {matches:bar.matches(':hover'),border:getComputedStyle(bar).borderTopColor};
+                    """, sandbox='system')
+                if pointer_hover['matches'] and pointer_hover['border'] == 'rgb(19, 83, 137)':
+                    break
+                if time.monotonic() >= deadline:
+                    raise RuntimeError(f'pointer did not reach horizontal tab toolbar: {pointer_hover}')
+                time.sleep(.1)
+            m.actions.sequence('pointer', 'mouse', {'pointerType':'mouse'}).pointer_move(1, 1).perform()
+            if m.execute_script("return document.getElementById('TabsToolbar').matches(':hover')", sandbox='system'):
+                raise RuntimeError('pointer did not leave the horizontal tab toolbar')
             before = m.execute_script(js, sandbox='system')
             hover = m.execute_script("""
                 const tab=gBrowser.addTrustedTab('about:blank');
@@ -222,7 +238,7 @@ def check(nova, dark, source, forced, mismatch):
                 raise RuntimeError('requested contrast preference state not active')
             print(json.dumps({'firefox': meta, 'dark': dark, 'forced':forced, 'mismatch':mismatch, 'before': before, 'hover':hover, 'after': after,
                               'multi':multi, 'multiIntervention':multi_intervention, 'toolbar':toolbar,
-                              'toolbarHover':toolbar_hover,
+                              'toolbarHover':toolbar_hover, 'toolbarPointerHover':pointer_hover,
                               'firefoxView':view, 'firefoxViewIntervention':view_intervention,
                               'computedSelectedContrast':contrast(before['background'], before['color']),
                               'computedHoverContrast':contrast(hover['background'], hover['color'])}), flush=True)
