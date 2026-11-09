@@ -25,6 +25,7 @@ def check(nova, themed, builtin):
         profile = Path(directory)
         if themed:
             shutil.copytree(ROOT / 'chrome', profile / 'chrome')
+            (profile / 'chrome' / 'config.css').write_text(':root { --tf-rounding: 7px; }\n')
         prefs = {'marionette.port': port, 'browser.nova.enabled': nova,
                  'toolkit.legacyUserProfileCustomizations.stylesheets': True,
                  'browser.shell.checkDefaultBrowser': False}
@@ -77,7 +78,7 @@ def check(nova, themed, builtin):
                     const s = getComputedStyle(active), r = active.getBoundingClientRect();
                     const root = getComputedStyle(document.documentElement);
                     return {label:active.getAttribute('label'), background:s.backgroundColor,
-                      color:s.color, width:r.width, height:r.height,
+                      color:s.color, width:r.width, height:r.height, radius:s.borderTopLeftRadius,
                       selectedToken:s.getPropertyValue('--tab-selected-bgcolor').trim(),
                       fieldColor:root.getPropertyValue('--toolbar-field-color').trim(),
                       toolbarColor:root.getPropertyValue('--toolbar-bgcolor').trim()};
@@ -89,6 +90,8 @@ def check(nova, themed, builtin):
                 time.sleep(.1)
             if sample['width'] <= 0 or sample['height'] <= 0:
                 raise RuntimeError(f'active menu item has no geometry: {sample}')
+            if themed and sample['radius'] != '7px':
+                raise RuntimeError(f'configured menu item radius did not apply: {sample}')
             intervention = None
             if themed:
                 intervention = m.execute_script("""
