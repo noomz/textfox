@@ -88,15 +88,44 @@ def check(nova):
                     raise RuntimeError('Firefox did not exit fullscreen')
                 time.sleep(.1)
             restored = snapshot()
+            m.set_context('content')
+            m.navigate('data:text/html,<button id="fullscreen" onclick="document.documentElement.requestFullscreen()">fullscreen</button>')
+            m.find_element('id', 'fullscreen').click()
+            deadline = time.monotonic() + 15
+            while not m.execute_script('return !!document.fullscreenElement'):
+                if time.monotonic() >= deadline:
+                    raise RuntimeError('content did not enter DOM fullscreen')
+                time.sleep(.1)
+            m.set_context('chrome')
+            deadline = time.monotonic() + 15
+            while not m.execute_script("return document.documentElement.hasAttribute('inDOMFullscreen')", sandbox='system'):
+                if time.monotonic() >= deadline:
+                    raise RuntimeError('browser did not enter DOM fullscreen state')
+                time.sleep(.1)
+            dom_fullscreen = snapshot()
+            dom_fullscreen['domAttribute'] = m.execute_script("return document.documentElement.getAttribute('inDOMFullscreen')", sandbox='system')
+            m.set_context('content')
+            m.execute_async_script("document.exitFullscreen().then(() => arguments[arguments.length-1](true))")
+            m.set_context('chrome')
+            deadline = time.monotonic() + 15
+            while m.execute_script("return document.documentElement.hasAttribute('inDOMFullscreen')", sandbox='system'):
+                if time.monotonic() >= deadline:
+                    raise RuntimeError('browser did not exit DOM fullscreen state')
+                time.sleep(.1)
+            dom_restored = snapshot()
             print(json.dumps({'firefox': metadata, 'initial': initial, 'fullscreen': fullscreen,
-                              'restored': restored}), flush=True)
-            if fullscreen['attribute'] != 'true' or len(fullscreen['panels']) != 2:
-                raise RuntimeError(f'fullscreen attribute or split panels differ: {fullscreen}')
-            for panel in fullscreen['panels']:
-                if (panel['margin'] != '0px' or panel['borderWidth'] != '0px' or panel['padding'] != '0px'
-                        or panel['outlineStyle'] != 'none' or panel['titleDisplay'] != 'none'):
-                    raise RuntimeError(f'fullscreen split decoration remains: {panel}')
-            for state in (initial, restored):
+                              'restored': restored, 'domFullscreen':dom_fullscreen,
+                              'domRestored':dom_restored}), flush=True)
+            if dom_fullscreen['domAttribute'] != 'true':
+                raise RuntimeError(f'DOM fullscreen attribute missing: {dom_fullscreen}')
+            for state in (fullscreen, dom_fullscreen):
+                if state['attribute'] != 'true' or len(state['panels']) != 2:
+                    raise RuntimeError(f'fullscreen attribute or split panels differ: {state}')
+                for panel in state['panels']:
+                    if (panel['margin'] != '0px' or panel['borderWidth'] != '0px' or panel['padding'] != '0px'
+                            or panel['outlineStyle'] != 'none' or panel['titleDisplay'] != 'none'):
+                        raise RuntimeError(f'fullscreen split decoration remains: {panel}')
+            for state in (initial, restored, dom_restored):
                 if state['fullscreen'] or state['attribute'] is not None or len(state['panels']) != 2:
                     raise RuntimeError(f'windowed split state is invalid: {state}')
                 if any(p['borderWidth'] != '3px' or p['padding'] != '8px' or p['titleDisplay'] != 'flex'
