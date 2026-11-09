@@ -80,6 +80,29 @@ def check(nova, dark, source, forced, mismatch):
                 if time.monotonic() >= deadline:
                     raise RuntimeError('themed horizontal tab did not initialize')
                 time.sleep(.1)
+            browser_root = m.execute_script("""
+                const e=document.getElementById('browser'), root=document.documentElement;
+                if (!e || !root.hasAttribute('lwtheme')) throw new Error('themed browser root missing');
+                const measure=()=>{
+                  const s=getComputedStyle(e), rootStyle=getComputedStyle(root);
+                  return {matches:e.matches('#browser:not(.browser-toolbox-background)'),
+                    className:e.getAttribute('class'), backgroundColor:s.backgroundColor,
+                    backgroundImage:s.backgroundImage,
+                    accent:rootStyle.getPropertyValue('--lwt-accent-color').trim(),
+                    tfBackground:rootStyle.getPropertyValue('--tf-bg').trim(),
+                    accentIsImage:CSS.supports('background-image', rootStyle.getPropertyValue('--lwt-accent-color').trim())};
+                };
+                const initial=measure(), hadClass=e.classList.contains('browser-toolbox-background');
+                e.classList.toggle('browser-toolbox-background', !hadClass);
+                try { return {initial, classControl:measure()}; }
+                finally { e.classList.toggle('browser-toolbox-background', hadClass); }
+                """, sandbox='system')
+            initial, control = browser_root['initial'], browser_root['classControl']
+            if (not initial['matches'] or control['matches'] or initial['accentIsImage']
+                    or initial['backgroundColor'] != initial['accent']
+                    or control['backgroundColor'] != control['tfBackground']
+                    or (mismatch and initial['backgroundColor'] == control['backgroundColor'])):
+                raise RuntimeError(f'browser background class control was inconclusive: {browser_root}')
             js = """
                 const tab = document.querySelector('#TabsToolbar .tabbrowser-tab[selected]');
                 const bg = getComputedStyle(tab.querySelector('.tab-background'));
@@ -241,7 +264,7 @@ def check(nova, dark, source, forced, mismatch):
             if before['prefersContrast'] != forced:
                 raise RuntimeError('requested contrast preference state not active')
             print(json.dumps({'firefox': meta, 'dark': dark, 'forced':forced, 'mismatch':mismatch, 'before': before, 'hover':hover, 'after': after,
-                              'multi':multi, 'multiIntervention':multi_intervention, 'toolbar':toolbar,
+                              'multi':multi, 'multiIntervention':multi_intervention, 'toolbar':toolbar, 'browserRoot':browser_root,
                               'toolbarHover':toolbar_hover, 'toolbarPointerHover':pointer_hover,
                               'firefoxView':view, 'firefoxViewIntervention':view_intervention,
                               'computedSelectedContrast':contrast(before['background'], before['color']),
