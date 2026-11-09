@@ -64,8 +64,14 @@ def check_pdf(m, profile, enabled):
             const item=menu.querySelector('#context-pdfjs-select-all');
             if (menu.state !== 'open' || !item || item.hidden) return null;
             const s=getComputedStyle(item),r=item.getBoundingClientRect();
+            const menuItems=[...menu.querySelectorAll('menuitem[id],menu[id]')].map(e=>{
+              const st=getComputedStyle(e),rect=e.getBoundingClientRect();
+              return {id:e.id,hidden:e.hidden,display:st.display,visibility:st.visibility,
+                image:st.backgroundImage,width:rect.width,height:rect.height};
+            });
             return {hidden:item.hidden,disabled:item.disabled,display:s.display,image:s.backgroundImage,
-              width:r.width,height:r.height,legacyMatches:menu.querySelectorAll('#context-pdfjs-selectall').length};
+              width:r.width,height:r.height,legacyMatches:menu.querySelectorAll('#context-pdfjs-selectall').length,
+              menuItems};
             """, sandbox='system')
         if result and result['width'] > 0 and result['height'] > 0:
             break

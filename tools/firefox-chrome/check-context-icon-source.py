@@ -28,16 +28,19 @@ def compare(source):
             'skippedEscapedSelectors': skipped}
 
 
-def compare_live(source_result, live_file):
+def compare_live(source_result, live_file, context='link'):
     candidates = set(source_result['found'] + source_result['notInFile'])
     profiles = []
     for line in live_file.read_text().splitlines():
         sample = json.loads(line)
-        items = sample['item']['menuItems']
+        fixture = sample['item'] if context == 'link' else sample.get('pdfEditor')
+        if not fixture:
+            raise ValueError(f'live sample has no {context} context fixture')
+        items = fixture['menuItems']
         present = {item['id'] for item in items}
         visible = {item['id'] for item in items if not item['hidden'] and item['display'] != 'none'
                    and item['visibility'] == 'visible' and item['width'] > 0 and item['height'] > 0}
-        profiles.append({'nova':sample['firefox']['nova'], 'iconPref':sample['firefox']['iconPref'],
+        profiles.append({'context':context, 'nova':sample['firefox']['nova'], 'iconPref':sample['firefox']['iconPref'],
                          'version':sample['firefox']['version'], 'build':sample['firefox']['build'],
                          'candidatePresent':sorted(candidates & present),
                          'candidateVisible':sorted(candidates & visible),
@@ -53,10 +56,11 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('source', type=Path, help='Firefox browser-context.inc.xhtml to inspect')
     parser.add_argument('--live-jsonl', type=Path, help='output from probe-context-icon.py')
+    parser.add_argument('--context', choices=('link', 'pdf'), default='link', help='live fixture to compare')
     args = parser.parse_args()
     result = compare(args.source)
     if args.live_jsonl:
-        result['liveProfiles'] = compare_live(result, args.live_jsonl)
+        result['liveProfiles'] = compare_live(result, args.live_jsonl, args.context)
     print(json.dumps(result, indent=2))
 
 
