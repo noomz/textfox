@@ -24,6 +24,8 @@ def check(nova, revamp, themed):
         profile = Path(directory)
         if themed:
             shutil.copytree(ROOT / 'chrome', profile / 'chrome')
+            (profile / 'chrome' / 'config.css').write_text(
+                ':root { --tf-accent: rgb(19, 83, 137); --tf-display-titles: flex; }\n')
         prefs = {'marionette.port': port, 'browser.nova.enabled': nova,
                  'sidebar.revamp': revamp,
                  'toolkit.legacyUserProfileCustomizations.stylesheets': True,
@@ -65,6 +67,32 @@ def check(nova, revamp, themed):
                 """, sandbox='system')
             for item in result.values():
                 item['hasGeometry'] = item['display'] != 'none' and item['visibility'] == 'visible' and item['width'] > 0 and item['height'] > 0
+            sidebar_hover = None
+            if themed:
+                sidebar_hover = m.execute_script("""
+                    const box=document.getElementById('sidebar-box'), p=getComputedStyle(box,'::before');
+                    InspectorUtils.addPseudoClassLock(box, ':hover');
+                    return {title:p.content,titleDisplay:p.display};
+                    """, sandbox='system')
+                try:
+                    deadline = time.monotonic() + 5
+                    while True:
+                        hover = m.execute_script("""
+                            const box=document.getElementById('sidebar-box');
+                            return {matches:box.matches(':hover'),border:getComputedStyle(box).borderTopColor,
+                              titleColor:getComputedStyle(box,'::before').color};
+                            """, sandbox='system')
+                        if hover['border'] == 'rgb(19, 83, 137)':
+                            break
+                        if time.monotonic() >= deadline:
+                            raise RuntimeError(f'sidebar hover border did not settle: {hover}')
+                        time.sleep(.1)
+                finally:
+                    m.execute_script("InspectorUtils.removePseudoClassLock(document.getElementById('sidebar-box'), ':hover')", sandbox='system')
+                sidebar_hover['hover'] = hover
+                if (sidebar_hover['title'] != '"tool"' or sidebar_hover['titleDisplay'] != 'flex'
+                        or not hover['matches'] or hover['titleColor'] != 'rgb(19, 83, 137)'):
+                    raise RuntimeError(f'sidebar hover styles did not apply: {sidebar_hover}')
             floorp_selector_count = m.execute_script("return document.querySelectorAll('#sidebar-select-box').length", sandbox='system')
             media = m.execute_script("""
                 const navbar=document.getElementById('nav-bar');
@@ -99,6 +127,7 @@ def check(nova, revamp, themed):
                     """, sandbox='system')
             print(json.dumps({'firefox': metadata, 'themed': themed, 'result': result,
                               'media':media, 'floorpSelectorCount':floorp_selector_count,
+                              'sidebarHover':sidebar_hover,
                               'headerIntervention': intervention}), flush=True)
             if not revamp and not themed and not all(item['hasGeometry'] for item in result.values()):
                 raise RuntimeError(f'classic vanilla header positive control is not visible: {result}')
