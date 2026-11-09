@@ -25,6 +25,8 @@ def check(nova, enabled):
         shutil.copytree(ROOT / 'chrome', profile / 'chrome')
         prefs = {'marionette.port': port, 'browser.nova.enabled': nova,
                  'shyfox.enable.context.menu.icons': enabled,
+                 'shyfox.enable.ext.mono.context.icons': enabled,
+                 'shyfox.enable.ext.mono.toolbar.icons': enabled,
                  'toolkit.legacyUserProfileCustomizations.stylesheets': True,
                  'browser.shell.checkDefaultBrowser': False}
         (profile / 'user.js').write_text(''.join(
@@ -42,10 +44,13 @@ def check(nova, enabled):
                 return {profile:Services.dirsvc.get('ProfD',Ci.nsIFile).path,
                   version:Services.appinfo.version,build:Services.appinfo.appBuildID,
                   nova:Services.prefs.getBoolPref('browser.nova.enabled'),
-                  iconPref:Services.prefs.getBoolPref('shyfox.enable.context.menu.icons')};
+                  iconPref:Services.prefs.getBoolPref('shyfox.enable.context.menu.icons'),
+                  extensionContextPref:Services.prefs.getBoolPref('shyfox.enable.ext.mono.context.icons'),
+                  extensionToolbarPref:Services.prefs.getBoolPref('shyfox.enable.ext.mono.toolbar.icons')};
                 """, sandbox='system')
             if (process.poll() is not None or Path(metadata['profile']).resolve() != profile.resolve()
-                    or metadata['nova'] != nova or metadata['iconPref'] != enabled):
+                    or metadata['nova'] != nova or metadata['iconPref'] != enabled
+                    or metadata['extensionContextPref'] != enabled or metadata['extensionToolbarPref'] != enabled):
                 raise RuntimeError('unexpected Firefox process, profile, or preferences')
             m.set_context('content')
             m.navigate('data:text/html,<a href="https://example.invalid/">textfox link fixture</a>')
@@ -69,6 +74,13 @@ def check(nova, enabled):
                 if time.monotonic() >= deadline:
                     raise RuntimeError(f'link context menu did not initialize: {state}')
                 time.sleep(.1)
+            extension_media = m.execute_script("""
+                return Object.fromEntries(['shyfox.enable.ext.mono.context.icons', 'shyfox.enable.ext.mono.toolbar.icons']
+                  .map(pref => [pref, {legacy:matchMedia(`(-moz-bool-pref: "${pref}")`).matches,
+                    modern:matchMedia(`-moz-pref("${pref}")`).matches}]));
+                """, sandbox='system')
+            if any(value['modern'] != enabled for value in extension_media.values()):
+                raise RuntimeError(f'extension icon preference media control failed: {extension_media}')
             intervention = m.execute_script("""
                 const css = '@media -moz-pref("shyfox.enable.context.menu.icons") { #contentAreaContextMenu #context-openlinkprivate { background-image: url("chrome://browser/skin/privateBrowsing.svg") !important; } }';
                 const uri='data:text/css,' + encodeURIComponent(css);
@@ -88,7 +100,8 @@ def check(nova, enabled):
                 if time.monotonic() >= deadline:
                     raise RuntimeError('Escape did not close context menu')
                 time.sleep(.1)
-            print(json.dumps({'firefox':metadata, 'item':state, 'modernIntervention':intervention}), flush=True)
+            print(json.dumps({'firefox':metadata, 'item':state, 'extensionMedia':extension_media,
+                              'modernIntervention':intervention}), flush=True)
         finally:
             try:
                 if m:
