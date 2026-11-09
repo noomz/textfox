@@ -21,7 +21,9 @@ def check(nova, display, vertical):
     with tempfile.TemporaryDirectory(prefix='tf-sidebar-tools-') as directory:
         profile = Path(directory)
         shutil.copytree(ROOT / 'chrome', profile / 'chrome')
-        (profile / 'chrome' / 'config.css').write_text(f':root {{ --tf-display-sidebar-tools: {display}; }}\n')
+        (profile / 'chrome' / 'config.css').write_text(
+            f':root {{ --tf-display-sidebar-tools: {display}; --tf-text-transform: uppercase; '
+            '--tf-accent: rgb(19, 83, 137); }\n')
         prefs = {'marionette.port': port, 'browser.nova.enabled': nova,
                  'sidebar.revamp': True, 'sidebar.verticalTabs': vertical,
                  'sidebar.visibility': 'always-show',
@@ -109,7 +111,40 @@ def check(nova, display, vertical):
                     return {display:style.display, border:style.borderTopWidth,
                             width:rect.width, height:rect.height};
                     """, sandbox='system')
-                print(json.dumps({'nova': nova, 'verticalStrip': vertical_strip}), flush=True)
+                vertical_styles = m.execute_script("""
+                    const strip=document.querySelector('box#vertical-tabs');
+                    const tabs=document.getElementById('tabbrowser-tabs');
+                    const label=tabs.querySelector('.tabbrowser-tab[selected] .tab-label');
+                    if (!label) throw new Error('selected vertical tab label missing');
+                    const title=getComputedStyle(strip,'::before');
+                    InspectorUtils.addPseudoClassLock(strip, ':hover');
+                    return {transform:getComputedStyle(tabs).textTransform,
+                      labelTransform:getComputedStyle(label).textTransform,
+                      title:title.content,titleDisplay:title.display};
+                    """, sandbox='system')
+                try:
+                    deadline = time.monotonic() + 5
+                    while True:
+                        hover = m.execute_script("""
+                            const strip=document.querySelector('box#vertical-tabs');
+                            return {matches:strip.matches(':hover'),border:getComputedStyle(strip).borderTopColor,
+                              titleColor:getComputedStyle(strip,'::before').color};
+                            """, sandbox='system')
+                        if hover['border'] == 'rgb(19, 83, 137)':
+                            break
+                        if time.monotonic() >= deadline:
+                            raise RuntimeError(f'vertical tab hover border did not settle: {hover}')
+                        time.sleep(.1)
+                finally:
+                    m.execute_script("InspectorUtils.removePseudoClassLock(document.querySelector('box#vertical-tabs'), ':hover')", sandbox='system')
+                print(json.dumps({'nova': nova, 'verticalStrip': vertical_strip,
+                                  'verticalStyles':vertical_styles, 'verticalHover':hover}), flush=True)
+                if (vertical_styles['transform'] != 'uppercase'
+                        or vertical_styles['labelTransform'] != 'uppercase'
+                        or vertical_styles['title'] != '"tabs"'
+                        or vertical_styles['titleDisplay'] != 'flex'
+                        or not hover['matches'] or hover['titleColor'] != 'rgb(19, 83, 137)'):
+                    raise RuntimeError(f'vertical tab styles did not apply: {vertical_styles}, {hover}')
                 if (vertical_strip['display'] == 'none' or vertical_strip['border'] != '2px'
                         or vertical_strip['width'] <= 0 or vertical_strip['height'] <= 0):
                     raise RuntimeError(f'vertical tab strip is not styled or visible: {vertical_strip}')
