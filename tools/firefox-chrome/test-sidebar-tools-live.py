@@ -94,6 +94,26 @@ def check(nova, display, vertical):
                     """, sandbox='system')
                 if collapsed is not True:
                     raise RuntimeError(f'could not collapse sidebar launcher: {collapsed}')
+                m.execute_script("InspectorUtils.addPseudoClassLock(document.querySelector('sidebar-main').shadowRoot.querySelector('.buttons-wrapper'), ':hover')", sandbox='system')
+                try:
+                    deadline = time.monotonic() + 5
+                    while True:
+                        wrapper_hover = m.execute_script("""
+                            const wrapper=document.querySelector('sidebar-main').shadowRoot.querySelector('.buttons-wrapper');
+                            const s=getComputedStyle(wrapper),p=getComputedStyle(wrapper,'::before');
+                            return {matches:wrapper.matches(':hover'),border:s.borderTopColor,
+                              title:p.content,titleDisplay:p.display,titleColor:p.color};
+                            """, sandbox='system')
+                        if wrapper_hover['border'] == 'rgb(19, 83, 137)' or time.monotonic() >= deadline:
+                            break
+                        time.sleep(.1)
+                finally:
+                    m.execute_script("InspectorUtils.removePseudoClassLock(document.querySelector('sidebar-main').shadowRoot.querySelector('.buttons-wrapper'), ':hover')", sandbox='system')
+                print(json.dumps({'nova':nova, 'sidebarWrapperHover':wrapper_hover}), flush=True)
+                if (not wrapper_hover['matches'] or wrapper_hover['border'] != 'rgb(19, 83, 137)'
+                        or wrapper_hover['title'] != '"tools"' or wrapper_hover['titleDisplay'] != 'flex'
+                        or wrapper_hover['titleColor'] != 'rgb(19, 83, 137)'):
+                    raise RuntimeError(f'sidebar tools hover styles did not apply: {wrapper_hover}')
                 drag = m.execute_script("""
                     const host = document.querySelector('sidebar-main');
                     const splitter = host.shadowRoot.querySelector('#sidebar-tools-and-extensions-splitter');
