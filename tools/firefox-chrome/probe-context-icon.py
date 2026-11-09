@@ -19,7 +19,7 @@ from ff_inspect import connect
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def check_context(m, selector, expected_id, expected_selection=None):
+def check_context(m, selector, expected_id, expected_selection=None, action_id=None):
     m.set_context('content')
     target = m.find_element('css selector', selector)
     m.actions.sequence('pointer', 'mouse', {'pointerType':'mouse'}).click(target, button=2).perform()
@@ -45,12 +45,20 @@ def check_context(m, selector, expected_id, expected_selection=None):
         if time.monotonic() >= deadline:
             raise RuntimeError(f'context fixture {selector} did not initialize: {result}')
         time.sleep(.1)
-    m.actions.sequence('key', 'keyboard').send_keys(Keys.ESCAPE).perform()
+    if action_id:
+        actionable = m.execute_script("const e=document.getElementById(arguments[0]); const r=e?.getBoundingClientRect(); return !!e && !e.hidden && !e.disabled && r.width > 0 && r.height > 0", script_args=[action_id], sandbox='system')
+        if not actionable:
+            raise RuntimeError(f'context action {action_id} is unavailable')
+        action = m.find_element('id', action_id)
+        m.actions.sequence('pointer', 'mouse', {'pointerType':'mouse'}).click(action).perform()
+    else:
+        m.actions.sequence('key', 'keyboard').send_keys(Keys.ESCAPE).perform()
     deadline = time.monotonic() + 10
     while m.execute_script("return document.getElementById('contentAreaContextMenu').state", sandbox='system') != 'closed':
         if time.monotonic() >= deadline:
-            raise RuntimeError(f'context fixture {selector} did not close')
+            raise RuntimeError(f'context fixture {selector} did not close after {action_id or "Escape"}')
         time.sleep(.1)
+    result['activated'] = action_id
     return result
 
 
@@ -270,7 +278,7 @@ def check(nova, enabled, pdf, media):
             other_contexts['selection'] = check_context(m, '#page', 'context-searchselect', selected)
             if media:
                 m.set_context('content')
-                m.execute_script('window.getSelection().removeAllRanges()')
+                m.execute_script("window.getSelection().removeAllRanges(); document.getElementById('video').loop=true")
                 deadline = time.monotonic() + 15
                 while True:
                     video = m.execute_script("const e=document.getElementById('video'); return {ready:e.readyState,width:e.videoWidth,height:e.videoHeight,paused:e.paused,muted:e.muted}")
@@ -281,28 +289,38 @@ def check(nova, enabled, pdf, media):
                     time.sleep(.1)
                 if not video['paused'] or video['muted']:
                     raise RuntimeError(f'video fixture is not paused and unmuted: {video}')
-                other_contexts['video'] = check_context(m, '#video', 'context-savevideo', '')
+                other_contexts['video'] = check_context(m, '#video', 'context-savevideo', '', 'context-media-play')
                 other_contexts['video']['mediaState'] = video
-                m.set_context('content')
-                playing = m.execute_async_script("""
-                    const done=arguments[arguments.length-1], video=document.getElementById('video');
-                    video.muted=true; video.loop=true;
-                    video.play().then(()=>done({paused:video.paused,muted:video.muted,loop:video.loop}),
-                      error=>done({error:String(error)}));
-                    """)
-                if playing.get('error') or playing['paused'] or not playing['muted'] or not playing['loop']:
-                    raise RuntimeError(f'muted video fixture did not play: {playing}')
-                other_contexts['video-playing'] = check_context(m, '#video', 'context-media-pause', '')
-                other_contexts['video-playing']['mediaState'] = playing
+
+                def wait_media(paused, muted):
+                    m.set_context('content')
+                    deadline = time.monotonic() + 10
+                    while True:
+                        state = m.execute_script("const e=document.getElementById('video'); return {paused:e.paused,muted:e.muted,loop:e.loop}")
+                        if state['paused'] == paused and state['muted'] == muted and state['loop']:
+                            return state
+                        if time.monotonic() >= deadline:
+                            raise RuntimeError(f'media command did not reach expected state: {state}')
+                        time.sleep(.1)
+
+                playing_unmuted = wait_media(False, False)
+                other_contexts['video-playing-unmuted'] = check_context(m, '#video', 'context-media-pause', '', 'context-media-mute')
+                other_contexts['video-playing-unmuted']['mediaState'] = playing_unmuted
+                playing_muted = wait_media(False, True)
+                other_contexts['video-playing'] = check_context(m, '#video', 'context-media-unmute', '', 'context-media-unmute')
+                other_contexts['video-playing']['mediaState'] = playing_muted
+                wait_media(False, False)
+                other_contexts['video-before-pause'] = check_context(m, '#video', 'context-media-pause', '', 'context-media-pause')
+                paused = wait_media(True, False)
+                other_contexts['video-before-pause']['afterMediaState'] = paused
                 for name, required in (('video', ('context-media-play', 'context-media-mute')),
+                                       ('video-playing-unmuted', ('context-media-pause', 'context-media-mute')),
                                        ('video-playing', ('context-media-pause', 'context-media-unmute'))):
                     visible = {item['id'] for item in other_contexts[name]['menuItems']
                                if not item['hidden'] and item['display'] != 'none'
                                and item['visibility'] == 'visible' and item['width'] > 0 and item['height'] > 0}
                     if not set(required).issubset(visible):
                         raise RuntimeError(f'{name} context missing expected media actions: {visible}')
-                m.set_context('content')
-                m.execute_script("document.getElementById('video').pause()")
             pdf_result = check_pdf(m, profile, enabled) if pdf else None
             print(json.dumps({'firefox':metadata, 'item':state, 'otherContexts':other_contexts,
                               'extensionMedia':extension_media, 'modernIntervention':intervention,
@@ -335,7 +353,7 @@ if __name__ == '__main__':
             path = Path(directory) / 'fixture.webm'
             subprocess.run(['ffmpeg', '-hide_banner', '-loglevel', 'error', '-f', 'lavfi',
                             '-i', 'color=c=black:s=64x64:r=2', '-f', 'lavfi',
-                            '-i', 'sine=frequency=440:sample_rate=8000', '-t', '1',
+                            '-i', 'anullsrc=r=8000:cl=mono', '-t', '1',
                             '-c:v', 'libvpx', '-c:a', 'libvorbis', '-threads', '1', '-y', str(path)],
                            check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
             media = base64.b64encode(path.read_bytes()).decode('ascii')

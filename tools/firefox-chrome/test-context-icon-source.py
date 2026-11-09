@@ -26,7 +26,8 @@ with tempfile.TemporaryDirectory() as directory:
                                            'visibility':'visible', 'width':20, 'height':20, 'image':'pdf'}]}
     sample['otherContexts'] = {'page':sample['pdfEditor'], 'input':sample['item'],
                                'image':sample['pdfEditor'], 'selection':sample['item'],
-                               'video':sample['pdfEditor'], 'video-playing':sample['item']}
+                               'video':sample['pdfEditor'], 'video-playing':sample['item'],
+                               'video-playing-unmuted':sample['pdfEditor'], 'video-before-pause':sample['item']}
     live = Path(directory) / 'live.jsonl'
     live.write_text(json.dumps(sample) + '\n')
     profile = module.compare_live(result, live)[0]
@@ -42,4 +43,6 @@ with tempfile.TemporaryDirectory() as directory:
     assert module.compare_live(result, live, 'selection')[0]['candidateVisibleImages'] == {'context-openlinkprivate':'fixture'}
     assert module.compare_live(result, live, 'video')[0]['candidateVisibleImages'] == {'context-back':'pdf'}
     assert module.compare_live(result, live, 'video-playing')[0]['candidateVisibleImages'] == {'context-openlinkprivate':'fixture'}
+    assert module.compare_live(result, live, 'video-playing-unmuted')[0]['candidateVisibleImages'] == {'context-back':'pdf'}
+    assert module.compare_live(result, live, 'video-before-pause')[0]['candidateVisibleImages'] == {'context-openlinkprivate':'fixture'}
 print('Context icon source fixture passed')
