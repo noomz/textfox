@@ -28,6 +28,14 @@ def run(*args):
 
 
 def check(nova, display):
+    media_kind = os.environ.get('TEXTFOX_FAKE_MEDIA_KIND', 'both')
+    media_options = {'both':{'video':True, 'audio':True},
+                     'camera':{'video':True, 'audio':False},
+                     'microphone':{'video':False, 'audio':True}}
+    if media_kind not in media_options:
+        raise ValueError(f'unknown fake media kind: {media_kind}')
+    expected_tracks = {'both':'audio,video', 'camera':'video', 'microphone':'audio'}[media_kind]
+    expected_sharing = 'microphone' if media_kind == 'microphone' else 'camera'
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0))
         port = sock.getsockname()[1]
@@ -266,14 +274,14 @@ def check(nova, display):
                 time.sleep(.1)
             m.execute_script("""
                 const root=document.documentElement;
-                navigator.mediaDevices.getUserMedia({video:true,audio:true}).then(stream=>{
+                navigator.mediaDevices.getUserMedia(arguments[0]).then(stream=>{
                   root.setAttribute('data-textfox-media-tracks',stream.getTracks().map(t=>t.kind).sort().join(','));
                   document.addEventListener('textfox-stop-stream',()=>{
                     stream.getTracks().forEach(t=>t.stop());
                     root.setAttribute('data-textfox-media-stopped',String(stream.getTracks().every(t=>t.readyState === 'ended')));
                   },{once:true});
                 },error=>root.setAttribute('data-textfox-media-error',`${error.name}: ${error.message}`));
-                """)
+                """, script_args=[media_options[media_kind]])
             m.set_context('chrome')
             deadline = time.monotonic() + 15
             while not m.execute_script("return !!PopupNotifications.getNotification('webRTC-shareDevices') && PopupNotifications.panel.state === 'open' && !!PopupNotifications.panel.querySelector('.popup-notification-primary-button')", sandbox='system'):
@@ -290,7 +298,7 @@ def check(nova, display):
                     return {url:location.href,tracks:r.getAttribute('data-textfox-media-tracks'),
                       error:r.getAttribute('data-textfox-media-error')};
                     """)
-                if media['tracks'] == 'audio,video':
+                if media['tracks'] == expected_tracks:
                     break
                 if media['error'] or time.monotonic() >= deadline:
                     raise RuntimeError(f'fake media did not initialize: {media}')
@@ -317,7 +325,7 @@ def check(nova, display):
                 if time.monotonic() >= deadline:
                     raise RuntimeError(f'fake-media sharing indicator did not initialize: {media_sharing}')
                 time.sleep(.1)
-            if (media_sharing['sharing'] != 'camera' or media_sharing['siblingMatches']
+            if (media_sharing['sharing'] != expected_sharing or media_sharing['siblingMatches']
                     or media_sharing['permissionDisplay'] == 'none' or media_sharing['permissionWidth'] <= 0
                     or media_sharing['permissionHeight'] <= 0 or (display is not None and media_sharing['grantedDisplay'] != display)):
                 raise RuntimeError(f'fake-media identity selector fixture failed: {media_sharing}')
@@ -342,7 +350,7 @@ def check(nova, display):
                 raise RuntimeError(f'fake media tracks did not stop: {stopped}')
             print(json.dumps({'firefox':meta,'display':display,'samples':samples,
                               'geo':geo,'sharing':sharing,'geoRequests':Handler.geo_requests,
-                              'media':media,'mediaSharing':media_sharing,'mediaControl':media_control,
+                              'mediaKind':media_kind,'media':media,'mediaSharing':media_sharing,'mediaControl':media_control,
                               'mediaStopped':stopped}),flush=True)
         finally:
             try:
