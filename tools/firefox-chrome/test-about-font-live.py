@@ -12,7 +12,7 @@ import time
 from ff_inspect import connect
 
 ROOT = Path(__file__).resolve().parents[2]
-PAGES = ('about:preferences', 'about:config', 'about:profiles', 'about:addons', 'about:support', 'about:about')
+PAGES = ('about:preferences', 'about:config', 'about:profiles', 'about:addons', 'about:support', 'about:about', 'about:downloads')
 
 
 def check(nova):
@@ -57,6 +57,7 @@ def check(nova):
                 script = """
                     const names = new Set(['button', 'input', 'select', 'textarea', 'checkbox', 'menulist', 'moz-button', 'moz-page-nav-button']);
                     if (location.href === 'about:about') names.add('a');
+                    if (location.href === 'about:downloads') names.add('richlistbox');
                     const controls = [...document.querySelectorAll('*')].filter(node => names.has(node.localName));
                     const shadowControls = controls.flatMap(host => host.shadowRoot
                       ? [...host.shadowRoot.querySelectorAll('*')].filter(node => names.has(node.localName))
@@ -64,10 +65,14 @@ def check(nova):
                             connected:node.isConnected, display:getComputedStyle(node).display,
                             rects:node.getClientRects().length, hostHidden:host.hidden}))
                       : []);
+                    const fontTarget=document.body || document.documentElement;
                     return {url:location.href, state:document.readyState,
                       listedAboutPages:location.href === 'about:about'
                         ? [...document.querySelectorAll('a[href^="about:"]')].map(a=>a.getAttribute('href')).sort() : null,
-                      body:!!document.body, font:document.body && getComputedStyle(document.body).fontFamily,
+                      body:!!document.body, fontTarget:fontTarget?.localName,
+                      rootId:document.documentElement.id,
+                      downloadsList:location.href === 'about:downloads' ? !!document.getElementById('downloadsListBox') : null,
+                      font:fontTarget && getComputedStyle(fontTarget).fontFamily,
                       controls:controls.length, shadowControlCount:shadowControls.length,
                       differingShadowControls:shadowControls.filter(node => node.font !== 'monospace'),
                       differingControls:controls.filter(node => getComputedStyle(node).fontFamily !== 'monospace')
@@ -85,11 +90,14 @@ def check(nova):
                         raise RuntimeError(f'about page controls did not reach a computed font: {result}')
                     time.sleep(.1)
                 print(json.dumps({'firefox': metadata, 'requested': page, 'result': result}), flush=True)
-                if (result['url'].split('#')[0] != page or not result['body'] or result['font'] != 'monospace'
+                if (result['url'].split('#')[0] != page or not result['fontTarget'] or result['font'] != 'monospace'
+                        or (page != 'about:downloads' and not result['body'])
                         or result['differingControls'] or result['differingShadowControls']):
                     raise RuntimeError(f'about page font or navigation differs from configuration: {result}')
                 if result['controls'] == 0:
                     raise RuntimeError(f'{page} control fixture is empty')
+                if page == 'about:downloads' and (result['rootId'] != 'contentAreaDownloadsView' or not result['downloadsList']):
+                    raise RuntimeError(f'about downloads fixture is incomplete: {result}')
                 if page == 'about:about' and (not result['listedAboutPages'] or 'about:about' not in result['listedAboutPages']):
                     raise RuntimeError(f'about page index fixture is incomplete: {result}')
                 if page in ('about:preferences', 'about:addons') and result['shadowControlCount'] == 0:
