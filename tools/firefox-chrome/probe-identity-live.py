@@ -140,9 +140,32 @@ def check(nova, display):
                         or permission['hasSharingIcon']
                         or (display is not None and (permission['display'] != display or granted['display'] != display))):
                     raise RuntimeError(f'{name} identity selector option did not apply: {state}')
-                if name == 'mixed' and Handler.mixed_requests:
-                    raise RuntimeError(f'mixed fixture script unexpectedly reached server: {Handler.mixed_requests}')
-                samples[name] = {'page':body, 'identity':state, 'mixedRequests':Handler.mixed_requests}
+                branch_control = None
+                if name == 'mixed':
+                    if Handler.mixed_requests:
+                        raise RuntimeError(f'mixed fixture script unexpectedly reached server: {Handler.mixed_requests}')
+                    branch_control = m.execute_script("""
+                        const box=document.getElementById('identity-box'), original=box.getAttribute('class');
+                        const measure=()=>({classes:[...box.classList],
+                          permission:getComputedStyle(document.getElementById('identity-permission-box')).display,
+                          granted:getComputedStyle(document.getElementById('permissions-granted-icon')).display});
+                        try {
+                          box.classList.remove('verifiedDomain');
+                          const mixedOnly=measure();
+                          box.classList.remove('mixedActiveBlocked');
+                          return {mixedOnly, neither:measure()};
+                        } finally { box.setAttribute('class',original); }
+                        """, sandbox='system')
+                    if ('mixedActiveBlocked' not in branch_control['mixedOnly']['classes']
+                            or 'verifiedDomain' in branch_control['mixedOnly']['classes']):
+                        raise RuntimeError(f'mixed branch control did not isolate class: {branch_control}')
+                    if display is not None:
+                        mixed_only, neither = branch_control['mixedOnly'], branch_control['neither']
+                        if (mixed_only['permission'] != display or mixed_only['granted'] != display
+                                or (neither['permission'] == display and neither['granted'] == display)):
+                            raise RuntimeError(f'mixed branch intervention inconclusive: {branch_control}')
+                samples[name] = {'page':body, 'identity':state, 'mixedRequests':Handler.mixed_requests,
+                                 'mixedBranchControl':branch_control}
             print(json.dumps({'firefox':meta,'display':display,'samples':samples}),flush=True)
         finally:
             try:
