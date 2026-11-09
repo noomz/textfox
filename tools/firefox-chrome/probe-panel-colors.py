@@ -63,6 +63,9 @@ def check(nova, color_preference, activation):
                 const rect = privateButton.getBoundingClientRect(), buttonStyle = getComputedStyle(privateButton);
                 return {background:s.backgroundColor, color:s.color, border:s.border,
                         radius:s.borderRadius, forcedColors:matchMedia('(forced-colors: active)').matches,
+                        shadowSelector:{lightMatches:document.querySelectorAll('#appMenu-popup #shadow-root > *').length,
+                          shadowIdPresent:!!panel.shadowRoot.querySelector('#shadow-root'),
+                          contentSlotPart:slot.getAttribute('part')},
                         privateButton:{image:buttonStyle.listStyleImage, display:buttonStyle.display,
                           width:rect.width, height:rect.height},
                         rootProperties:Object.fromEntries(properties.map(p => [p, root.getPropertyValue(p).trim()]))};
