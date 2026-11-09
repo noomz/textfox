@@ -119,8 +119,41 @@ def check(nova, themed):
                 raise RuntimeError(f'Back button hover fixture failed: {hover}')
             if hover['currentToken']['background'] != 'rgb(173, 89, 41)':
                 raise RuntimeError(f'current toolbar hover token control failed: {hover}')
+            m.execute_script('PanelUI.show()', sandbox='system')
+            deadline = time.monotonic() + 15
+            while not m.execute_script("return document.getElementById('appMenu-popup').state === 'open' && !!document.querySelector('#appMenu-fullscreen-button2:not([disabled]) .toolbarbutton-icon')", sandbox='system'):
+                if time.monotonic() >= deadline:
+                    raise RuntimeError('app-menu fullscreen button did not initialize')
+                time.sleep(.1)
+            active = m.execute_script("""
+                const button=document.getElementById('appMenu-fullscreen-button2'), icon=button.querySelector('.toolbarbutton-icon');
+                const names=['--button-background-color-active','transition'];
+                const saved=names.map(n=>({name:n,value:icon.style.getPropertyValue(n),priority:icon.style.getPropertyPriority(n)}));
+                InspectorUtils.addPseudoClassLock(button, ':hover');
+                InspectorUtils.addPseudoClassLock(button, ':active');
+                try {
+                  icon.style.setProperty('transition','none','important');
+                  const measure=()=>{const s=getComputedStyle(icon),r=icon.getBoundingClientRect();
+                    return {hover:button.matches(':hover'),active:button.matches(':active'),background:s.backgroundColor,
+                      token:s.getPropertyValue('--button-background-color-active').trim(),width:r.width,height:r.height};};
+                  const before=measure();
+                  icon.style.setProperty(names[0],'rgb(173, 89, 41)','important');
+                  return {before,control:measure()};
+                } finally {
+                  InspectorUtils.removePseudoClassLock(button, ':active');
+                  InspectorUtils.removePseudoClassLock(button, ':hover');
+                  for (const {name,value,priority} of saved) {
+                    if (value) icon.style.setProperty(name,value,priority);
+                    else icon.style.removeProperty(name);
+                  }
+                }
+                """, sandbox='system')
+            if (not active['before']['hover'] or not active['before']['active']
+                    or active['before']['width'] <= 0 or active['before']['height'] <= 0
+                    or active['control']['background'] != 'rgb(173, 89, 41)'):
+                raise RuntimeError(f'app-menu active icon fixture failed: {active}')
             print(json.dumps({'firefox':metadata, 'themed':themed, 'result':result,
-                              'backHover':hover}), flush=True)
+                              'backHover':hover, 'appMenuActive':active}), flush=True)
         finally:
             try:
                 if m:
