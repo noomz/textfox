@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Inspect link context-menu icon preference in disposable Firefox profiles."""
 import argparse
+import base64
 import json
 import os
 from pathlib import Path
@@ -9,6 +10,7 @@ import socket
 import subprocess
 import tempfile
 import time
+from urllib.parse import quote
 
 from marionette_driver.keys import Keys
 
@@ -142,7 +144,7 @@ def check_pdf(m, profile, enabled):
     return result
 
 
-def check(nova, enabled, pdf):
+def check(nova, enabled, pdf, media):
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0))
         port = sock.getsockname()[1]
@@ -180,7 +182,12 @@ def check(nova, enabled, pdf):
                     or metadata['extensionContextPref'] != enabled or metadata['extensionToolbarPref'] != enabled):
                 raise RuntimeError('unexpected Firefox process, profile, or preferences')
             m.set_context('content')
-            m.navigate('data:text/html,<a href="https://example.invalid/">textfox link fixture</a><p id="page">textfox page fixture</p><input id="edit" value="textfox edit fixture"><img id="image" width="60" height="60" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==">')
+            page = ('<a href="https://example.invalid/">textfox link fixture</a>'
+                    '<p id="page">textfox page fixture</p><input id="edit" value="textfox edit fixture">'
+                    '<img id="image" width="60" height="60" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==">')
+            if media:
+                page += f'<video id="video" controls preload="auto" width="120" height="90" src="data:video/webm;base64,{media}"></video>'
+            m.navigate('data:text/html,' + quote(page))
             link = m.find_element('css selector', 'a')
             m.actions.sequence('pointer', 'mouse', {'pointerType':'mouse'}).click(link, button=2).perform()
             m.set_context('chrome')
@@ -261,6 +268,19 @@ def check(nova, enabled, pdf):
             if selected != 'textfox page fixture':
                 raise RuntimeError(f'selection context fixture unavailable: {selected}')
             other_contexts['selection'] = check_context(m, '#page', 'context-searchselect', selected)
+            if media:
+                m.set_context('content')
+                m.execute_script('window.getSelection().removeAllRanges()')
+                deadline = time.monotonic() + 15
+                while True:
+                    video = m.execute_script("const e=document.getElementById('video'); return {ready:e.readyState,width:e.videoWidth,height:e.videoHeight,paused:e.paused}")
+                    if video['ready'] >= 2 and video['width'] > 0 and video['height'] > 0:
+                        break
+                    if time.monotonic() >= deadline:
+                        raise RuntimeError(f'video fixture did not initialize: {video}')
+                    time.sleep(.1)
+                other_contexts['video'] = check_context(m, '#video', 'context-savevideo', '')
+                other_contexts['video']['mediaState'] = video
             pdf_result = check_pdf(m, profile, enabled) if pdf else None
             print(json.dumps({'firefox':metadata, 'item':state, 'otherContexts':other_contexts,
                               'extensionMedia':extension_media, 'modernIntervention':intervention,
@@ -281,9 +301,22 @@ def check(nova, enabled, pdf):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--pdf', action='store_true', help='also generate a PDF using ps2pdf and inspect its editor menu')
+    parser.add_argument('--media', action='store_true', help='also generate a local WebM using ffmpeg and inspect its menu')
     args = parser.parse_args()
     if args.pdf and not shutil.which('ps2pdf'):
         parser.error('--pdf requires ps2pdf')
-    for nova in (False, True):
-        for enabled in (False, True):
-            check(nova, enabled, args.pdf)
+    if args.media and not shutil.which('ffmpeg'):
+        parser.error('--media requires ffmpeg with libvpx and libvorbis')
+    with tempfile.TemporaryDirectory(prefix='tf-context-media-') as directory:
+        media = None
+        if args.media:
+            path = Path(directory) / 'fixture.webm'
+            subprocess.run(['ffmpeg', '-hide_banner', '-loglevel', 'error', '-f', 'lavfi',
+                            '-i', 'color=c=black:s=64x64:r=2', '-f', 'lavfi',
+                            '-i', 'sine=frequency=440:sample_rate=8000', '-t', '1',
+                            '-c:v', 'libvpx', '-c:a', 'libvorbis', '-threads', '1', '-y', str(path)],
+                           check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+            media = base64.b64encode(path.read_bytes()).decode('ascii')
+        for nova in (False, True):
+            for enabled in (False, True):
+                check(nova, enabled, args.pdf, media)
