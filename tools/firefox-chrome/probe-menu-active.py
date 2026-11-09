@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Inspect keyboard-active XUL menu items in disposable Firefox profiles."""
+import argparse
 import json
 import os
 from pathlib import Path
@@ -16,7 +17,7 @@ from ff_inspect import connect
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def check(nova, themed):
+def check(nova, themed, builtin):
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0))
         port = sock.getsockname()[1]
@@ -46,18 +47,23 @@ def check(nova, themed):
             if process.poll() is not None or Path(metadata['profile']).resolve() != profile.resolve() or metadata['nova'] != nova:
                 raise RuntimeError('unexpected Firefox process, profile, or Nova preference')
             m.execute_script("""
-                const popup = document.createXULElement('menupopup');
-                popup.id = 'textfox-probe-menu';
-                for (const label of ['First', 'Second']) {
-                  const item = document.createXULElement('menuitem');
-                  item.setAttribute('label', label);
-                  popup.append(item);
+                let popup;
+                if (arguments[0]) {
+                  popup = document.getElementById('toolbar-context-menu');
+                } else {
+                  popup = document.createXULElement('menupopup');
+                  for (const label of ['First', 'Second']) {
+                    const item = document.createXULElement('menuitem');
+                    item.setAttribute('label', label);
+                    popup.append(item);
+                  }
+                  document.getElementById('mainPopupSet').append(popup);
                 }
-                document.getElementById('mainPopupSet').append(popup);
+                popup.setAttribute('data-textfox-probe', 'true');
                 popup.openPopup(document.getElementById('PanelUI-menu-button'), 'after_end');
-                """, sandbox='system')
+                """, script_args=[builtin], sandbox='system')
             deadline = time.monotonic() + 15
-            while not m.execute_script("return document.getElementById('textfox-probe-menu').state === 'open'", sandbox='system'):
+            while not m.execute_script("return document.querySelector('menupopup[data-textfox-probe]').state === 'open'", sandbox='system'):
                 if time.monotonic() >= deadline:
                     raise RuntimeError('fixture menu did not open')
                 time.sleep(.1)
@@ -65,7 +71,7 @@ def check(nova, themed):
             deadline = time.monotonic() + 10
             while True:
                 sample = m.execute_script("""
-                    const menu = document.getElementById('textfox-probe-menu');
+                    const menu = document.querySelector('menupopup[data-textfox-probe]');
                     const active = menu.querySelector('menuitem[_moz-menuactive="true"]');
                     if (!active) return null;
                     const s = getComputedStyle(active), r = active.getBoundingClientRect();
@@ -86,7 +92,7 @@ def check(nova, themed):
             intervention = None
             if themed:
                 intervention = m.execute_script("""
-                    const active = document.querySelector('#textfox-probe-menu menuitem[_moz-menuactive="true"]');
+                    const active = document.querySelector('menupopup[data-textfox-probe] menuitem[_moz-menuactive="true"]');
                     active.style.setProperty('--tab-selected-bgcolor', 'Highlight', 'important');
                     const style = getComputedStyle(active);
                     const result = {background:style.backgroundColor, color:style.color,
@@ -96,11 +102,11 @@ def check(nova, themed):
                     """, sandbox='system')
             m.actions.sequence('key', 'keyboard').send_keys(Keys.ESCAPE).perform()
             deadline = time.monotonic() + 10
-            while m.execute_script("return document.getElementById('textfox-probe-menu').state", sandbox='system') != 'closed':
+            while m.execute_script("return document.querySelector('menupopup[data-textfox-probe]').state", sandbox='system') != 'closed':
                 if time.monotonic() >= deadline:
                     raise RuntimeError('Escape did not close fixture menu')
                 time.sleep(.1)
-            print(json.dumps({'firefox':metadata, 'themed':themed, 'active':sample,
+            print(json.dumps({'firefox':metadata, 'themed':themed, 'builtin':builtin, 'active':sample,
                               'intervention':intervention}), flush=True)
         finally:
             try:
@@ -116,6 +122,9 @@ def check(nova, themed):
 
 
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--builtin', action='store_true')
+    args = parser.parse_args()
     for nova in (False, True):
         for themed in (False, True):
-            check(nova, themed)
+            check(nova, themed, args.builtin)
