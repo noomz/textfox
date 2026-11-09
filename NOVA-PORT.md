@@ -529,6 +529,10 @@ The test also clicks Match Case for an uppercase query against lowercase fixture
 
 Run `MOZ_HEADLESS=1 "$HOME/.cache/textfox-firefox-live/venv/bin/python" tools/firefox-chrome/test-findbar-live.py`.
 
+## New-tab shortcut icon background
+
+`probe-newtab-shortcut-hover.py` now samples a real `.top-site-outer .top-site-icon` before its hover checks. In all eight headless Firefox 159.0 build `20261022150525` browser Nova, new-tab Nova, and vanilla/textfox combinations, the sampled Wikipedia icon had nonzero geometry, a computed image URL, and a transparent computed background. To distinguish matching theme behavior from the same vanilla default, the probe temporarily applies an inline author-origin `!important` background color. The computed color changed in vanilla but remained transparent with textfox; the original inline value and computed background were restored. This supports the themed user-origin override in the sampled fixture, not painted image loading, contrast, other shortcut icon types, or wallpaper states. Disposable feeds may make network requests. Run `MOZ_HEADLESS=1 "$HOME/.cache/textfox-firefox-live/venv/bin/python" tools/firefox-chrome/probe-newtab-shortcut-hover.py`.
+
 ## New-tab shortcut hover selectors
 
 Firefox release `browser/extensions/newtab/content-src/components/TopSites/_TopSites.scss` styles the tile when `.top-site-inner:hover` or a keyboard-focused descendant matches; Nova adds scoped expansion and control-reveal rules in `styles/nova/_TopSites.scss`. Textfox sets the tile background to `--newtab-element-hover-color` only for `.tile:hover`, while also overriding Firefox's `--newtab-background-color-secondary` and hover token on the body.

@@ -107,10 +107,31 @@ def check(browser_nova, newtab_nova, themed):
                             repositioned += 1
                     time.sleep(.1)
 
+            icon = m.execute_script("""
+                const e=document.querySelector('.top-site-outer .top-site-icon');
+                if (!e) return null;
+                const s=getComputedStyle(e), r=e.getBoundingClientRect();
+                const result={background:s.backgroundColor, image:s.backgroundImage,
+                  display:s.display, visibility:s.visibility, width:r.width, height:r.height};
+                const value=e.style.getPropertyValue('background-color');
+                const priority=e.style.getPropertyPriority('background-color');
+                e.style.setProperty('background-color', 'rgb(19, 83, 137)', 'important');
+                result.inlineIntervention=getComputedStyle(e).backgroundColor;
+                if (value) e.style.setProperty('background-color', value, priority);
+                else e.style.removeProperty('background-color');
+                result.restored=getComputedStyle(e).backgroundColor;
+                return result;
+                """)
+            if not icon or icon['width'] <= 0 or icon['height'] <= 0:
+                raise RuntimeError(f'shortcut icon fixture unavailable: {icon}')
+            if (icon['restored'] != icon['background']
+                    or themed and icon['inlineIntervention'] != 'rgba(0, 0, 0, 0)'
+                    or not themed and icon['inlineIntervention'] != 'rgb(19, 83, 137)'):
+                raise RuntimeError(f'shortcut icon background intervention was inconclusive: {icon}')
             baseline = move('safe')
             title = move('.title')
             tile = move('.tile')
-            print(json.dumps({'firefox': meta, 'themed': themed, 'baseline': baseline,
+            print(json.dumps({'firefox': meta, 'themed': themed, 'icon':icon, 'baseline': baseline,
                               'title': title, 'tile': tile}), flush=True)
             if not title['innerHover'] or not tile['innerHover']:
                 raise RuntimeError('shortcut inner hover selector did not match')
