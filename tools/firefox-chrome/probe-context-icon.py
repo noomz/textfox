@@ -273,14 +273,36 @@ def check(nova, enabled, pdf, media):
                 m.execute_script('window.getSelection().removeAllRanges()')
                 deadline = time.monotonic() + 15
                 while True:
-                    video = m.execute_script("const e=document.getElementById('video'); return {ready:e.readyState,width:e.videoWidth,height:e.videoHeight,paused:e.paused}")
+                    video = m.execute_script("const e=document.getElementById('video'); return {ready:e.readyState,width:e.videoWidth,height:e.videoHeight,paused:e.paused,muted:e.muted}")
                     if video['ready'] >= 2 and video['width'] > 0 and video['height'] > 0:
                         break
                     if time.monotonic() >= deadline:
                         raise RuntimeError(f'video fixture did not initialize: {video}')
                     time.sleep(.1)
+                if not video['paused'] or video['muted']:
+                    raise RuntimeError(f'video fixture is not paused and unmuted: {video}')
                 other_contexts['video'] = check_context(m, '#video', 'context-savevideo', '')
                 other_contexts['video']['mediaState'] = video
+                m.set_context('content')
+                playing = m.execute_async_script("""
+                    const done=arguments[arguments.length-1], video=document.getElementById('video');
+                    video.muted=true; video.loop=true;
+                    video.play().then(()=>done({paused:video.paused,muted:video.muted,loop:video.loop}),
+                      error=>done({error:String(error)}));
+                    """)
+                if playing.get('error') or playing['paused'] or not playing['muted'] or not playing['loop']:
+                    raise RuntimeError(f'muted video fixture did not play: {playing}')
+                other_contexts['video-playing'] = check_context(m, '#video', 'context-media-pause', '')
+                other_contexts['video-playing']['mediaState'] = playing
+                for name, required in (('video', ('context-media-play', 'context-media-mute')),
+                                       ('video-playing', ('context-media-pause', 'context-media-unmute'))):
+                    visible = {item['id'] for item in other_contexts[name]['menuItems']
+                               if not item['hidden'] and item['display'] != 'none'
+                               and item['visibility'] == 'visible' and item['width'] > 0 and item['height'] > 0}
+                    if not set(required).issubset(visible):
+                        raise RuntimeError(f'{name} context missing expected media actions: {visible}')
+                m.set_context('content')
+                m.execute_script("document.getElementById('video').pause()")
             pdf_result = check_pdf(m, profile, enabled) if pdf else None
             print(json.dumps({'firefox':metadata, 'item':state, 'otherContexts':other_contexts,
                               'extensionMedia':extension_media, 'modernIntervention':intervention,
