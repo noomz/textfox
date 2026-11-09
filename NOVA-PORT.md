@@ -324,6 +324,8 @@ Firefox 159.0 tag `9a2dc53c369c7ae5172018b35988e1d2ffeff402` defines `#TabsToolb
 
 Initial source searches found `#pinned-tabs-container` in `browser/base/content/navigator-toolbox.inc.xhtml` and no occurrence of `#vertical-pinned-tabs-container`. The same tree defines `#sidebar-tools-and-extensions-splitter` and `.buttons-wrapper` in `browser/components/sidebar/sidebar-main.mjs` and `.css`; the existing live sidebar test exercises both. `#permissions-granted-icon` and `.titlebar-spacer` appear in `navigator-toolbox.inc.xhtml`. Searches found no `--urlbar-toolbar-height` occurrence, while `--urlbar-container-height` occurs in `browser/components/urlbar/content/SmartbarInput.mjs`. Absence in a search is not proof that a rule has no runtime effect. The pinned-tab multi-item state, toolbar variable behavior, other selectors, and matched Firefox 159 source remain unresolved.
 
+The component-by-component ledger is [`T2-INVENTORY.md`](T2-INVENTORY.md). It records source and live evidence alongside unresolved states; it is incomplete until all generated rule groups and non-`--tf-*` properties are accounted for.
+
 ## T2 coverage checkpoint
 
 This index summarizes bounded evidence above, not a complete selector or variable inventory. Live results refer to disposable Linux Firefox 159.0 build `20261022150525` unless otherwise stated. Searchfox `firefox-release` moves independently of that build.
