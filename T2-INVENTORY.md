@@ -4,6 +4,18 @@ This is a working ledger, not a support claim. Each group lists syntax in the ch
 
 Unless noted otherwise, source links use Firefox `FIREFOX_159_0_RELEASE` commit `9a2dc53c369c7ae5172018b35988e1d2ffeff402`. Live evidence in `NOVA-PORT.md` uses Linux Firefox 159.0 build `20261022150525`; the tag-to-build correspondence has not been established. A source match is not a live match, and a computed style is not a painted result.
 
+## Platform checks carried to T8
+
+| Check | Current access and limitation | Candidate route |
+|---|---|---|
+| Windows and macOS browser chrome | No Windows or macOS Firefox environment has been identified in this session. Linux results cannot prove native titlebar or OS-specific chrome behavior. | Use supported machines or appropriately licensed VMs; acquire access before claiming those checks pass. |
+| Real OS forced-colors/high-contrast integration | Disposable Firefox preferences and content media-query emulation do not prove real OS accessibility integration. | Test on a supported OS with its real high-contrast setting and record effective chrome/content state and screenshots. |
+| Real RTL locales | Firefox bidi pseudo-locale was tested in some fixtures; it is not a real language-pack/locale test. | Install or select a supported RTL Firefox locale in a disposable profile and repeat relevant interactions and painted checks. |
+| Headed and painted UI | This session has no active graphical desktop; a disposable headless Sway compositor was used in earlier samples. Headless computed styles alone do not establish painted layout. | Reuse or recreate disposable Sway for Linux screenshots; use a real desktop where compositor behavior matters. |
+| Real NixOS delivery and activation | Existing NixOS VM results are bounded to specific builds; rootless proot alone cannot establish activation or mount-namespace behavior. | Use the existing bwrap/VM path or a supported real NixOS system with a real Nix daemon, as required by V7. |
+
+These are T8 verification gates, not permission to mark unresolved local T2 inventory complete.
+
 ## Shared icon scope
 
 `chrome/icons.css` has 241 syntactic rule records in the current generator output. Grouping each record by its first enclosing media rule yields 128 under `shyfox.enable.context.menu.icons`, 23 under `shyfox.enable.ext.mono.context.icons`, 13 under `shyfox.enable.ext.mono.toolbar.icons`, and 77 without an enclosing media rule. Counts include nested rules and do not count distinct DOM targets. Conditional extension rules may need disposable extensions or representative fixtures to reach their states; absence of such an extension in a default profile is not evidence of a stale selector. No icon group is fully audited yet. `probe-context-icon.py` verifies a real link context-menu item and finds all three legacy icon preference media queries inactive even when enabled in both Nova states. Modern queries follow the effective preference values, and a temporary user-origin intervention applies the link icon. Extension icon targets themselves were not exercised. Existing app-menu private-window icon and resource evidence is also recorded in `NOVA-PORT.md`. Matching, rendering, and interaction for other targets remain open.
