@@ -25,7 +25,7 @@ def check(nova, color_preference, activation):
         shutil.copytree(ROOT / 'chrome', profile / 'chrome')
         (profile / 'chrome' / 'config.css').write_text(
             ':root { --tf-bg: rgb(23, 47, 71); --tf-accent: rgb(19, 83, 137); '
-            '--tf-border-width: 5px; --tf-rounding: 7px; }\n')
+            '--tf-border: rgb(71, 31, 111); --tf-border-width: 5px; --tf-rounding: 7px; }\n')
         prefs = {'marionette.port': port, 'browser.nova.enabled': nova,
                  'toolkit.legacyUserProfileCustomizations.stylesheets': True,
                  'browser.shell.checkDefaultBrowser': False,
@@ -55,8 +55,10 @@ def check(nova, color_preference, activation):
                 const panel = document.getElementById('appMenu-popup');
                 const slot = panel.shadowRoot?.querySelector('slot[part="content"]');
                 if (!slot) throw new Error('app menu content slot not found');
-                const s = getComputedStyle(slot);
+                const s = getComputedStyle(slot), ps=getComputedStyle(panel);
                 const root = getComputedStyle(document.documentElement);
+                const panelTokens=['--panel-background','--panel-background-color',
+                  '--panel-border-radius','--panel-border-color','--panel-separator-color'];
                 const properties = ['--lwt-text-color', '--toolbar-color', '--panel-text-color', '--tf-bg'];
                 const privateButton = document.getElementById('appMenu-new-private-window-button2');
                 if (!privateButton) throw new Error('private window menu item not found');
@@ -76,6 +78,8 @@ def check(nova, color_preference, activation):
                 }));
                 return {icons, background:s.backgroundColor, color:s.color, border:s.border,
                         radius:s.borderRadius, forcedColors:matchMedia('(forced-colors: active)').matches,
+                        panelTokens:Object.fromEntries(panelTokens.map(p=>[p,ps.getPropertyValue(p).trim()])),
+                        slotTokens:Object.fromEntries(panelTokens.map(p=>[p,s.getPropertyValue(p).trim()])),
                         shadowSelector:{lightMatches:document.querySelectorAll('#appMenu-popup #shadow-root > *').length,
                           shadowIdPresent:!!panel.shadowRoot.querySelector('#shadow-root'),
                           contentSlotPart:slot.getAttribute('part')},
@@ -83,6 +87,11 @@ def check(nova, color_preference, activation):
                           width:rect.width, height:rect.height},
                         rootProperties:Object.fromEntries(properties.map(p => [p, root.getPropertyValue(p).trim()]))};
                 """, sandbox='system')
+            if (result['panelTokens']['--panel-background'] != 'rgb(23, 47, 71)'
+                    or result['panelTokens']['--panel-border-radius'] != '7px'
+                    or result['panelTokens']['--panel-separator-color'] != 'rgb(71, 31, 111)'
+                    or result['radius'] != '7px'):
+                raise RuntimeError(f'configured panel tokens or radius missing: {result}')
             if any(icon is None or not icon['inPanel'] or icon['image'] == 'none'
                    for icon in result['icons'].values()):
                 raise RuntimeError(f'app-menu icon fixture is incomplete: {result["icons"]}')

@@ -25,7 +25,7 @@ def check(nova, themed, builtin, overflow):
         profile = Path(directory)
         if themed:
             shutil.copytree(ROOT / 'chrome', profile / 'chrome')
-            (profile / 'chrome' / 'config.css').write_text(':root { --tf-rounding: 7px; --tf-border-width: 5px; }\n')
+            (profile / 'chrome' / 'config.css').write_text(':root { --tf-rounding: 7px; --tf-border-width: 5px; --tf-border: rgb(71, 31, 111); }\n')
         prefs = {'marionette.port': port, 'browser.nova.enabled': nova,
                  'toolkit.legacyUserProfileCustomizations.stylesheets': True,
                  'browser.shell.checkDefaultBrowser': False}
@@ -60,6 +60,9 @@ def check(nova, themed, builtin, overflow):
                     popup.append(item);
                   }
                   if (!arguments[1]) {
+                    const separator=document.createXULElement('menuseparator');
+                    separator.setAttribute('data-textfox-separator','true');
+                    popup.append(separator);
                     const disabled=document.createXULElement('menuitem');
                     disabled.setAttribute('label','Disabled fixture');
                     disabled.setAttribute('disabled','true');
@@ -112,7 +115,22 @@ def check(nova, themed, builtin, overflow):
                     return result;
                     """, sandbox='system')
             disabled_state = None
+            separator_state = None
             if not builtin and not overflow:
+                separator_state = m.execute_script("""
+                    const e=document.querySelector('menupopup[data-textfox-probe] menuseparator[data-textfox-separator]');
+                    const r=e.getBoundingClientRect(), s=getComputedStyle(e), p=getComputedStyle(e,'::before');
+                    return {width:r.width,height:r.height,display:s.display,
+                      token:s.getPropertyValue('--panel-separator-color').trim(),
+                      pseudoContent:p.content,pseudoBorderStyle:p.borderTopStyle,
+                      pseudoBorderWidth:p.borderTopWidth,pseudoBorderColor:p.borderTopColor};
+                    """, sandbox='system')
+                if (separator_state['width'] <= 0 or separator_state['height'] <= 0
+                        or separator_state['pseudoBorderStyle'] != 'solid' or separator_state['pseudoBorderWidth'] == '0px'):
+                    raise RuntimeError(f'menu separator fixture unavailable: {separator_state}')
+                if themed and (separator_state['token'] != 'rgb(71, 31, 111)'
+                               or separator_state['pseudoBorderColor'] != 'rgb(71, 31, 111)'):
+                    raise RuntimeError(f'menu separator did not follow configured border: {separator_state}')
                 disabled=m.find_element('css selector', 'menupopup[data-textfox-probe] menuitem[data-textfox-disabled]')
                 m.actions.sequence('pointer', 'mouse', {'pointerType':'mouse'}).pointer_move(0, 0, origin=disabled).perform()
                 deadline = time.monotonic() + 10
@@ -178,7 +196,7 @@ def check(nova, themed, builtin, overflow):
                 time.sleep(.1)
             print(json.dumps({'firefox':metadata, 'themed':themed, 'builtin':builtin, 'active':sample,
                               'intervention':intervention, 'disabledHover':disabled_state,
-                              'overflow':overflow_state}), flush=True)
+                              'separator':separator_state, 'overflow':overflow_state}), flush=True)
         finally:
             try:
                 if m:
