@@ -39,7 +39,8 @@ def check(nova, dark, source, forced, mismatch):
         profile = Path(directory)
         shutil.copytree(source / 'chrome', profile / 'chrome')
         bg = 'rgb(23, 47, 71)' if dark != mismatch else 'rgb(232, 240, 248)'
-        (profile / 'chrome' / 'config.css').write_text(f':root {{ --tf-bg: {bg}; --tf-display-horizontal-tabs: block; }}\n')
+        (profile / 'chrome' / 'config.css').write_text(
+            f':root {{ --tf-bg: {bg}; --tf-display-horizontal-tabs: block; --tf-text-transform: uppercase; }}\n')
         theme = profile / 'probe-theme.xpi'
         manifest = {'manifest_version': 2, 'name': 'textfox tab probe', 'version': '1.0',
                     'browser_specific_settings': {'gecko': {'id': 'textfox-tab-probe@example.invalid'}},
@@ -93,6 +94,18 @@ def check(nova, dark, source, forced, mismatch):
                         targetSelected:bg.getPropertyValue('--tab-selected-bgcolor').trim(),
                         props:Object.fromEntries(names.map(n => [n, root.getPropertyValue(n).trim()]))};
                 """
+            toolbar = m.execute_script("""
+                const tabs=document.getElementById('tabbrowser-tabs');
+                const items=document.querySelector('#TabsToolbar .toolbar-items');
+                if (!tabs || !items) throw new Error('tab toolbar fixture missing');
+                const label=document.querySelector('#TabsToolbar .tabbrowser-tab[selected] .tab-label');
+                if (!label) throw new Error('selected tab label missing');
+                return {tag:tabs.localName, transform:getComputedStyle(tabs).textTransform,
+                  labelTransform:getComputedStyle(label).textTransform, itemsMargin:getComputedStyle(items).margin};
+                """, sandbox='system')
+            if (toolbar['tag'] != 'tabs' or toolbar['transform'] != 'uppercase'
+                    or toolbar['labelTransform'] != 'uppercase' or toolbar['itemsMargin'] != '3px'):
+                raise RuntimeError(f'configured tab toolbar styles did not apply: {toolbar}')
             before = m.execute_script(js, sandbox='system')
             hover = m.execute_script("""
                 const tab=gBrowser.addTrustedTab('about:blank');
@@ -143,7 +156,7 @@ def check(nova, dark, source, forced, mismatch):
             if before['prefersContrast'] != forced:
                 raise RuntimeError('requested contrast preference state not active')
             print(json.dumps({'firefox': meta, 'dark': dark, 'forced':forced, 'mismatch':mismatch, 'before': before, 'hover':hover, 'after': after,
-                              'multi':multi, 'multiIntervention':multi_intervention,
+                              'multi':multi, 'multiIntervention':multi_intervention, 'toolbar':toolbar,
                               'computedSelectedContrast':contrast(before['background'], before['color']),
                               'computedHoverContrast':contrast(hover['background'], hover['color'])}), flush=True)
         finally:
