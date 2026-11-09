@@ -24,7 +24,8 @@ def check(nova, themed, high_contrast, rtl):
         profile = Path(directory)
         if themed:
             shutil.copytree(ROOT / 'chrome', profile / 'chrome')
-            (profile / 'chrome' / 'config.css').write_text(':root { --tf-text-transform: uppercase; }\n')
+            (profile / 'chrome' / 'config.css').write_text(
+                ':root { --tf-text-transform: uppercase; --tf-accent: rgb(19, 83, 137); }\n')
         prefs = {'marionette.port': port, 'browser.nova.enabled': nova,
                  'toolkit.legacyUserProfileCustomizations.stylesheets': True,
                  'browser.shell.checkDefaultBrowser': False,
@@ -98,6 +99,25 @@ def check(nova, themed, high_contrast, rtl):
                 raise RuntimeError('findbar state does not reflect keyboard search')
             if result['outlineStyle'] == 'none' or result['outlineWidth'] == '0px':
                 raise RuntimeError('focused findbar field has no computed outline')
+            if themed:
+                hover = m.execute_script("""
+                    const bar=document.querySelector('findbar:not([hidden])');
+                    const measure=()=>{ const s=getComputedStyle(bar), p=getComputedStyle(bar,'::before');
+                      return {matches:bar.matches(':hover'), border:s.borderTopColor,
+                        title:p.content, titleDisplay:p.display, titleColor:p.color}; };
+                    const before=measure();
+                    InspectorUtils.addPseudoClassLock(bar, ':hover');
+                    const active=measure();
+                    InspectorUtils.removePseudoClassLock(bar, ':hover');
+                    return {before,active};
+                    """, sandbox='system')
+                print(json.dumps({'nova':nova, 'rtl':rtl, 'highContrast':high_contrast,
+                                  'findbarHover':hover}), flush=True)
+                if (not hover['active']['matches'] or hover['active']['title'] != '"find"'
+                        or hover['active']['titleDisplay'] != 'flex'
+                        or hover['active']['border'] != 'rgb(19, 83, 137)'
+                        or hover['active']['titleColor'] != 'rgb(19, 83, 137)'):
+                    raise RuntimeError(f'findbar hover styles did not apply: {hover}')
             visible_checkboxes = [c for c in result['checkboxes'] if c['display'] != 'none' and c['width'] > 0 and c['height'] > 0]
             if not visible_checkboxes:
                 raise RuntimeError('findbar checkbox fixture is unavailable')

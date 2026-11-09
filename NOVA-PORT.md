@@ -483,6 +483,10 @@ In those samples, vanilla changed the field's computed background on a miss whil
 
 Run `MOZ_HEADLESS=1 "$HOME/.cache/textfox-firefox-live/venv/bin/python" tools/firefox-chrome/test-findbar-live.py`. The comparison reports the field-background difference; it does not assert that difference as a passing support check. The temporary intervention script `/tmp/tf-findbar-background-control.py` may disappear.
 
+## Findbar hover and title styles
+
+`test-findbar-live.py` now sets a non-default accent in themed disposable profiles and locks `:hover` on an open findbar using `InspectorUtils`. In all eight Firefox 159.0 build `20261022150525` combinations of browser Nova, bidi pseudo-locale, and accessibility-theme preference, the bar's computed top-border color and its `::before` title color matched the configured accent. The pseudo-element computed content `"find"` and `display: flex`. The probe verifies pseudo-class state and computed styles, not real pointer hover, painted title geometry, legibility, or real OS forced colors. Run `MOZ_HEADLESS=1 "$HOME/.cache/textfox-firefox-live/venv/bin/python" tools/firefox-chrome/test-findbar-live.py`.
+
 ## Findbar checkbox selector and match-case control
 
 Firefox release `toolkit/content/widgets/findbar.js` places the findbar checkboxes directly inside `.findbar-container`, matching `chrome/findbar.css`. `test-findbar-live.py` now sets `--tf-text-transform: uppercase` in themed disposable profiles and checks visible checkbox hosts. On headless Firefox 159.0 build `20261022150525`, those hosts computed uppercase in both browser Nova states, both bidi pseudo-locale directions, and both sampled `prefers-contrast` states; vanilla hosts computed `none`.
