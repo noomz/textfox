@@ -65,6 +65,7 @@ def check(nova, revamp, themed):
                 """, sandbox='system')
             for item in result.values():
                 item['hasGeometry'] = item['display'] != 'none' and item['visibility'] == 'visible' and item['width'] > 0 and item['height'] > 0
+            floorp_selector_count = m.execute_script("return document.querySelectorAll('#sidebar-select-box').length", sandbox='system')
             media = m.execute_script("""
                 const navbar=document.getElementById('nav-bar');
                 const measure=()=>{const s=getComputedStyle(navbar,'::before');
@@ -97,7 +98,8 @@ def check(nova, revamp, themed):
                     return measured;
                     """, sandbox='system')
             print(json.dumps({'firefox': metadata, 'themed': themed, 'result': result,
-                              'media':media, 'headerIntervention': intervention}), flush=True)
+                              'media':media, 'floorpSelectorCount':floorp_selector_count,
+                              'headerIntervention': intervention}), flush=True)
             if not revamp and not themed and not all(item['hasGeometry'] for item in result.values()):
                 raise RuntimeError(f'classic vanilla header positive control is not visible: {result}')
             m.actions.sequence('key', 'keyboard').key_down(Keys.CONTROL).key_down('b').key_up('b').key_up(Keys.CONTROL).perform()
