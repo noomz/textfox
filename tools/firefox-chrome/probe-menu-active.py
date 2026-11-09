@@ -59,6 +59,13 @@ def check(nova, themed, builtin, overflow):
                     item.setAttribute('label', label);
                     popup.append(item);
                   }
+                  if (!arguments[1]) {
+                    const disabled=document.createXULElement('menuitem');
+                    disabled.setAttribute('label','Disabled fixture');
+                    disabled.setAttribute('disabled','true');
+                    disabled.setAttribute('data-textfox-disabled','true');
+                    popup.append(disabled);
+                  }
                   document.getElementById('mainPopupSet').append(popup);
                 }
                 popup.setAttribute('data-textfox-probe', 'true');
@@ -104,6 +111,35 @@ def check(nova, themed, builtin, overflow):
                     active.style.removeProperty('--tab-selected-bgcolor');
                     return result;
                     """, sandbox='system')
+            disabled_state = None
+            if not builtin and not overflow:
+                disabled=m.find_element('css selector', 'menupopup[data-textfox-probe] menuitem[data-textfox-disabled]')
+                m.actions.sequence('pointer', 'mouse', {'pointerType':'mouse'}).pointer_move(0, 0, origin=disabled).perform()
+                deadline = time.monotonic() + 10
+                while True:
+                    disabled_state=m.execute_script("""
+                        const e=document.querySelector('menupopup[data-textfox-probe] menuitem[data-textfox-disabled]');
+                        const s=getComputedStyle(e),r=e.getBoundingClientRect();
+                        return {disabled:e.disabled, hover:e.matches(':hover'), active:e.getAttribute('_moz-menuactive'),
+                          background:s.backgroundColor, hoverToken:s.getPropertyValue('--tab-hover-background-color').trim(),
+                          width:r.width,height:r.height};
+                        """, sandbox='system')
+                    if disabled_state['hover'] and disabled_state['width'] > 0 and disabled_state['height'] > 0:
+                        break
+                    if time.monotonic() >= deadline:
+                        raise RuntimeError(f'disabled menu hover fixture unavailable: {disabled_state}')
+                    time.sleep(.1)
+                if not disabled_state['disabled']:
+                    raise RuntimeError(f'disabled menu fixture unexpectedly enabled: {disabled_state}')
+                if themed and disabled_state['active'] == 'true':
+                    disabled_state['control'] = m.execute_script("""
+                        const e=document.querySelector('menupopup[data-textfox-probe] menuitem[data-textfox-disabled]');
+                        e.style.setProperty('--tab-hover-background-color','Highlight','important');
+                        try { return getComputedStyle(e).backgroundColor; }
+                        finally { e.style.removeProperty('--tab-hover-background-color'); }
+                        """, sandbox='system')
+                    if disabled_state['control'] == disabled_state['background']:
+                        raise RuntimeError(f'disabled menu color control inconclusive: {disabled_state}')
             overflow_state = None
             if overflow:
                 overflow_state = m.execute_script("""
@@ -141,7 +177,8 @@ def check(nova, themed, builtin, overflow):
                     raise RuntimeError('Escape did not close fixture menu')
                 time.sleep(.1)
             print(json.dumps({'firefox':metadata, 'themed':themed, 'builtin':builtin, 'active':sample,
-                              'intervention':intervention, 'overflow':overflow_state}), flush=True)
+                              'intervention':intervention, 'disabledHover':disabled_state,
+                              'overflow':overflow_state}), flush=True)
         finally:
             try:
                 if m:
