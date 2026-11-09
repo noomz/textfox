@@ -14,7 +14,7 @@ from ff_inspect import connect
 ROOT = Path(__file__).resolve().parents[2]
 PAGES = ('about:preferences', 'about:config', 'about:profiles', 'about:addons', 'about:support',
          'about:about', 'about:downloads', 'about:firefoxview', 'about:protections',
-         'about:processes', 'about:memory', 'about:robots')
+         'about:processes', 'about:memory', 'about:robots', 'about:logins')
 
 
 def check(nova):
@@ -60,6 +60,9 @@ def check(nova):
                     const names = new Set(['button', 'input', 'select', 'textarea', 'checkbox', 'menulist', 'moz-button', 'moz-page-nav-button']);
                     if (location.href === 'about:about') names.add('a');
                     if (location.href === 'about:downloads') names.add('richlistbox');
+                    if (location.href === 'about:logins') {
+                      for (const name of ['login-list', 'login-item', 'login-intro', 'menu-button', 'fxaccounts-button']) names.add(name);
+                    }
                     const controls = [...document.querySelectorAll('*')].filter(node => names.has(node.localName));
                     const shadowControls = controls.flatMap(host => host.shadowRoot
                       ? [...host.shadowRoot.querySelectorAll('*')].filter(node => names.has(node.localName))
@@ -102,7 +105,7 @@ def check(nova):
                     raise RuntimeError(f'about downloads fixture is incomplete: {result}')
                 if page == 'about:about' and (not result['listedAboutPages'] or 'about:about' not in result['listedAboutPages']):
                     raise RuntimeError(f'about page index fixture is incomplete: {result}')
-                if page in ('about:preferences', 'about:addons') and result['shadowControlCount'] == 0:
+                if page in ('about:preferences', 'about:addons', 'about:logins') and result['shadowControlCount'] == 0:
                     raise RuntimeError(f'{page} shadow control fixture is empty')
         finally:
             try:
