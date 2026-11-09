@@ -152,8 +152,29 @@ def check(nova, themed):
                     or active['before']['width'] <= 0 or active['before']['height'] <= 0
                     or active['control']['background'] != 'rgb(173, 89, 41)'):
                 raise RuntimeError(f'app-menu active icon fixture failed: {active}')
+            icon = m.find_element('css selector', '#appMenu-fullscreen-button2 .toolbarbutton-icon')
+            pointer = m.actions.sequence('pointer', 'mouse', {'pointerType':'mouse'})
+            pointer.pointer_move(0, 0, origin=icon).pointer_down().perform()
+            try:
+                deadline = time.monotonic() + 10
+                while True:
+                    pressed = m.execute_script("""
+                        const b=document.getElementById('appMenu-fullscreen-button2');
+                        const i=b.querySelector('.toolbarbutton-icon'),s=getComputedStyle(i);
+                        return {hover:b.matches(':hover'),active:b.matches(':active'),
+                          background:s.backgroundColor,token:s.getPropertyValue('--button-background-color-active').trim()};
+                        """, sandbox='system')
+                    if pressed['hover'] and pressed['active']:
+                        break
+                    if time.monotonic() >= deadline:
+                        raise RuntimeError(f'pointer did not hold the app-menu button active: {pressed}')
+                    time.sleep(.1)
+            finally:
+                m.actions.sequence('pointer', 'mouse', {'pointerType':'mouse'}).pointer_move(1, 1).pointer_up().perform()
+            if m.execute_script('return window.fullScreen', sandbox='system'):
+                raise RuntimeError('pointer-release fixture unexpectedly activated fullscreen')
             print(json.dumps({'firefox':metadata, 'themed':themed, 'result':result,
-                              'backHover':hover, 'appMenuActive':active}), flush=True)
+                              'backHover':hover, 'appMenuActive':active, 'pointerPressed':pressed}), flush=True)
         finally:
             try:
                 if m:
