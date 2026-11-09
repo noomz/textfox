@@ -50,6 +50,8 @@ def check(nova, themed, vertical):
             result = m.execute_async_script("""
                 const done=arguments[arguments.length-1];
                 const {ContextualIdentityService} = ChromeUtils.importESModule('moz-src:///toolkit/components/contextualidentity/ContextualIdentityService.sys.mjs');
+                const extraColors=['cyan','yellow','red','purple','violet','gray'];
+                for (const color of extraColors) ContextualIdentityService.create(`textfox ${color}`, 'fingerprint', color);
                 const identities=ContextualIdentityService.getPublicIdentities();
                 const tabs=identities.map(identity => ({identity,tab:gBrowser.addTrustedTab('about:blank', {userContextId:identity.userContextId})}));
                 requestAnimationFrame(() => requestAnimationFrame(() => done(tabs.map(({identity,tab}) => {
@@ -63,7 +65,9 @@ def check(nova, themed, vertical):
                     lineColor:ls?.backgroundColor, lineImage:ls?.backgroundImage, lineDisplay:ls?.display};
                 }))));
                 """, sandbox='system')
-            if (len(result) < 4 or any(item['width'] <= 0 or item['height'] <= 0
+            expected_colors = {'blue', 'orange', 'green', 'pink', 'cyan', 'yellow', 'red', 'purple', 'violet', 'gray'}
+            if (not expected_colors.issubset({item['color'] for item in result})
+                    or any(item['width'] <= 0 or item['height'] <= 0
                     or f"identity-color-{item['color']}" not in item['classes'].split()
                     or not item['tabColor'] or not item['iconColor'] or item['lineDisplay'] is None
                     for item in result)):
