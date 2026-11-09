@@ -73,6 +73,61 @@ def check_context(m, selector, expected_id, expected_selection=None, action_id=N
     return result
 
 
+def check_media(m, kind, keyboard):
+    selector = f'#{kind}'
+    m.set_context('content')
+    m.execute_script("window.getSelection().removeAllRanges(); document.querySelector(arguments[0]).loop=true", script_args=[selector])
+    deadline = time.monotonic() + 15
+    while True:
+        initial = m.execute_script("""
+            const e=document.querySelector(arguments[0]), r=e.getBoundingClientRect();
+            return {ready:e.readyState,width:r.width,height:r.height,videoWidth:e.videoWidth || null,
+              videoHeight:e.videoHeight || null,paused:e.paused,muted:e.muted};
+            """, script_args=[selector])
+        if (initial['ready'] >= 2 and initial['width'] > 0 and initial['height'] > 0
+                and (kind != 'video' or (initial['videoWidth'] and initial['videoHeight']))):
+            break
+        if time.monotonic() >= deadline:
+            raise RuntimeError(f'{kind} fixture did not initialize: {initial}')
+        time.sleep(.1)
+    if not initial['paused'] or initial['muted']:
+        raise RuntimeError(f'{kind} fixture is not paused and unmuted: {initial}')
+    contexts = {}
+    save_id = 'context-savevideo' if kind == 'video' else 'context-saveaudio'
+    contexts[kind] = check_context(m, selector, save_id, '', 'context-media-play', keyboard)
+    contexts[kind]['mediaState'] = initial
+
+    def wait_media(paused, muted):
+        m.set_context('content')
+        deadline = time.monotonic() + 10
+        while True:
+            state = m.execute_script("const e=document.querySelector(arguments[0]); return {paused:e.paused,muted:e.muted,loop:e.loop}", script_args=[selector])
+            if state['paused'] == paused and state['muted'] == muted and state['loop']:
+                return state
+            if time.monotonic() >= deadline:
+                raise RuntimeError(f'{kind} command did not reach expected state: {state}')
+            time.sleep(.1)
+
+    playing_unmuted = wait_media(False, False)
+    contexts[f'{kind}-playing-unmuted'] = check_context(m, selector, 'context-media-pause', '', 'context-media-mute', keyboard)
+    contexts[f'{kind}-playing-unmuted']['mediaState'] = playing_unmuted
+    playing_muted = wait_media(False, True)
+    contexts[f'{kind}-playing'] = check_context(m, selector, 'context-media-unmute', '', 'context-media-unmute', keyboard)
+    contexts[f'{kind}-playing']['mediaState'] = playing_muted
+    wait_media(False, False)
+    contexts[f'{kind}-before-pause'] = check_context(m, selector, 'context-media-pause', '', 'context-media-pause', keyboard)
+    contexts[f'{kind}-before-pause']['afterMediaState'] = wait_media(True, False)
+    for name, required in ((kind, ('context-media-play', 'context-media-mute')),
+                           (f'{kind}-playing-unmuted', ('context-media-pause', 'context-media-mute')),
+                           (f'{kind}-playing', ('context-media-pause', 'context-media-unmute'))):
+        visible = {item['id'] for item in contexts[name]['menuItems']
+                   if not item['hidden'] and item['display'] != 'none'
+                   and item['visibility'] == 'visible' and item['width'] > 0 and item['height'] > 0}
+        if not set(required).issubset(visible):
+            raise RuntimeError(f'{name} context missing expected media actions: {visible}')
+    return contexts
+
+
 def check_pdf(m, profile, enabled):
     source = profile / 'textfox-probe.ps'
     pdf = profile / 'textfox-probe.pdf'
@@ -205,7 +260,8 @@ def check(nova, enabled, pdf, media, keyboard_media):
                     '<p id="page">textfox page fixture</p><input id="edit" value="textfox edit fixture">'
                     '<img id="image" width="60" height="60" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==">')
             if media:
-                page += f'<video id="video" controls preload="auto" width="120" height="90" src="data:video/webm;base64,{media}"></video>'
+                page += (f'<video id="video" controls preload="auto" width="120" height="90" src="data:video/webm;base64,{media["video"]}"></video>'
+                         f'<audio id="audio" controls preload="auto" src="data:audio/webm;base64,{media["audio"]}"></audio>')
             m.navigate('data:text/html,' + quote(page))
             link = m.find_element('css selector', 'a')
             m.actions.sequence('pointer', 'mouse', {'pointerType':'mouse'}).click(link, button=2).perform()
@@ -288,50 +344,8 @@ def check(nova, enabled, pdf, media, keyboard_media):
                 raise RuntimeError(f'selection context fixture unavailable: {selected}')
             other_contexts['selection'] = check_context(m, '#page', 'context-searchselect', selected)
             if media:
-                m.set_context('content')
-                m.execute_script("window.getSelection().removeAllRanges(); document.getElementById('video').loop=true")
-                deadline = time.monotonic() + 15
-                while True:
-                    video = m.execute_script("const e=document.getElementById('video'); return {ready:e.readyState,width:e.videoWidth,height:e.videoHeight,paused:e.paused,muted:e.muted}")
-                    if video['ready'] >= 2 and video['width'] > 0 and video['height'] > 0:
-                        break
-                    if time.monotonic() >= deadline:
-                        raise RuntimeError(f'video fixture did not initialize: {video}')
-                    time.sleep(.1)
-                if not video['paused'] or video['muted']:
-                    raise RuntimeError(f'video fixture is not paused and unmuted: {video}')
-                other_contexts['video'] = check_context(m, '#video', 'context-savevideo', '', 'context-media-play', keyboard_media)
-                other_contexts['video']['mediaState'] = video
-
-                def wait_media(paused, muted):
-                    m.set_context('content')
-                    deadline = time.monotonic() + 10
-                    while True:
-                        state = m.execute_script("const e=document.getElementById('video'); return {paused:e.paused,muted:e.muted,loop:e.loop}")
-                        if state['paused'] == paused and state['muted'] == muted and state['loop']:
-                            return state
-                        if time.monotonic() >= deadline:
-                            raise RuntimeError(f'media command did not reach expected state: {state}')
-                        time.sleep(.1)
-
-                playing_unmuted = wait_media(False, False)
-                other_contexts['video-playing-unmuted'] = check_context(m, '#video', 'context-media-pause', '', 'context-media-mute', keyboard_media)
-                other_contexts['video-playing-unmuted']['mediaState'] = playing_unmuted
-                playing_muted = wait_media(False, True)
-                other_contexts['video-playing'] = check_context(m, '#video', 'context-media-unmute', '', 'context-media-unmute', keyboard_media)
-                other_contexts['video-playing']['mediaState'] = playing_muted
-                wait_media(False, False)
-                other_contexts['video-before-pause'] = check_context(m, '#video', 'context-media-pause', '', 'context-media-pause', keyboard_media)
-                paused = wait_media(True, False)
-                other_contexts['video-before-pause']['afterMediaState'] = paused
-                for name, required in (('video', ('context-media-play', 'context-media-mute')),
-                                       ('video-playing-unmuted', ('context-media-pause', 'context-media-mute')),
-                                       ('video-playing', ('context-media-pause', 'context-media-unmute'))):
-                    visible = {item['id'] for item in other_contexts[name]['menuItems']
-                               if not item['hidden'] and item['display'] != 'none'
-                               and item['visibility'] == 'visible' and item['width'] > 0 and item['height'] > 0}
-                    if not set(required).issubset(visible):
-                        raise RuntimeError(f'{name} context missing expected media actions: {visible}')
+                for kind in ('video', 'audio'):
+                    other_contexts.update(check_media(m, kind, keyboard_media))
             pdf_result = check_pdf(m, profile, enabled) if pdf else None
             print(json.dumps({'firefox':metadata, 'item':state, 'otherContexts':other_contexts,
                               'extensionMedia':extension_media, 'modernIntervention':intervention,
@@ -352,7 +366,7 @@ def check(nova, enabled, pdf, media, keyboard_media):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--pdf', action='store_true', help='also generate a PDF using ps2pdf and inspect its editor menu')
-    parser.add_argument('--media', action='store_true', help='also generate a local WebM using ffmpeg and inspect its menu')
+    parser.add_argument('--media', action='store_true', help='also generate local video and audio WebM fixtures using ffmpeg')
     parser.add_argument('--keyboard-media', action='store_true', help='activate media actions with keyboard navigation')
     args = parser.parse_args()
     if args.pdf and not shutil.which('ps2pdf'):
@@ -370,7 +384,13 @@ if __name__ == '__main__':
                             '-i', 'anullsrc=r=8000:cl=mono', '-t', '1',
                             '-c:v', 'libvpx', '-c:a', 'libvorbis', '-threads', '1', '-y', str(path)],
                            check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
-            media = base64.b64encode(path.read_bytes()).decode('ascii')
+            audio_path = Path(directory) / 'fixture-audio.webm'
+            subprocess.run(['ffmpeg', '-hide_banner', '-loglevel', 'error', '-f', 'lavfi',
+                            '-i', 'anullsrc=r=8000:cl=mono', '-t', '1', '-c:a', 'libvorbis',
+                            '-threads', '1', '-y', str(audio_path)],
+                           check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+            media = {'video':base64.b64encode(path.read_bytes()).decode('ascii'),
+                     'audio':base64.b64encode(audio_path.read_bytes()).decode('ascii')}
         for nova in (False, True):
             for enabled in (False, True):
                 check(nova, enabled, args.pdf, media, args.keyboard_media)
