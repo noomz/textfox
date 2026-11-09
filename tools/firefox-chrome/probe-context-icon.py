@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Inspect link context-menu icon preference in disposable Firefox profiles."""
+import argparse
 import json
 import os
 from pathlib import Path
@@ -16,7 +17,91 @@ from ff_inspect import connect
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def check(nova, enabled):
+def check_pdf(m, profile, enabled):
+    source = profile / 'textfox-probe.ps'
+    pdf = profile / 'textfox-probe.pdf'
+    source.write_text('%!PS\n/Helvetica findfont 24 scalefont setfont\n100 700 moveto (Textfox PDF fixture) show\nshowpage\n')
+    subprocess.run(['ps2pdf', str(source), str(pdf)], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+    m.set_context('content')
+    m.navigate(pdf.as_uri())
+    deadline = time.monotonic() + 30
+    while not m.execute_script("return !!document.querySelector('#editorFreeTextButton') && !!document.querySelector('.page .textLayer')"):
+        if time.monotonic() >= deadline:
+            raise RuntimeError('PDF viewer did not initialize')
+        time.sleep(.2)
+    m.find_element('id', 'editorFreeTextButton').click()
+    deadline = time.monotonic() + 15
+    while not m.execute_script("return !!document.querySelector('.annotationEditorLayer.freetextEditing')"):
+        if time.monotonic() >= deadline:
+            raise RuntimeError('PDF free-text mode did not initialize')
+        time.sleep(.1)
+    layer = m.find_element('css selector', '.annotationEditorLayer.freetextEditing')
+    m.actions.sequence('pointer', 'mouse', {'pointerType':'mouse'}).click(layer).perform()
+    deadline = time.monotonic() + 15
+    while not m.execute_script("return !!document.querySelector('.freeTextEditor [contenteditable]')"):
+        if time.monotonic() >= deadline:
+            raise RuntimeError('PDF text editor did not initialize')
+        time.sleep(.1)
+    m.actions.sequence('key', 'keyboard').send_keys('textfox probe').perform()
+    deadline = time.monotonic() + 10
+    while not m.execute_script("return document.querySelector('.freeTextEditor [contenteditable]')?.textContent === 'textfox probe'"):
+        if time.monotonic() >= deadline:
+            raise RuntimeError('PDF editor did not receive fixture text')
+        time.sleep(.1)
+    m.actions.sequence('key', 'keyboard').send_keys(Keys.ESCAPE).perform()
+    editor = m.find_element('css selector', '.freeTextEditor')
+    m.actions.sequence('pointer', 'mouse', {'pointerType':'mouse'}).click(editor).perform()
+    point = m.execute_script("const e=document.querySelector('.freeTextEditor'), r=e.getBoundingClientRect(); return {x:r.x+1,y:r.y+1,selected:e.classList.contains('selectedEditor')}")
+    if not point['selected']:
+        raise RuntimeError(f'PDF editor was not selected: {point}')
+    m.actions.sequence('pointer', 'mouse', {'pointerType':'mouse'}).pointer_move(
+        round(point['x']), round(point['y'])).click(button=2).perform()
+    m.set_context('chrome')
+    deadline = time.monotonic() + 15
+    while True:
+        result = m.execute_script("""
+            const menu=document.getElementById('contentAreaContextMenu');
+            const item=menu.querySelector('#context-pdfjs-select-all');
+            if (menu.state !== 'open' || !item || item.hidden) return null;
+            const s=getComputedStyle(item),r=item.getBoundingClientRect();
+            return {hidden:item.hidden,disabled:item.disabled,display:s.display,image:s.backgroundImage,
+              width:r.width,height:r.height,legacyMatches:menu.querySelectorAll('#context-pdfjs-selectall').length};
+            """, sandbox='system')
+        if result and result['width'] > 0 and result['height'] > 0:
+            break
+        if time.monotonic() >= deadline:
+            raise RuntimeError(f'PDF editor context menu did not initialize: {result}')
+        time.sleep(.1)
+    if result['disabled']:
+        raise RuntimeError(f'PDF select-all item is disabled: {result}')
+    result['control'] = m.execute_script("""
+        const css='@media -moz-pref("shyfox.enable.context.menu.icons") { #contentAreaContextMenu #context-pdfjs-select-all { background-image: url("chrome://browser/skin/privateBrowsing.svg") !important; } }';
+        const uri='data:text/css,'+encodeURIComponent(css);
+        window.windowUtils.loadSheetUsingURIString(uri, Ci.nsIDOMWindowUtils.USER_SHEET);
+        try { return getComputedStyle(document.getElementById('context-pdfjs-select-all')).backgroundImage; }
+        finally { window.windowUtils.removeSheetUsingURIString(uri, Ci.nsIDOMWindowUtils.USER_SHEET); }
+        """, sandbox='system')
+    expected = 'url("chrome://browser/skin/privateBrowsing.svg")' if enabled else 'none'
+    if result['control'] != expected:
+        raise RuntimeError(f'PDF menu selector intervention failed: {result}')
+    m.execute_script("document.getElementById('context-pdfjs-select-all').addEventListener('command', e => e.currentTarget.setAttribute('data-textfox-command','true'), {once:true})", sandbox='system')
+    item = m.find_element('id', 'context-pdfjs-select-all')
+    m.actions.sequence('pointer', 'mouse', {'pointerType':'mouse'}).click(item).perform()
+    deadline = time.monotonic() + 10
+    while not m.execute_script("return document.getElementById('contentAreaContextMenu').state === 'closed' && document.getElementById('context-pdfjs-select-all').getAttribute('data-textfox-command') === 'true'", sandbox='system'):
+        if time.monotonic() >= deadline:
+            diagnostic = m.execute_script("const e=document.getElementById('context-pdfjs-select-all'); return {state:document.getElementById('contentAreaContextMenu').state,command:e.getAttribute('data-textfox-command'),hidden:e.hidden,disabled:e.disabled}", sandbox='system')
+            raise RuntimeError(f'PDF select-all activation did not dispatch and close menu: {diagnostic}')
+        time.sleep(.1)
+    m.set_context('content')
+    result['selectedEditors'] = m.execute_script("return document.querySelectorAll('.freeTextEditor.selectedEditor').length")
+    if result['selectedEditors'] < 1:
+        raise RuntimeError(f'PDF select-all left no editor selected: {result}')
+    m.set_context('chrome')
+    return result
+
+
+def check(nova, enabled, pdf):
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0))
         port = sock.getsockname()[1]
@@ -28,7 +113,8 @@ def check(nova, enabled):
                  'shyfox.enable.ext.mono.context.icons': enabled,
                  'shyfox.enable.ext.mono.toolbar.icons': enabled,
                  'toolkit.legacyUserProfileCustomizations.stylesheets': True,
-                 'browser.shell.checkDefaultBrowser': False}
+                 'browser.shell.checkDefaultBrowser': False,
+                 'pdfjs.annotationEditorMode': 0}
         (profile / 'user.js').write_text(''.join(
             f'user_pref({json.dumps(k)}, {json.dumps(v)});\n' for k, v in prefs.items()))
         env = os.environ.copy()
@@ -113,8 +199,10 @@ def check(nova, enabled):
                 if time.monotonic() >= deadline:
                     raise RuntimeError('Escape did not close context menu')
                 time.sleep(.1)
+            pdf_result = check_pdf(m, profile, enabled) if pdf else None
             print(json.dumps({'firefox':metadata, 'item':state, 'extensionMedia':extension_media,
-                              'modernIntervention':intervention, 'pdfSelectorControl':pdf_control}), flush=True)
+                              'modernIntervention':intervention, 'pdfSelectorControl':pdf_control,
+                              'pdfEditor':pdf_result}), flush=True)
         finally:
             try:
                 if m:
@@ -129,6 +217,11 @@ def check(nova, enabled):
 
 
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--pdf', action='store_true', help='also generate a PDF using ps2pdf and inspect its editor menu')
+    args = parser.parse_args()
+    if args.pdf and not shutil.which('ps2pdf'):
+        parser.error('--pdf requires ps2pdf')
     for nova in (False, True):
         for enabled in (False, True):
-            check(nova, enabled)
+            check(nova, enabled, args.pdf)
