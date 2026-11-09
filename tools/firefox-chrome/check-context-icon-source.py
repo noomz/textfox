@@ -61,7 +61,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('source', type=Path, help='Firefox browser-context.inc.xhtml to inspect')
     parser.add_argument('--live-jsonl', type=Path, help='output from probe-context-icon.py')
-    parser.add_argument('--context', choices=('link', 'page', 'input', 'image', 'selection', 'video',
+    parser.add_argument('--context', choices=('link', 'page', 'input', 'password', 'password-revealed', 'image', 'selection', 'video',
                                                'video-playing-unmuted', 'video-playing', 'video-before-pause',
                                                'audio', 'audio-playing-unmuted', 'audio-playing', 'audio-before-pause', 'pdf'),
                         default='link', help='live fixture to compare')

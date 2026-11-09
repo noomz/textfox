@@ -36,7 +36,7 @@ def check_context(m, selector, expected_id, expected_selection=None, action_id=N
             if (r.width <= 0 || r.height <= 0) return null;
             return {menuItems:[...popup.querySelectorAll('menuitem[id],menu[id]')].map(e=>{
               const s=getComputedStyle(e),rect=e.getBoundingClientRect();
-              return {id:e.id,hidden:e.hidden,display:s.display,visibility:s.visibility,
+              return {id:e.id,hidden:e.hidden,checked:e.hasAttribute('checked'),display:s.display,visibility:s.visibility,
                 image:s.backgroundImage,width:rect.width,height:rect.height};
             })};
             """, script_args=[expected_id], sandbox='system')
@@ -258,6 +258,7 @@ def check(nova, enabled, pdf, media, keyboard_media):
             m.set_context('content')
             page = ('<a href="https://example.invalid/">textfox link fixture</a>'
                     '<p id="page">textfox page fixture</p><input id="edit" value="textfox edit fixture">'
+                    '<input id="password" type="password" value="textfox-password-fixture">'
                     '<img id="image" width="60" height="60" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==">')
             if media:
                 page += (f'<video id="video" controls preload="auto" width="120" height="90" src="data:video/webm;base64,{media["video"]}"></video>'
@@ -329,6 +330,31 @@ def check(nova, enabled, pdf, media, keyboard_media):
                 time.sleep(.1)
             other_contexts = {'page':check_context(m, '#page', 'context-savepage'),
                               'input':check_context(m, '#edit', 'context-selectall')}
+            m.set_context('content')
+            initial_password = m.execute_script("const e=document.getElementById('password'); return {type:e.type,revealed:e.revealPassword}", sandbox='system')
+            if initial_password != {'type':'password', 'revealed':False}:
+                raise RuntimeError(f'password fixture did not start concealed: {initial_password}')
+            other_contexts['password'] = check_context(m, '#password', 'context-reveal-password', action_id='context-reveal-password')
+            m.set_context('content')
+            deadline = time.monotonic() + 10
+            while not m.execute_script("return document.getElementById('password').revealPassword", sandbox='system'):
+                if time.monotonic() >= deadline:
+                    raise RuntimeError('password reveal action did not reveal fixture')
+                time.sleep(.1)
+            if m.execute_script("return document.getElementById('password').type") != 'password':
+                raise RuntimeError('password reveal unexpectedly changed fixture input type')
+            other_contexts['password-revealed'] = check_context(m, '#password', 'context-reveal-password', action_id='context-reveal-password')
+            reveal_checked = [next(item['checked'] for item in other_contexts[name]['menuItems']
+                                   if item['id'] == 'context-reveal-password')
+                              for name in ('password', 'password-revealed')]
+            if reveal_checked != [False, True]:
+                raise RuntimeError(f'password reveal menu checked state did not track fixture: {reveal_checked}')
+            m.set_context('content')
+            deadline = time.monotonic() + 10
+            while m.execute_script("return document.getElementById('password').revealPassword", sandbox='system'):
+                if time.monotonic() >= deadline:
+                    raise RuntimeError('password reveal action did not conceal fixture')
+                time.sleep(.1)
             m.set_context('content')
             image = m.execute_script("const e=document.getElementById('image'); return {loaded:e.complete && e.naturalWidth > 0, width:e.getBoundingClientRect().width}")
             if not image['loaded'] or image['width'] <= 0:
