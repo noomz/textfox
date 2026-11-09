@@ -33,7 +33,12 @@ def compare_live(source_result, live_file, context='link'):
     profiles = []
     for line in live_file.read_text().splitlines():
         sample = json.loads(line)
-        fixture = sample['item'] if context == 'link' else sample.get('pdfEditor')
+        if context == 'link':
+            fixture = sample['item']
+        elif context == 'pdf':
+            fixture = sample.get('pdfEditor')
+        else:
+            fixture = sample.get('otherContexts', {}).get(context)
         if not fixture:
             raise ValueError(f'live sample has no {context} context fixture')
         items = fixture['menuItems']
@@ -56,7 +61,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('source', type=Path, help='Firefox browser-context.inc.xhtml to inspect')
     parser.add_argument('--live-jsonl', type=Path, help='output from probe-context-icon.py')
-    parser.add_argument('--context', choices=('link', 'pdf'), default='link', help='live fixture to compare')
+    parser.add_argument('--context', choices=('link', 'page', 'input', 'pdf'), default='link', help='live fixture to compare')
     args = parser.parse_args()
     result = compare(args.source)
     if args.live_jsonl:

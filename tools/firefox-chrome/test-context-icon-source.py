@@ -24,6 +24,7 @@ with tempfile.TemporaryDirectory() as directory:
                                     'visibility':'visible', 'width':0, 'height':0, 'image':'hidden'}]}}
     sample['pdfEditor'] = {'menuItems':[{'id':'context-back', 'hidden':False, 'display':'flex',
                                            'visibility':'visible', 'width':20, 'height':20, 'image':'pdf'}]}
+    sample['otherContexts'] = {'page':sample['pdfEditor'], 'input':sample['item']}
     live = Path(directory) / 'live.jsonl'
     live.write_text(json.dumps(sample) + '\n')
     profile = module.compare_live(result, live)[0]
@@ -33,4 +34,6 @@ with tempfile.TemporaryDirectory() as directory:
     assert 'context-copy' in profile['candidateAbsent'], profile
     pdf = module.compare_live(result, live, 'pdf')[0]
     assert pdf['candidateVisibleImages'] == {'context-back':'pdf'}, pdf
+    assert module.compare_live(result, live, 'page')[0]['candidateVisibleImages'] == {'context-back':'pdf'}
+    assert module.compare_live(result, live, 'input')[0]['candidateVisibleImages'] == {'context-openlinkprivate':'fixture'}
 print('Context icon source fixture passed')

@@ -17,6 +17,39 @@ from ff_inspect import connect
 ROOT = Path(__file__).resolve().parents[2]
 
 
+def check_context(m, selector, expected_id):
+    m.set_context('content')
+    target = m.find_element('css selector', selector)
+    m.actions.sequence('pointer', 'mouse', {'pointerType':'mouse'}).click(target, button=2).perform()
+    m.set_context('chrome')
+    deadline = time.monotonic() + 15
+    while True:
+        result = m.execute_script("""
+            const popup=document.getElementById('contentAreaContextMenu');
+            const expected=popup.querySelector(`#${arguments[0]}`);
+            if (popup.state !== 'open' || !expected || expected.hidden) return null;
+            const r=expected.getBoundingClientRect();
+            if (r.width <= 0 || r.height <= 0) return null;
+            return {menuItems:[...popup.querySelectorAll('menuitem[id],menu[id]')].map(e=>{
+              const s=getComputedStyle(e),rect=e.getBoundingClientRect();
+              return {id:e.id,hidden:e.hidden,display:s.display,visibility:s.visibility,
+                image:s.backgroundImage,width:rect.width,height:rect.height};
+            })};
+            """, script_args=[expected_id], sandbox='system')
+        if result:
+            break
+        if time.monotonic() >= deadline:
+            raise RuntimeError(f'context fixture {selector} did not initialize: {result}')
+        time.sleep(.1)
+    m.actions.sequence('key', 'keyboard').send_keys(Keys.ESCAPE).perform()
+    deadline = time.monotonic() + 10
+    while m.execute_script("return document.getElementById('contentAreaContextMenu').state", sandbox='system') != 'closed':
+        if time.monotonic() >= deadline:
+            raise RuntimeError(f'context fixture {selector} did not close')
+        time.sleep(.1)
+    return result
+
+
 def check_pdf(m, profile, enabled):
     source = profile / 'textfox-probe.ps'
     pdf = profile / 'textfox-probe.pdf'
@@ -145,7 +178,7 @@ def check(nova, enabled, pdf):
                     or metadata['extensionContextPref'] != enabled or metadata['extensionToolbarPref'] != enabled):
                 raise RuntimeError('unexpected Firefox process, profile, or preferences')
             m.set_context('content')
-            m.navigate('data:text/html,<a href="https://example.invalid/">textfox link fixture</a>')
+            m.navigate('data:text/html,<a href="https://example.invalid/">textfox link fixture</a><p id="page">textfox page fixture</p><input id="edit" value="textfox edit fixture">')
             link = m.find_element('css selector', 'a')
             m.actions.sequence('pointer', 'mouse', {'pointerType':'mouse'}).click(link, button=2).perform()
             m.set_context('chrome')
@@ -210,10 +243,12 @@ def check(nova, enabled, pdf):
                 if time.monotonic() >= deadline:
                     raise RuntimeError('Escape did not close context menu')
                 time.sleep(.1)
+            other_contexts = {'page':check_context(m, '#page', 'context-savepage'),
+                              'input':check_context(m, '#edit', 'context-selectall')}
             pdf_result = check_pdf(m, profile, enabled) if pdf else None
-            print(json.dumps({'firefox':metadata, 'item':state, 'extensionMedia':extension_media,
-                              'modernIntervention':intervention, 'pdfSelectorControl':pdf_control,
-                              'pdfEditor':pdf_result}), flush=True)
+            print(json.dumps({'firefox':metadata, 'item':state, 'otherContexts':other_contexts,
+                              'extensionMedia':extension_media, 'modernIntervention':intervention,
+                              'pdfSelectorControl':pdf_control, 'pdfEditor':pdf_result}), flush=True)
         finally:
             try:
                 if m:
