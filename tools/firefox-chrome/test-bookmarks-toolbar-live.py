@@ -9,12 +9,14 @@ import subprocess
 import tempfile
 import time
 
+from marionette_driver.keys import Keys
+
 from ff_inspect import connect
 
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def check(nova, alignment):
+def check(nova, alignment, icons):
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0))
         port = sock.getsockname()[1]
@@ -24,6 +26,7 @@ def check(nova, alignment):
         (profile / 'chrome' / 'config.css').write_text(
             f':root {{ --tf-bookmarks-alignment: {alignment}; }}\n')
         prefs = {'marionette.port': port, 'browser.nova.enabled': nova,
+                 'shyfox.enable.context.menu.icons': icons,
                  'toolkit.legacyUserProfileCustomizations.stylesheets': True,
                  'browser.shell.checkDefaultBrowser': False}
         (profile / 'user.js').write_text(''.join(
@@ -40,10 +43,11 @@ def check(nova, alignment):
             metadata = m.execute_script("""
                 return {profile:Services.dirsvc.get('ProfD', Ci.nsIFile).path,
                   version:Services.appinfo.version, build:Services.appinfo.appBuildID,
-                  nova:Services.prefs.getBoolPref('browser.nova.enabled')};
+                  nova:Services.prefs.getBoolPref('browser.nova.enabled'),
+                  iconPref:Services.prefs.getBoolPref('shyfox.enable.context.menu.icons')};
                 """, sandbox='system')
             if (process.poll() is not None or Path(metadata['profile']).resolve() != profile.resolve()
-                    or metadata['nova'] != nova):
+                    or metadata['nova'] != nova or metadata['iconPref'] != icons):
                 raise RuntimeError('unexpected Firefox process, profile, or Nova preference')
             deadline = time.monotonic() + 20
             while not m.execute_script('return gBrowserInit.delayedStartupFinished', sandbox='system'):
@@ -87,7 +91,36 @@ def check(nova, alignment):
                 offset = abs(item['left'] - container['left'])
             if offset > 4:
                 raise RuntimeError(f'bookmark is not positioned at requested alignment: {result}')
-            m.find_element('css selector', '#PlacesToolbarItems .bookmark-item[label="Textfox bookmark fixture"]').click()
+            bookmark = m.find_element('css selector', '#PlacesToolbarItems .bookmark-item[label="Textfox bookmark fixture"]')
+            m.actions.sequence('pointer', 'mouse', {'pointerType':'mouse'}).click(bookmark, button=2).perform()
+            deadline = time.monotonic() + 15
+            while True:
+                menu = m.execute_script("""
+                    const popup=document.getElementById('placesContext');
+                    if (!popup || popup.state !== 'open') return null;
+                    return {legacy:matchMedia('(-moz-bool-pref: "shyfox.enable.context.menu.icons")').matches,
+                      modern:matchMedia('-moz-pref("shyfox.enable.context.menu.icons")').matches,
+                      items:[...popup.querySelectorAll('menuitem[id],menu[id]')].map(e=>{
+                        const s=getComputedStyle(e), r=e.getBoundingClientRect();
+                        return {id:e.id,hidden:e.hidden,disabled:e.disabled,display:s.display,
+                          visibility:s.visibility,width:r.width,height:r.height,image:s.backgroundImage};
+                      })};
+                    """, sandbox='system')
+                if menu and any(not x['hidden'] and x['width'] > 0 and x['height'] > 0 for x in menu['items']):
+                    break
+                if time.monotonic() >= deadline:
+                    raise RuntimeError(f'bookmark context menu did not open: {menu}')
+                time.sleep(.1)
+            if menu['modern'] != icons:
+                raise RuntimeError(f'bookmark context preference control failed: {menu}')
+            print(json.dumps({'firefox':metadata, 'placesContext':menu}), flush=True)
+            m.actions.sequence('key', 'keyboard').send_keys(Keys.ESCAPE).perform()
+            deadline = time.monotonic() + 10
+            while m.execute_script("return document.getElementById('placesContext').state", sandbox='system') != 'closed':
+                if time.monotonic() >= deadline:
+                    raise RuntimeError('bookmark context menu did not close')
+                time.sleep(.1)
+            bookmark.click()
             deadline = time.monotonic() + 15
             while m.execute_script('return gBrowser.currentURI.spec', sandbox='system') != 'about:robots':
                 if time.monotonic() >= deadline:
@@ -109,4 +142,5 @@ def check(nova, alignment):
 if __name__ == '__main__':
     for nova in (False, True):
         for alignment in ('center', 'left'):
-            check(nova, alignment)
+            for icons in (False, True):
+                check(nova, alignment, icons)
