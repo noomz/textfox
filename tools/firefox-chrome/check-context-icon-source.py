@@ -41,6 +41,8 @@ def compare_live(source_result, live_file):
                          'version':sample['firefox']['version'], 'build':sample['firefox']['build'],
                          'candidatePresent':sorted(candidates & present),
                          'candidateVisible':sorted(candidates & visible),
+                         'candidateVisibleImages':{item['id']:item['image'] for item in items
+                                                   if item['id'] in candidates & visible},
                          'candidateAbsent':sorted(candidates - present)})
     if not profiles:
         raise ValueError('live probe output is empty')

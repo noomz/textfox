@@ -19,13 +19,14 @@ with tempfile.TemporaryDirectory() as directory:
     assert 'not-in-theme' not in result['found'], result
     sample = {'firefox':{'nova':False, 'iconPref':True, 'version':'test', 'build':'fixture'},
               'item':{'menuItems':[{'id':'context-openlinkprivate', 'hidden':False, 'display':'flex',
-                                    'visibility':'visible', 'width':20, 'height':20},
+                                    'visibility':'visible', 'width':20, 'height':20, 'image':'fixture'},
                                    {'id':'context-back', 'hidden':True, 'display':'none',
-                                    'visibility':'visible', 'width':0, 'height':0}]}}
+                                    'visibility':'visible', 'width':0, 'height':0, 'image':'hidden'}]}}
     live = Path(directory) / 'live.jsonl'
     live.write_text(json.dumps(sample) + '\n')
     profile = module.compare_live(result, live)[0]
     assert profile['candidateVisible'] == ['context-openlinkprivate'], profile
+    assert profile['candidateVisibleImages'] == {'context-openlinkprivate':'fixture'}, profile
     assert 'context-back' in profile['candidatePresent'], profile
     assert 'context-copy' in profile['candidateAbsent'], profile
 print('Context icon source fixture passed')
