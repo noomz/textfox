@@ -159,7 +159,9 @@ def check(nova, themed, high_contrast, rtl):
                     return {focused:e.matches(':focus-within'), visible:e.matches(':focus-visible'),
                       outlineStyle:s.outlineStyle, outlineWidth:s.outlineWidth,
                       checkOutlineStyle:cs.outlineStyle,checkOutlineWidth:cs.outlineWidth,
-                      checkWidth:r.width,checkHeight:r.height};
+                      checkWidth:r.width,checkHeight:r.height,
+                      checkScreenX:window.mozInnerScreenX+r.x,checkScreenY:window.mozInnerScreenY+r.y,
+                      devicePixelRatio:window.devicePixelRatio};
                     """, sandbox='system')
                 if focus['focused']:
                     break
@@ -169,6 +171,16 @@ def check(nova, themed, high_contrast, rtl):
             if (not focus['visible'] or focus['checkOutlineStyle'] == 'none'
                     or focus['checkOutlineWidth'] == '0px' or focus['checkWidth'] <= 0 or focus['checkHeight'] <= 0):
                 raise RuntimeError(f'Match Case keyboard focus indicator unavailable: {focus}')
+            paint_dir = os.environ.get('TEXTFOX_FINDBAR_PAINT_DIR')
+            paint_files = {}
+            def capture(phase):
+                if paint_dir:
+                    time.sleep(.25)
+                    path = Path(paint_dir) / f'findbar-{int(nova)}-{int(themed)}-{int(high_contrast)}-{int(rtl)}-{phase}.png'
+                    subprocess.run(['grim', str(path)], check=True, stdout=subprocess.DEVNULL)
+                    paint_files[phase] = str(path)
+            capture('focused')
+            capture('focused-control')
             m.actions.sequence('key', 'keyboard').send_keys(Keys.TAB).perform()
             blurred = m.execute_script("""
                 const e=document.querySelector('findbar:not([hidden]) .findbar-case-sensitive');
@@ -177,6 +189,7 @@ def check(nova, themed, high_contrast, rtl):
                 """, sandbox='system')
             if blurred['focused'] or blurred['checkOutlineStyle'] != 'none':
                 raise RuntimeError(f'Match Case focus outline did not clear: {blurred}')
+            capture('blurred')
             m.actions.sequence('key', 'keyboard').key_down(Keys.SHIFT).send_keys(Keys.TAB).key_up(Keys.SHIFT).perform()
             restored = m.execute_script("""
                 const e=document.querySelector('findbar:not([hidden]) .findbar-case-sensitive');
@@ -185,6 +198,7 @@ def check(nova, themed, high_contrast, rtl):
                 """, sandbox='system')
             if not restored['focused'] or restored['checkOutlineStyle'] != focus['checkOutlineStyle']:
                 raise RuntimeError(f'Match Case focus outline did not return: {restored}')
+            capture('restored')
             m.actions.sequence('key', 'keyboard').send_keys(Keys.SPACE).perform()
             deadline = time.monotonic() + 10
             while not m.execute_script("const b=document.querySelector('findbar:not([hidden])'); return b.querySelector('.findbar-case-sensitive').checked && b._findField.getAttribute('status') === 'notfound'", sandbox='system'):
@@ -199,7 +213,8 @@ def check(nova, themed, high_contrast, rtl):
                 time.sleep(.1)
             print(json.dumps({'nova':nova, 'themed':themed, 'rtl':rtl, 'highContrast':high_contrast,
                               'keyboardCase':{'tabs':tabs, 'focus':focus, 'blurred':blurred,
-                                              'restored':restored, 'toggledOnAndOff':True}}), flush=True)
+                                              'restored':restored, 'paintFiles':paint_files,
+                                              'toggledOnAndOff':True}}), flush=True)
             field.send_keys(Keys.CONTROL, 'a')
             field.send_keys('textfox-definitely-absent')
             deadline = time.monotonic() + 10
