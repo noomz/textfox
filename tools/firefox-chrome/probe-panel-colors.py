@@ -86,6 +86,28 @@ def check(nova, color_preference, activation):
             if any(icon is None or not icon['inPanel'] or icon['image'] == 'none'
                    for icon in result['icons'].values()):
                 raise RuntimeError(f'app-menu icon fixture is incomplete: {result["icons"]}')
+            icon_resources = m.execute_async_script("""
+                const done=arguments[arguments.length-1];
+                const ids=[...arguments[0], 'textfox-negative-control'];
+                Promise.all(ids.map(id => new Promise(resolve => {
+                  const raw=id === 'textfox-negative-control'
+                    ? 'url("chrome://global/skin/icons/textfox-nonexistent-resource.svg")'
+                    : getComputedStyle(document.getElementById(id)).listStyleImage;
+                  const match=raw.match(/^url\\(["']?(.*?)["']?\\)$/);
+                  if (!match) { resolve({id,raw,loaded:false,reason:'not a single URL'}); return; }
+                  const image=new Image();
+                  const timer=setTimeout(()=>resolve({id,raw,loaded:false,reason:'timeout'}),5000);
+                  image.onload=()=>{ clearTimeout(timer); resolve({id,raw,loaded:true,width:image.naturalWidth,height:image.naturalHeight}); };
+                  image.onerror=()=>{ clearTimeout(timer); resolve({id,raw,loaded:false,reason:'load error'}); };
+                  image.src=match[1];
+                }))).then(done);
+                """, script_args=[list(result['icons'])], sandbox='system')
+            control = next(item for item in icon_resources if item['id'] == 'textfox-negative-control')
+            if control['loaded'] or control.get('reason') != 'load error':
+                raise RuntimeError(f'icon resource negative control failed: {control}')
+            if any(not item['loaded'] or item.get('width', 0) <= 0 or item.get('height', 0) <= 0
+                   for item in icon_resources if item['id'] != 'textfox-negative-control'):
+                raise RuntimeError(f'app-menu icon resource failed to load: {icon_resources}')
             button = result['privateButton']
             if (button['image'] != 'url("chrome://browser/skin/privateBrowsing.svg")'
                     or button['display'] == 'none' or button['width'] <= 0 or button['height'] <= 0):
@@ -117,6 +139,7 @@ def check(nova, color_preference, activation):
             m.actions.sequence('key', 'keyboard').send_keys(Keys.ESCAPE).perform()
             closed = m.execute_script("return document.getElementById('appMenu-popup').state", sandbox='system')
             print(json.dumps({'firefox': metadata, 'baseline': result, 'privateIconResource': image,
+                              'iconResources':icon_resources,
                               'override': override, 'keyboardFocus': focused, 'afterEscape': closed}), flush=True)
             if focused['panelState'] != 'open' or not focused['inPanel'] or closed != 'closed':
                 raise RuntimeError('app menu keyboard navigation or Escape failed')
