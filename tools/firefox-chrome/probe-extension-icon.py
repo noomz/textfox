@@ -13,11 +13,14 @@ import tempfile
 import time
 import zipfile
 
+from marionette_driver.keys import Keys
+
 from ff_inspect import connect
 
 ROOT = Path(__file__).resolve().parents[2]
 EXTENSION_ID = 'uBlock0@raymondhill.net'
 PREFERENCE = 'shyfox.enable.ext.mono.toolbar.icons'
+CONTEXT_PREFERENCE = 'shyfox.enable.ext.mono.context.icons'
 
 
 def check(nova, enabled):
@@ -30,11 +33,13 @@ def check(nova, enabled):
         addon = profile / 'textfox-fixture.xpi'
         manifest = {'manifest_version':2, 'name':'Textfox selector fixture', 'version':'1.0',
                     'browser_specific_settings':{'gecko':{'id':EXTENSION_ID}},
-                    'browser_action':{'default_title':'Textfox fixture', 'default_icon':'fixture.svg'}}
+                    'browser_action':{'default_title':'Textfox fixture', 'default_icon':'fixture.svg'},
+                    'permissions':['menus'], 'background':{'scripts':['background.js']}}
         with zipfile.ZipFile(addon, 'w') as archive:
             archive.writestr('manifest.json', json.dumps(manifest))
             archive.writestr('fixture.svg', '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"><path fill="black" d="M0 0h16v16H0z"/></svg>')
-        prefs = {'marionette.port':port, 'browser.nova.enabled':nova, PREFERENCE:enabled,
+            archive.writestr('background.js', 'browser.menus.create({id:"uBlock0-fixture",title:"Textfox context fixture",contexts:["link"]});')
+        prefs = {'marionette.port':port, 'browser.nova.enabled':nova, PREFERENCE:enabled, CONTEXT_PREFERENCE:enabled,
                  'toolkit.legacyUserProfileCustomizations.stylesheets':True,
                  'browser.shell.checkDefaultBrowser':False}
         (profile / 'user.js').write_text(''.join(
@@ -52,10 +57,11 @@ def check(nova, enabled):
                 return {profile:Services.dirsvc.get('ProfD',Ci.nsIFile).path,
                   version:Services.appinfo.version,build:Services.appinfo.appBuildID,
                   nova:Services.prefs.getBoolPref('browser.nova.enabled'),
-                  iconPref:Services.prefs.getBoolPref(arguments[0])};
-                """, script_args=[PREFERENCE], sandbox='system')
+                  iconPref:Services.prefs.getBoolPref(arguments[0]),
+                  contextPref:Services.prefs.getBoolPref(arguments[1])};
+                """, script_args=[PREFERENCE, CONTEXT_PREFERENCE], sandbox='system')
             if (process.poll() is not None or Path(metadata['profile']).resolve() != profile.resolve()
-                    or metadata['nova'] != nova or metadata['iconPref'] != enabled):
+                    or metadata['nova'] != nova or metadata['iconPref'] != enabled or metadata['contextPref'] != enabled):
                 raise RuntimeError('unexpected Firefox process, profile, or preferences')
             installed = m.execute_async_script("""
                 const done=arguments[arguments.length-1];
@@ -103,7 +109,44 @@ def check(nova, enabled):
                        for priority, important in (('normal', False), ('important', True))}
             if any((target in value) != enabled for value in control.values()):
                 raise RuntimeError(f'extension icon intervention inconclusive: {sample}, {control}')
-            print(json.dumps({'firefox':metadata,'extension':installed,'sample':sample,'control':control}), flush=True)
+            m.set_context('content')
+            m.navigate('data:text/html,<a href="https://example.invalid/">textfox extension link fixture</a>')
+            link=m.find_element('css selector', 'a')
+            m.actions.sequence('pointer', 'mouse', {'pointerType':'mouse'}).click(link, button=2).perform()
+            m.set_context('chrome')
+            deadline=time.monotonic()+15
+            while True:
+                context=m.execute_script("""
+                    const popup=document.getElementById('contentAreaContextMenu');
+                    const item=popup.querySelector('menuitem[id*="ublock0_raymondhill_net-menuitem-_uBlock0-"]');
+                    if (popup.state !== 'open' || !item || item.hidden) return null;
+                    const s=getComputedStyle(item),r=item.getBoundingClientRect();
+                    return {id:item.id,image:s.backgroundImage,width:r.width,height:r.height,
+                      legacy:matchMedia('(-moz-bool-pref: "shyfox.enable.ext.mono.context.icons")').matches,
+                      modern:matchMedia('-moz-pref("shyfox.enable.ext.mono.context.icons")').matches};
+                    """, sandbox='system')
+                if context and context['width'] > 0 and context['height'] > 0:
+                    break
+                if time.monotonic() >= deadline:
+                    raise RuntimeError(f'extension context-menu fixture unavailable: {context}')
+                time.sleep(.1)
+            context_control=m.execute_script("""
+                const css=`@media -moz-pref("shyfox.enable.ext.mono.context.icons") { #contentAreaContextMenu menuitem[id*="ublock0_raymondhill_net-menuitem-_uBlock0-"] { background-image: url("${arguments[0]}") !important; } }`;
+                const uri='data:text/css,'+encodeURIComponent(css);
+                window.windowUtils.loadSheetUsingURIString(uri, Ci.nsIDOMWindowUtils.USER_SHEET);
+                try { return getComputedStyle(document.querySelector('#contentAreaContextMenu menuitem[id*="ublock0_raymondhill_net-menuitem-_uBlock0-"]')).backgroundImage; }
+                finally { window.windowUtils.removeSheetUsingURIString(uri, Ci.nsIDOMWindowUtils.USER_SHEET); }
+                """, script_args=[target], sandbox='system')
+            if context['modern'] != enabled or (target in context_control) != enabled:
+                raise RuntimeError(f'extension context icon intervention inconclusive: {context}, {context_control}')
+            m.actions.sequence('key', 'keyboard').send_keys(Keys.ESCAPE).perform()
+            deadline = time.monotonic() + 10
+            while m.execute_script("return document.getElementById('contentAreaContextMenu').state", sandbox='system') != 'closed':
+                if time.monotonic() >= deadline:
+                    raise RuntimeError('Escape did not close the extension context menu')
+                time.sleep(.1)
+            print(json.dumps({'firefox':metadata,'extension':installed,'sample':sample,'control':control,
+                              'context':context,'contextControl':context_control}), flush=True)
         finally:
             try:
                 if m:
