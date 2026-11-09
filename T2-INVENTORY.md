@@ -82,6 +82,8 @@ Menu colors reuse `--tab-selected-bgcolor` and `--tab-hover-background-color` fr
 
 The new-tab rule defines `--newtab-background-color-secondary`, `--newtab-border-color`, `--newtab-element-hover-color`, and `--newtab-weather-background-color`, using Firefox's `--newtab-wallpaper-color`, `--newtab-background-color`, and `--newtab-contextual-text-primary-color`. Existing probes cover only some consumers and wallpaper states; full custom-property inventory remains open. Disposable new-tab feeds may use network.
 
+The sampled Firefox 159.0 `about:about` index listed: `about:about`, `about:addons`, `about:buildconfig`, `about:cache`, `about:certificate`, `about:checkerboard`, `about:compat`, `about:config`, `about:crashes`, `about:credits`, `about:debugging`, `about:downloads`, `about:firefoxview`, `about:home`, `about:keyboard`, `about:license`, `about:logging`, `about:logins`, `about:loginsimportreport`, `about:logo`, `about:memory`, `about:mozilla`, `about:networking`, `about:newtab`, `about:pdf`, `about:policies`, `about:preferences`, `about:privatebrowsing`, `about:processes`, `about:profiles`, `about:profiling`, `about:protections`, `about:rights`, `about:robots`, `about:serviceworkers`, `about:studies`, `about:support`, `about:sync-log`, `about:telemetry`, `about:translations`, `about:unloads`, `about:url-classifier`, `about:webauthn`, `about:webrtc`, and `about:welcome`. This is an observed index, not a textfox support list or a complete list of Firefox internal URLs. Only the pages and controls named in the evidence above have been probed.
+
 ## URL bar
 
 | textfox rule group | Source and live evidence | Unresolved |
