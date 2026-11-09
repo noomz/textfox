@@ -61,7 +61,20 @@ def check(nova, color_preference, activation):
                 const privateButton = document.getElementById('appMenu-new-private-window-button2');
                 if (!privateButton) throw new Error('private window menu item not found');
                 const rect = privateButton.getBoundingClientRect(), buttonStyle = getComputedStyle(privateButton);
-                return {background:s.backgroundColor, color:s.color, border:s.border,
+                const iconIds=['appMenu-new-tab-button2','appMenu-new-window-button2',
+                  'appMenu-new-private-window-button2','appMenu-bookmarks-button','appMenu-history-button',
+                  'appMenu-downloads-button','appMenu-passwords-button','appMenu-extensions-themes-button',
+                  'appMenu-print-button2','appMenu-save-file-button2','appMenu-find-button2',
+                  'appMenu-translate-button','appMenu-settings-button','appMenu-more-button2',
+                  'appMenu-help-button2','appMenu-quit-button2'];
+                const icons=Object.fromEntries(iconIds.map(id=>{
+                  const e=document.getElementById(id);
+                  if (!e) return [id,null];
+                  const st=getComputedStyle(e), r=e.getBoundingClientRect();
+                  return [id,{image:st.listStyleImage,display:st.display,visibility:st.visibility,
+                    width:r.width,height:r.height,inPanel:panel.contains(e)}];
+                }));
+                return {icons, background:s.backgroundColor, color:s.color, border:s.border,
                         radius:s.borderRadius, forcedColors:matchMedia('(forced-colors: active)').matches,
                         shadowSelector:{lightMatches:document.querySelectorAll('#appMenu-popup #shadow-root > *').length,
                           shadowIdPresent:!!panel.shadowRoot.querySelector('#shadow-root'),
@@ -70,6 +83,9 @@ def check(nova, color_preference, activation):
                           width:rect.width, height:rect.height},
                         rootProperties:Object.fromEntries(properties.map(p => [p, root.getPropertyValue(p).trim()]))};
                 """, sandbox='system')
+            if any(icon is None or not icon['inPanel'] or icon['image'] == 'none'
+                   for icon in result['icons'].values()):
+                raise RuntimeError(f'app-menu icon fixture is incomplete: {result["icons"]}')
             button = result['privateButton']
             if (button['image'] != 'url("chrome://browser/skin/privateBrowsing.svg")'
                     or button['display'] == 'none' or button['width'] <= 0 or button['height'] <= 0):
