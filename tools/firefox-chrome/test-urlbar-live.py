@@ -76,7 +76,15 @@ def check(nova):
                 const results = document.querySelector('#urlbar[open] > .urlbarView > .urlbarView-results');
                 if (!results) throw new Error('URL bar results do not match the themed selector');
                 const vs = getComputedStyle(view), rs = getComputedStyle(results);
-                return {rows:results.querySelectorAll('.urlbarView-row').length,
+                const anchor = document.getElementById('urlbar').parentNode;
+                const anchorStyle = getComputedStyle(anchor);
+                const anchorRect = anchor.getBoundingClientRect();
+                return {anchor:{id:anchor.id, urlbarTag:document.getElementById('urlbar').localName,
+                      popoverOpen:document.getElementById('urlbar').matches(':popover-open'),
+                      inlineHeight:anchor.style.getPropertyValue('--urlbar-container-height').trim(),
+                      computedHeight:anchorStyle.getPropertyValue('--urlbar-container-height').trim(),
+                      measuredHeight:anchorRect.height},
+                    rows:results.querySelectorAll('.urlbarView-row').length,
                     resultsBorderTopWidth:rs.borderTopWidth, resultsBorderTopStyle:rs.borderTopStyle,
                     viewBorderTopWidth:vs.borderTopWidth, viewBorderTopStyle:vs.borderTopStyle,
                     viewBorderTopColor:vs.borderTopColor};
