@@ -52,6 +52,19 @@ def check(nova, display):
         class Handler(BaseHTTPRequestHandler):
             mixed_port = None
             mixed_requests = 0
+            geo_requests = 0
+
+            def do_POST(self):
+                if self.path != '/geo':
+                    self.send_error(404)
+                    return
+                type(self).geo_requests += 1
+                body = b'{"location":{"lat":0,"lng":0},"accuracy":100}'
+                self.send_response(200)
+                self.send_header('Content-Type','application/json')
+                self.send_header('Content-Length',str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
 
             def do_GET(self):
                 if self.path == '/mixed-script.js':
@@ -84,6 +97,9 @@ def check(nova, display):
         prefs = {'marionette.port':port, 'browser.nova.enabled':nova,
                  'network.proxy.type':0, 'network.dns.localDomains':f'{HOST},{MIXED_HOST}',
                  'dom.security.https_first':False, 'security.mixed_content.block_active_content':True,
+                 'geo.prompt.testing':False,
+                 'geo.provider.testing':True, 'geo.wifi.scan':False,
+                 'geo.provider.network.url':f'http://127.0.0.1:{http.server_port}/geo',
                  'toolkit.legacyUserProfileCustomizations.stylesheets':True,
                  'browser.shell.checkDefaultBrowser':False}
         (profile / 'user.js').write_text(''.join(
@@ -101,9 +117,14 @@ def check(nova, display):
             meta = m.execute_script("""
                 return {profile:Services.dirsvc.get('ProfD',Ci.nsIFile).path,
                   version:Services.appinfo.version,build:Services.appinfo.appBuildID,
-                  nova:Services.prefs.getBoolPref('browser.nova.enabled')};
+                  nova:Services.prefs.getBoolPref('browser.nova.enabled'),
+                  geoProviderTesting:Services.prefs.getBoolPref('geo.provider.testing'),
+                  geoWifiScan:Services.prefs.getBoolPref('geo.wifi.scan'),
+                  geoProviderURL:Services.prefs.getStringPref('geo.provider.network.url')};
                 """, sandbox='system')
-            if process.poll() is not None or Path(meta['profile']).resolve() != profile.resolve() or meta['nova'] != nova:
+            if (process.poll() is not None or Path(meta['profile']).resolve() != profile.resolve() or meta['nova'] != nova
+                    or not meta['geoProviderTesting'] or meta['geoWifiScan']
+                    or meta['geoProviderURL'] != f'http://127.0.0.1:{http.server_port}/geo'):
                 raise RuntimeError(f'unexpected Firefox process, profile, or preferences: {meta}')
             samples = {}
             for name in ('secure', 'mixed'):
@@ -166,7 +187,69 @@ def check(nova, display):
                             raise RuntimeError(f'mixed branch intervention inconclusive: {branch_control}')
                 samples[name] = {'page':body, 'identity':state, 'mixedRequests':Handler.mixed_requests,
                                  'mixedBranchControl':branch_control}
-            print(json.dumps({'firefox':meta,'display':display,'samples':samples}),flush=True)
+            m.set_context('content')
+            m.navigate(f'https://{HOST}:{https.server_port}/secure')
+            m.execute_script("""
+                const root=document.documentElement;
+                root.setAttribute('data-textfox-geo-positions','0');
+                const watch=navigator.geolocation.watchPosition(
+                  ()=>root.setAttribute('data-textfox-geo-positions',String(Number(root.getAttribute('data-textfox-geo-positions'))+1)),
+                  e=>root.setAttribute('data-textfox-geo-error',`${e.code}: ${e.message}`));
+                root.setAttribute('data-textfox-geo-watch',String(watch));
+                """)
+            m.set_context('chrome')
+            deadline = time.monotonic() + 15
+            while not m.execute_script("return !!PopupNotifications.getNotification('geolocation') && PopupNotifications.panel.state === 'open' && !!PopupNotifications.panel.querySelector('.popup-notification-primary-button')", sandbox='system'):
+                if time.monotonic() >= deadline:
+                    raise RuntimeError('geolocation permission prompt did not open')
+                time.sleep(.1)
+            allow = m.find_element('css selector', '#notification-popup .popup-notification-primary-button')
+            m.actions.sequence('pointer', 'mouse', {'pointerType':'mouse'}).click(allow).perform()
+            m.set_context('content')
+            deadline = time.monotonic() + 20
+            while True:
+                observed = m.execute_script("""
+                    const r=document.documentElement;
+                    return {url:location.href,ready:document.readyState,
+                      positions:Number(r.getAttribute('data-textfox-geo-positions')),
+                      error:r.getAttribute('data-textfox-geo-error')};
+                    """)
+                geo = observed
+                if geo['positions'] > 0:
+                    break
+                if geo['error'] or time.monotonic() >= deadline:
+                    raise RuntimeError(f'local fake geolocation did not initialize: {observed}, requests={Handler.geo_requests}')
+                time.sleep(.1)
+            m.set_context('chrome')
+            deadline = time.monotonic() + 15
+            while True:
+                sharing = m.execute_script("""
+                    const box=document.getElementById('identity-box');
+                    const permission=document.getElementById('identity-permission-box');
+                    const granted=document.getElementById('permissions-granted-icon');
+                    const icon=document.getElementById('geo-sharing-icon'), sibling=granted.nextElementSibling;
+                    const r=permission.getBoundingClientRect();
+                    return {classes:[...box.classList],pageProxy:box.getAttribute('pageproxystate'),
+                      hasSharingIcon:permission.hasAttribute('hasSharingIcon'), sharing:icon.getAttribute('sharing'),
+                      siblingMatches:sibling?.matches('box:has(image[sharing="true"])'),
+                      siblingMarginLeft:sibling && getComputedStyle(sibling).marginLeft,
+                      permissionDisplay:getComputedStyle(permission).display,
+                      grantedDisplay:getComputedStyle(granted).display,
+                      permissionWidth:r.width,permissionHeight:r.height};
+                    """, sandbox='system')
+                if sharing['hasSharingIcon'] and sharing['sharing'] == 'true':
+                    break
+                if time.monotonic() >= deadline:
+                    raise RuntimeError(f'geolocation sharing indicator did not initialize: {sharing}')
+                time.sleep(.1)
+            if (not Handler.geo_requests or not sharing['siblingMatches'] or sharing['permissionDisplay'] == 'none'
+                    or sharing['permissionWidth'] <= 0 or sharing['permissionHeight'] <= 0
+                    or (display is not None and (sharing['grantedDisplay'] != display or sharing['siblingMarginLeft'] != '-4px'))):
+                raise RuntimeError(f'geolocation sharing selector fixture failed: {sharing}, requests={Handler.geo_requests}')
+            m.set_context('content')
+            m.execute_script("navigator.geolocation.clearWatch(Number(document.documentElement.getAttribute('data-textfox-geo-watch')))")
+            print(json.dumps({'firefox':meta,'display':display,'samples':samples,
+                              'geo':geo,'sharing':sharing,'geoRequests':Handler.geo_requests}),flush=True)
         finally:
             try:
                 if m:
