@@ -179,7 +179,19 @@ def check(nova, display, vertical):
                     if time.monotonic() >= deadline:
                         raise RuntimeError(f'multiple pinned tabs did not initialize: {multiple}')
                     time.sleep(.1)
-                print(json.dumps({'nova': nova, 'multiplePinned': multiple}), flush=True)
+                selector_state = m.execute_script("""
+                    const base='#tabbrowser-tabs[orient="vertical"]:not([expanded])';
+                    const old=document.querySelectorAll(`${base} #vertical-pinned-tabs-container`);
+                    const current=document.querySelectorAll(`${base} #pinned-tabs-container`);
+                    const stacks=[...document.querySelectorAll(`${base} .tab-stack`)];
+                    return {legacyCount:old.length,currentCount:current.length,stackCount:stacks.length,
+                      stackWidths:stacks.map(e=>({width:e.getBoundingClientRect().width,
+                        computedWidth:getComputedStyle(e).width}))};
+                    """, sandbox='system')
+                if selector_state['currentCount'] != 1 or selector_state['stackCount'] < 4:
+                    raise RuntimeError(f'vertical tab selector fixture unavailable: {selector_state}')
+                print(json.dumps({'nova': nova, 'multiplePinned': multiple,
+                                  'collapsedSelectors':selector_state}), flush=True)
                 if (multiple['orient'] != 'vertical' or multiple['expanded']
                         or abs(multiple['containerWidth'] - multiple['tabsWidth']) > 1):
                     raise RuntimeError(f'unexpected multiple pinned tab geometry: {multiple}')
