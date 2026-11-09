@@ -40,7 +40,8 @@ def check(nova, dark, source, forced, mismatch):
         shutil.copytree(source / 'chrome', profile / 'chrome')
         bg = 'rgb(23, 47, 71)' if dark != mismatch else 'rgb(232, 240, 248)'
         (profile / 'chrome' / 'config.css').write_text(
-            f':root {{ --tf-bg: {bg}; --tf-display-horizontal-tabs: block; --tf-text-transform: uppercase; }}\n')
+            f':root {{ --tf-bg: {bg}; --tf-display-horizontal-tabs: block; --tf-text-transform: uppercase; '
+            '--tf-accent: rgb(19, 83, 137); }\n')
         theme = profile / 'probe-theme.xpi'
         manifest = {'manifest_version': 2, 'name': 'textfox tab probe', 'version': '1.0',
                     'browser_specific_settings': {'gecko': {'id': 'textfox-tab-probe@example.invalid'}},
@@ -118,6 +119,24 @@ def check(nova, dark, source, forced, mismatch):
                     or toolbar['privateRoot'] or toolbar['firefoxViewHidden']
                     or toolbar['normalAdjacencyControl'] != 1):
                 raise RuntimeError(f'configured tab toolbar styles did not apply: {toolbar}')
+            m.execute_script("InspectorUtils.addPseudoClassLock(document.getElementById('TabsToolbar'), ':hover')", sandbox='system')
+            try:
+                deadline = time.monotonic() + 5
+                while True:
+                    toolbar_hover = m.execute_script("""
+                        const bar=document.getElementById('TabsToolbar'), s=getComputedStyle(bar), p=getComputedStyle(bar,'::before');
+                        return {hover:bar.matches(':hover'),border:s.borderTopColor,
+                          title:p.content,titleDisplay:p.display,titleColor:p.color};
+                        """, sandbox='system')
+                    if toolbar_hover['border'] == 'rgb(19, 83, 137)' or time.monotonic() >= deadline:
+                        break
+                    time.sleep(.1)
+            finally:
+                m.execute_script("InspectorUtils.removePseudoClassLock(document.getElementById('TabsToolbar'), ':hover')", sandbox='system')
+            if (not toolbar_hover['hover'] or toolbar_hover['border'] != 'rgb(19, 83, 137)'
+                    or toolbar_hover['title'] != '"tabs"' or toolbar_hover['titleDisplay'] != 'flex'
+                    or toolbar_hover['titleColor'] != 'rgb(19, 83, 137)'):
+                raise RuntimeError(f'horizontal tab toolbar hover styles did not apply: {toolbar_hover}')
             before = m.execute_script(js, sandbox='system')
             hover = m.execute_script("""
                 const tab=gBrowser.addTrustedTab('about:blank');
@@ -203,6 +222,7 @@ def check(nova, dark, source, forced, mismatch):
                 raise RuntimeError('requested contrast preference state not active')
             print(json.dumps({'firefox': meta, 'dark': dark, 'forced':forced, 'mismatch':mismatch, 'before': before, 'hover':hover, 'after': after,
                               'multi':multi, 'multiIntervention':multi_intervention, 'toolbar':toolbar,
+                              'toolbarHover':toolbar_hover,
                               'firefoxView':view, 'firefoxViewIntervention':view_intervention,
                               'computedSelectedContrast':contrast(before['background'], before['color']),
                               'computedHoverContrast':contrast(hover['background'], hover['color'])}), flush=True)
