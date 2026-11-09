@@ -153,17 +153,38 @@ def check(nova, themed, high_contrast, rtl):
             for tabs in range(20):
                 focus = m.execute_script("""
                     const e=document.querySelector('findbar:not([hidden]) .findbar-case-sensitive');
-                    const s=getComputedStyle(e);
+                    const check=e.querySelector('.checkbox-check');
+                    if (!check) throw new Error('Match Case checkmark missing');
+                    const s=getComputedStyle(e), cs=getComputedStyle(check), r=check.getBoundingClientRect();
                     return {focused:e.matches(':focus-within'), visible:e.matches(':focus-visible'),
-                      outlineStyle:s.outlineStyle, outlineWidth:s.outlineWidth};
+                      outlineStyle:s.outlineStyle, outlineWidth:s.outlineWidth,
+                      checkOutlineStyle:cs.outlineStyle,checkOutlineWidth:cs.outlineWidth,
+                      checkWidth:r.width,checkHeight:r.height};
                     """, sandbox='system')
                 if focus['focused']:
                     break
                 m.actions.sequence('key', 'keyboard').send_keys(Keys.TAB).perform()
             else:
                 raise RuntimeError(f'keyboard Tab did not reach Match Case: {focus}')
-            if not focus['visible']:
-                raise RuntimeError(f'Match Case keyboard focus is not focus-visible: {focus}')
+            if (not focus['visible'] or focus['checkOutlineStyle'] == 'none'
+                    or focus['checkOutlineWidth'] == '0px' or focus['checkWidth'] <= 0 or focus['checkHeight'] <= 0):
+                raise RuntimeError(f'Match Case keyboard focus indicator unavailable: {focus}')
+            m.actions.sequence('key', 'keyboard').send_keys(Keys.TAB).perform()
+            blurred = m.execute_script("""
+                const e=document.querySelector('findbar:not([hidden]) .findbar-case-sensitive');
+                return {focused:e.matches(':focus-within'),
+                  checkOutlineStyle:getComputedStyle(e.querySelector('.checkbox-check')).outlineStyle};
+                """, sandbox='system')
+            if blurred['focused'] or blurred['checkOutlineStyle'] != 'none':
+                raise RuntimeError(f'Match Case focus outline did not clear: {blurred}')
+            m.actions.sequence('key', 'keyboard').key_down(Keys.SHIFT).send_keys(Keys.TAB).key_up(Keys.SHIFT).perform()
+            restored = m.execute_script("""
+                const e=document.querySelector('findbar:not([hidden]) .findbar-case-sensitive');
+                return {focused:e.matches(':focus-visible'),
+                  checkOutlineStyle:getComputedStyle(e.querySelector('.checkbox-check')).outlineStyle};
+                """, sandbox='system')
+            if not restored['focused'] or restored['checkOutlineStyle'] != focus['checkOutlineStyle']:
+                raise RuntimeError(f'Match Case focus outline did not return: {restored}')
             m.actions.sequence('key', 'keyboard').send_keys(Keys.SPACE).perform()
             deadline = time.monotonic() + 10
             while not m.execute_script("const b=document.querySelector('findbar:not([hidden])'); return b.querySelector('.findbar-case-sensitive').checked && b._findField.getAttribute('status') === 'notfound'", sandbox='system'):
@@ -177,7 +198,8 @@ def check(nova, themed, high_contrast, rtl):
                     raise RuntimeError('keyboard Match Case did not restore the match')
                 time.sleep(.1)
             print(json.dumps({'nova':nova, 'themed':themed, 'rtl':rtl, 'highContrast':high_contrast,
-                              'keyboardCase':{'tabs':tabs, 'focus':focus, 'toggledOnAndOff':True}}), flush=True)
+                              'keyboardCase':{'tabs':tabs, 'focus':focus, 'blurred':blurred,
+                                              'restored':restored, 'toggledOnAndOff':True}}), flush=True)
             field.send_keys(Keys.CONTROL, 'a')
             field.send_keys('textfox-definitely-absent')
             deadline = time.monotonic() + 10
