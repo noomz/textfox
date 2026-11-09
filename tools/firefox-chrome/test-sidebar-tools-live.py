@@ -155,6 +155,40 @@ def check(nova, display, vertical):
                 print(json.dumps({'nova': nova, 'toolsHeightBefore': drag['height'], 'toolsHeightAfter': after}), flush=True)
                 if after >= drag['height']:
                     raise RuntimeError('dragging the sidebar tools splitter did not shrink the tools area')
+                expanded = m.execute_async_script("""
+                    const done = arguments[arguments.length - 1];
+                    SidebarController.updateUIState({launcherExpanded:true}).then(() => done(true), e => done(String(e)));
+                    """, sandbox='system')
+                if expanded is not True:
+                    raise RuntimeError(f'could not expand sidebar launcher: {expanded}')
+                deadline = time.monotonic() + 10
+                while True:
+                    expanded_pins = m.execute_script("""
+                        const tabs = document.getElementById('tabbrowser-tabs');
+                        const container = document.getElementById('pinned-tabs-container');
+                        const c = container.getBoundingClientRect();
+                        return {expanded:tabs.hasAttribute('expanded'), orient:container.getAttribute('orient'),
+                          container:{x:c.x,y:c.y,width:c.width,height:c.height},
+                          tabs:gBrowser.tabs.filter(tab => tab.pinned).map(tab => {
+                            const r=tab.getBoundingClientRect();
+                            return {x:r.x,y:r.y,width:r.width,height:r.height,visible:getComputedStyle(tab).visibility};
+                          })};
+                        """, sandbox='system')
+                    if expanded_pins['expanded'] and len(expanded_pins['tabs']) == 4 and expanded_pins['container']['width'] > 0:
+                        break
+                    if time.monotonic() >= deadline:
+                        raise RuntimeError(f'expanded pinned tabs did not initialize: {expanded_pins}')
+                    time.sleep(.1)
+                print(json.dumps({'nova': nova, 'expandedPinned': expanded_pins}), flush=True)
+                container = expanded_pins['container']
+                if (expanded_pins['orient'] != 'vertical' or any(
+                    tab['visible'] != 'visible' or tab['width'] <= 0 or tab['height'] <= 0
+                    or tab['x'] < container['x'] - 1 or tab['y'] < container['y'] - 1
+                    or tab['x'] + tab['width'] > container['x'] + container['width'] + 1
+                    or tab['y'] + tab['height'] > container['y'] + container['height'] + 1
+                    for tab in expanded_pins['tabs']
+                )):
+                    raise RuntimeError(f'expanded pinned tab geometry is outside the container: {expanded_pins}')
         finally:
             try:
                 if m:
