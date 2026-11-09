@@ -49,7 +49,25 @@ def check(nova):
                 raise RuntimeError('unexpected Firefox process, profile, or Nova preference')
             m.set_context('content')
             for page in PAGES:
+                if page == 'about:logins':
+                    m.set_context('chrome')
+                    seeded = m.execute_async_script("""
+                        const done=arguments[arguments.length-1];
+                        const LoginInfo=new Components.Constructor('@mozilla.org/login-manager/loginInfo;1', Ci.nsILoginInfo, 'init');
+                        const login=new LoginInfo('https://example.invalid','https://example.invalid',null,
+                          'textfox-fixture-user','textfox-fixture-password','username','password');
+                        Services.logins.addLoginAsync(login).then(()=>done(true),error=>done(String(error)));
+                        """, sandbox='system')
+                    if seeded is not True:
+                        raise RuntimeError(f'disposable login fixture failed: {seeded}')
+                    m.set_context('content')
                 m.navigate(page)
+                if page == 'about:logins':
+                    deadline = time.monotonic() + 20
+                    while not m.execute_script("return !!document.querySelector('login-list')?.shadowRoot?.querySelector('login-list-item[data-guid]')?.shadowRoot?.querySelector('.subtitle')"):
+                        if time.monotonic() >= deadline:
+                            raise RuntimeError('disposable login row did not initialize')
+                        time.sleep(.1)
                 if page == 'about:preferences':
                     deadline = time.monotonic() + 20
                     while not m.execute_script("return [...document.querySelectorAll('*')].some(e => e.localName === 'moz-page-nav-button')"):
@@ -60,7 +78,7 @@ def check(nova):
                     const names = new Set(['button', 'input', 'select', 'textarea', 'checkbox', 'menulist', 'moz-button', 'moz-page-nav-button']);
                     if (location.href === 'about:about') names.add('a');
                     if (location.href === 'about:downloads') names.add('richlistbox');
-                    if (location.href === 'about:logins') {
+                    if (location.href.split('#')[0] === 'about:logins') {
                       for (const name of ['login-list', 'login-item', 'login-intro', 'menu-button', 'fxaccounts-button']) names.add(name);
                     }
                     const controls = [...document.querySelectorAll('*')].filter(node => names.has(node.localName));
@@ -71,7 +89,13 @@ def check(nova):
                             rects:node.getClientRects().length, hostHidden:host.hidden}))
                       : []);
                     const fontTarget=document.body || document.documentElement;
+                    const loginRow=location.href.split('#')[0] === 'about:logins'
+                      ? document.querySelector('login-list')?.shadowRoot?.querySelector('login-list-item[data-guid]') : null;
+                    const title=loginRow?.shadowRoot?.querySelector('.title'), subtitle=loginRow?.shadowRoot?.querySelector('.subtitle');
                     return {url:location.href, state:document.readyState,
+                      populatedLogin:loginRow && title && subtitle ? {rowFont:getComputedStyle(loginRow).fontFamily,
+                        titleFont:getComputedStyle(title).fontFamily,subtitleFont:getComputedStyle(subtitle).fontFamily,
+                        fixtureUsername:subtitle.textContent.trim() === 'textfox-fixture-user'} : null,
                       listedAboutPages:location.href === 'about:about'
                         ? [...document.querySelectorAll('a[href^="about:"]')].map(a=>a.getAttribute('href')).sort() : null,
                       body:!!document.body, fontTarget:fontTarget?.localName,
@@ -101,6 +125,9 @@ def check(nova):
                     raise RuntimeError(f'about page font or navigation differs from configuration: {result}')
                 if result['controls'] == 0:
                     raise RuntimeError(f'{page} control fixture is empty')
+                if page == 'about:logins' and (not result['populatedLogin'] or not result['populatedLogin']['fixtureUsername']
+                        or any(result['populatedLogin'][name] != 'monospace' for name in ('rowFont', 'titleFont', 'subtitleFont'))):
+                    raise RuntimeError(f'populated about logins fixture differs: {result}')
                 if page == 'about:downloads' and (result['rootId'] != 'contentAreaDownloadsView' or not result['downloadsList']):
                     raise RuntimeError(f'about downloads fixture is incomplete: {result}')
                 if page == 'about:about' and (not result['listedAboutPages'] or 'about:about' not in result['listedAboutPages']):
