@@ -83,6 +83,14 @@ The rules consume `--border-width` from `overwrites.css` and textfox options. `o
 
 `--splitborder` is local to textfox's split-panel rule and derives from `--tf-border` or `--tf-accent`. `--lwt-accent-color` and `--lwt-text-color` are Firefox theme inputs; contrast across arbitrary themes is not established.
 
+## Private windows
+
+| textfox rule group or surface | Source and live evidence | Unresolved |
+|---|---|---|
+| Private indicator and tab-toolbar visibility | Tagged [indicator markup](https://github.com/mozilla-firefox/firefox/blob/9a2dc53c369c7ae5172018b35988e1d2ffeff402/browser/base/content/private-browsing-indicator.inc.xhtml) defines the indicator variants. `probe-private-indicator.py` checks a real private window in both Nova states. In themed profiles with horizontal tabs configured, it observed no indicator with visible, nonzero geometry; vanilla and themed vertical-tab positive controls had one. | Safe indicator fix, painted output, other tab/toolbar configurations, and other platforms. Missing visible geometry is a recorded visibility gap, not proof of private-browsing security properties. |
+| Private URL bar and navigation | `test-private-window-live.py` checks initialized URL bar results, configured border, and one local navigation in both Nova states. | Other components, menu interaction, and painted focus/contrast in private mode. |
+| Private-window icons and private tab selectors | `probe-panel-colors.py` checks the app-menu private-window icon resource and activation. `chrome/icons.css` also contains private context-menu icons; `chrome/tabs.css` contains private-root adjacency selectors. | Private context-menu states, adjacent-tab selector matching, icon rendering in private windows, and other platforms. |
+
 ## Findbar
 
 | textfox rule group | Source and live evidence | Unresolved |
