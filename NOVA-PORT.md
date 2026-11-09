@@ -517,6 +517,10 @@ In those samples, vanilla changed the field's computed background on a miss whil
 
 Run `MOZ_HEADLESS=1 "$HOME/.cache/textfox-firefox-live/venv/bin/python" tools/firefox-chrome/test-findbar-live.py`. The comparison reports the field-background difference; it does not assert that difference as a passing support check. The temporary intervention script `/tmp/tf-findbar-background-control.py` may disappear.
 
+## Closed findbar selector
+
+`test-findbar-live.py` marks the open findbar before Escape and inspects the same element afterward. In all 16 headless Firefox 159.0 build `20261022150525` Nova, theme, bidi pseudo-locale, and accessibility-theme preference combinations, Escape set its `hidden` property. In the eight textfox profiles it immediately computed `display: none` and zero geometry, matching the themed hidden-selector intent. In vanilla the same immediate snapshot computed `display: flex` with nonzero geometry despite `hidden: true`; the probe does not determine whether Firefox clips or animates it. An initial test incorrectly required vanilla `display: none` and failed. The corrected assertion treats that difference as an observation; no product defect or new invariant was established. This does not prove painted closure or later animation behavior. Run `MOZ_HEADLESS=1 "$HOME/.cache/textfox-firefox-live/venv/bin/python" tools/firefox-chrome/test-findbar-live.py`.
+
 ## Findbar hover and title styles
 
 `test-findbar-live.py` now sets a non-default accent in themed disposable profiles and locks `:hover` on an open findbar using `InspectorUtils`. In all eight Firefox 159.0 build `20261022150525` combinations of browser Nova, bidi pseudo-locale, and accessibility-theme preference, the bar's computed top-border color and its `::before` title color matched the configured accent. The pseudo-element computed content `"find"` and `display: flex`. The probe verifies pseudo-class state and computed styles, not real pointer hover, painted title geometry, legibility, or real OS forced colors. Run `MOZ_HEADLESS=1 "$HOME/.cache/textfox-firefox-live/venv/bin/python" tools/firefox-chrome/test-findbar-live.py`.

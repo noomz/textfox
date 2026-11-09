@@ -188,9 +188,19 @@ def check(nova, themed, high_contrast, rtl):
                     raise RuntimeError('findbar did not select the matching text after a miss')
                 time.sleep(.1)
             m.set_context('chrome')
+            m.execute_script("document.querySelector('findbar:not([hidden])').setAttribute('data-textfox-probe','true')", sandbox='system')
             m.actions.sequence('key', 'keyboard').send_keys(Keys.ESCAPE).perform()
-            if m.execute_script("return !!document.querySelector('findbar:not([hidden])')", sandbox='system'):
-                raise RuntimeError('Escape did not close findbar')
+            hidden = m.execute_script("""
+                const bar=document.querySelector('findbar[data-textfox-probe]');
+                if (!bar) return null;
+                const r=bar.getBoundingClientRect();
+                return {hidden:bar.hidden, display:getComputedStyle(bar).display, width:r.width, height:r.height};
+                """, sandbox='system')
+            print(json.dumps({'nova':nova, 'themed':themed, 'closedFindbar':hidden}), flush=True)
+            if not hidden or not hidden['hidden']:
+                raise RuntimeError(f'Escape did not mark the same findbar hidden: {hidden}')
+            if themed and (hidden['display'] != 'none' or hidden['width'] != 0 or hidden['height'] != 0):
+                raise RuntimeError(f'textfox did not remove hidden findbar geometry: {hidden}')
         finally:
             try:
                 if m:
