@@ -12,7 +12,7 @@ import time
 from ff_inspect import connect
 
 ROOT = Path(__file__).resolve().parents[2]
-PAGES = ('about:preferences', 'about:config', 'about:profiles', 'about:addons', 'about:support')
+PAGES = ('about:preferences', 'about:config', 'about:profiles', 'about:addons', 'about:support', 'about:about')
 
 
 def check(nova):
@@ -54,26 +54,44 @@ def check(nova):
                         if time.monotonic() >= deadline:
                             raise RuntimeError('about:preferences navigation controls did not initialize')
                         time.sleep(.1)
-                result = m.execute_script("""
+                script = """
                     const names = new Set(['button', 'input', 'select', 'textarea', 'checkbox', 'menulist', 'moz-button', 'moz-page-nav-button']);
+                    if (location.href === 'about:about') names.add('a');
                     const controls = [...document.querySelectorAll('*')].filter(node => names.has(node.localName));
                     const shadowControls = controls.flatMap(host => host.shadowRoot
                       ? [...host.shadowRoot.querySelectorAll('*')].filter(node => names.has(node.localName))
-                          .map(node => ({host:host.localName, tag:node.localName, font:getComputedStyle(node).fontFamily}))
+                          .map(node => ({host:host.localName, tag:node.localName, font:getComputedStyle(node).fontFamily,
+                            connected:node.isConnected, display:getComputedStyle(node).display,
+                            rects:node.getClientRects().length, hostHidden:host.hidden}))
                       : []);
                     return {url:location.href, state:document.readyState,
+                      listedAboutPages:location.href === 'about:about'
+                        ? [...document.querySelectorAll('a[href^="about:"]')].map(a=>a.getAttribute('href')).sort() : null,
                       body:!!document.body, font:document.body && getComputedStyle(document.body).fontFamily,
                       controls:controls.length, shadowControlCount:shadowControls.length,
                       differingShadowControls:shadowControls.filter(node => node.font !== 'monospace'),
                       differingControls:controls.filter(node => getComputedStyle(node).fontFamily !== 'monospace')
-                        .map(node => ({tag:node.localName, id:node.id, font:getComputedStyle(node).fontFamily}))};
-                    """)
+                        .map(node => ({tag:node.localName, id:node.id, font:getComputedStyle(node).fontFamily,
+                          connected:node.isConnected, display:getComputedStyle(node).display,
+                          rects:node.getClientRects().length, hidden:node.hidden}))};
+                    """
+                deadline = time.monotonic() + 10
+                while True:
+                    result = m.execute_script(script)
+                    differences = result['differingControls'] + result['differingShadowControls']
+                    if not differences or any(item['font'] for item in differences):
+                        break
+                    if time.monotonic() >= deadline:
+                        raise RuntimeError(f'about page controls did not reach a computed font: {result}')
+                    time.sleep(.1)
                 print(json.dumps({'firefox': metadata, 'requested': page, 'result': result}), flush=True)
                 if (result['url'].split('#')[0] != page or not result['body'] or result['font'] != 'monospace'
                         or result['differingControls'] or result['differingShadowControls']):
                     raise RuntimeError(f'about page font or navigation differs from configuration: {result}')
                 if result['controls'] == 0:
                     raise RuntimeError(f'{page} control fixture is empty')
+                if page == 'about:about' and (not result['listedAboutPages'] or 'about:about' not in result['listedAboutPages']):
+                    raise RuntimeError(f'about page index fixture is incomplete: {result}')
                 if page in ('about:preferences', 'about:addons') and result['shadowControlCount'] == 0:
                     raise RuntimeError(f'{page} shadow control fixture is empty')
         finally:
