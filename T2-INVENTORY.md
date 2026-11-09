@@ -4,6 +4,10 @@ This is a working ledger, not a support claim. Each group lists syntax in the ch
 
 Unless noted otherwise, source links use Firefox `FIREFOX_159_0_RELEASE` commit `9a2dc53c369c7ae5172018b35988e1d2ffeff402`. Live evidence in `NOVA-PORT.md` uses Linux Firefox 159.0 build `20261022150525`; the tag-to-build correspondence has not been established. A source match is not a live match, and a computed style is not a painted result.
 
+## Shared icon scope
+
+`chrome/icons.css` has 241 syntactic rule records in the current generator output. Grouping each record by its first enclosing media rule yields 128 under `shyfox.enable.context.menu.icons`, 23 under `shyfox.enable.ext.mono.context.icons`, 13 under `shyfox.enable.ext.mono.toolbar.icons`, and 77 without an enclosing media rule. Counts include nested rules and do not count distinct DOM targets. Conditional extension rules may need disposable extensions or representative fixtures to reach their states; absence of such an extension in a default profile is not evidence of a stale selector. No icon group is fully audited yet. Existing new-private-window icon and resource evidence is recorded in `NOVA-PORT.md`; matching, rendering, and interaction for other targets remain open.
+
 ## Tabs
 
 | textfox rule group | Source and live evidence | Unresolved |
