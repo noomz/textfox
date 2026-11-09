@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Check context icon source comparison against a minimal markup fixture."""
 import importlib.util
+import json
 from pathlib import Path
 import tempfile
 
@@ -16,4 +17,15 @@ with tempfile.TemporaryDirectory() as directory:
     assert result['found'] == ['context-openlinkprivate'], result
     assert 'context-back' in result['notInFile'], result
     assert 'not-in-theme' not in result['found'], result
+    sample = {'firefox':{'nova':False, 'iconPref':True, 'version':'test', 'build':'fixture'},
+              'item':{'menuItems':[{'id':'context-openlinkprivate', 'hidden':False, 'display':'flex',
+                                    'visibility':'visible', 'width':20, 'height':20},
+                                   {'id':'context-back', 'hidden':True, 'display':'none',
+                                    'visibility':'visible', 'width':0, 'height':0}]}}
+    live = Path(directory) / 'live.jsonl'
+    live.write_text(json.dumps(sample) + '\n')
+    profile = module.compare_live(result, live)[0]
+    assert profile['candidateVisible'] == ['context-openlinkprivate'], profile
+    assert 'context-back' in profile['candidatePresent'], profile
+    assert 'context-copy' in profile['candidateAbsent'], profile
 print('Context icon source fixture passed')

@@ -152,7 +152,12 @@ def check(nova, enabled, pdf):
                     const style=getComputedStyle(item), rect=item.getBoundingClientRect();
                     const legacyPdf=popup.querySelectorAll('#context-pdfjs-selectall');
                     const currentPdf=popup.querySelectorAll('#context-pdfjs-select-all');
-                    return {state:popup.state, hidden:item.hidden, image:style.backgroundImage,
+                    const menuItems=[...popup.querySelectorAll('menuitem[id],menu[id]')].map(e=>{
+                      const s=getComputedStyle(e),r=e.getBoundingClientRect();
+                      return {id:e.id,hidden:e.hidden,display:s.display,visibility:s.visibility,image:s.backgroundImage,
+                        width:r.width,height:r.height};
+                    });
+                    return {state:popup.state, hidden:item.hidden, image:style.backgroundImage, menuItems,
                       pdfSelectAll:{legacyCount:legacyPdf.length,currentCount:currentPdf.length,
                         currentHidden:currentPdf[0]?.hidden},
                       legacyMedia:matchMedia('(-moz-bool-pref: "shyfox.enable.context.menu.icons")').matches,
