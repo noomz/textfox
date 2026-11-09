@@ -7,6 +7,7 @@ import shutil
 import socket
 import subprocess
 import tempfile
+import time
 
 from ff_inspect import connect
 
@@ -23,7 +24,8 @@ def check(nova, themed):
             shutil.copytree(ROOT / 'chrome', profile / 'chrome')
             (profile / 'chrome' / 'config.css').write_text(
                 ':root { --tf-border-width: 7px; --tf-rounding: 3px; '
-                '--tf-bg: rgb(23, 47, 71); --tf-accent: rgb(19, 83, 137); }\n')
+                '--tf-bg: rgb(23, 47, 71); --tf-accent: rgb(19, 83, 137); '
+                '--tf-display-nav-buttons: flex; }\n')
         prefs = {'marionette.port': port, 'browser.nova.enabled': nova,
                  'toolkit.legacyUserProfileCustomizations.stylesheets': True,
                  'browser.shell.checkDefaultBrowser': False}
@@ -45,6 +47,15 @@ def check(nova, themed):
                 """, sandbox='system')
             if process.poll() is not None or Path(metadata['profile']).resolve() != profile.resolve() or metadata['nova'] != nova:
                 raise RuntimeError('unexpected Firefox process, profile, or Nova preference')
+            m.set_context('content')
+            m.navigate('data:text/html,toolbar-hover-first')
+            m.navigate('data:text/html,toolbar-hover-second')
+            m.set_context('chrome')
+            deadline = time.monotonic() + 15
+            while not m.execute_script("return !!document.querySelector('#back-button:not([disabled]) .toolbarbutton-icon')", sandbox='system'):
+                if time.monotonic() >= deadline:
+                    raise RuntimeError('enabled Back button did not initialize')
+                time.sleep(.1)
             result = m.execute_script("""
                 const root=document.documentElement;
                 const names=['--toolbar-color','--link-color','--urlbarView-highlight-background',
@@ -81,7 +92,35 @@ def check(nova, themed):
                            '--toolbarbutton-hover-background', '--button-background-color-active')
                 if any(not control[name] for name in outputs) or restored != before:
                     raise RuntimeError(f'root input intervention inconclusive: {result}')
-            print(json.dumps({'firefox':metadata, 'themed':themed, 'result':result}), flush=True)
+            hover = m.execute_script("""
+                const button=document.getElementById('back-button'), icon=button.querySelector('.toolbarbutton-icon');
+                const inputs=['--toolbarbutton-hover-background','--toolbarbutton-background-color-hover','transition'];
+                const saved=inputs.map(n=>({name:n,value:icon.style.getPropertyValue(n),priority:icon.style.getPropertyPriority(n)}));
+                InspectorUtils.addPseudoClassLock(button, ':hover');
+                try {
+                  icon.style.setProperty('transition','none','important');
+                  const measure=()=>({hover:button.matches(':hover'),background:getComputedStyle(icon).backgroundColor});
+                  const before=measure();
+                  icon.style.setProperty(inputs[0],'rgb(19, 83, 137)','important');
+                  const oldToken=measure();
+                  icon.style.removeProperty(inputs[0]);
+                  icon.style.setProperty(inputs[1],'rgb(173, 89, 41)','important');
+                  const currentToken=measure();
+                  return {before,oldToken,currentToken};
+                } finally {
+                  InspectorUtils.removePseudoClassLock(button, ':hover');
+                  for (const {name,value,priority} of saved) {
+                    if (value) icon.style.setProperty(name,value,priority);
+                    else icon.style.removeProperty(name);
+                  }
+                }
+                """, sandbox='system')
+            if not all(hover[key]['hover'] for key in ('before', 'oldToken', 'currentToken')):
+                raise RuntimeError(f'Back button hover fixture failed: {hover}')
+            if hover['currentToken']['background'] != 'rgb(173, 89, 41)':
+                raise RuntimeError(f'current toolbar hover token control failed: {hover}')
+            print(json.dumps({'firefox':metadata, 'themed':themed, 'result':result,
+                              'backHover':hover}), flush=True)
         finally:
             try:
                 if m:
