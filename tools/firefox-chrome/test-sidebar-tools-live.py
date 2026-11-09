@@ -23,7 +23,7 @@ def check(nova, display, vertical):
         shutil.copytree(ROOT / 'chrome', profile / 'chrome')
         (profile / 'chrome' / 'config.css').write_text(
             f':root {{ --tf-display-sidebar-tools: {display}; --tf-text-transform: uppercase; '
-            '--tf-accent: rgb(19, 83, 137); }\n')
+            '--tf-accent: rgb(19, 83, 137); --tf-rounding: 5px; }\n')
         prefs = {'marionette.port': port, 'browser.nova.enabled': nova,
                  'sidebar.revamp': True, 'sidebar.verticalTabs': vertical,
                  'sidebar.visibility': 'always-show',
@@ -135,11 +135,13 @@ def check(nova, display, vertical):
                     const strip=document.querySelector('box#vertical-tabs');
                     const tabs=document.getElementById('tabbrowser-tabs');
                     const label=tabs.querySelector('.tabbrowser-tab[selected] .tab-label');
-                    if (!label) throw new Error('selected vertical tab label missing');
-                    const title=getComputedStyle(strip,'::before');
+                    const background=tabs.querySelector('.tabbrowser-tab[selected] .tab-background');
+                    if (!label || !background) throw new Error('selected vertical tab fixture missing');
+                    const bg=getComputedStyle(background), title=getComputedStyle(strip,'::before');
                     InspectorUtils.addPseudoClassLock(strip, ':hover');
                     return {transform:getComputedStyle(tabs).textTransform,
                       labelTransform:getComputedStyle(label).textTransform,
+                      backgroundRadius:bg.borderTopLeftRadius, radiusToken:bg.getPropertyValue('--tab-border-radius').trim(),
                       title:title.content,titleDisplay:title.display};
                     """, sandbox='system')
                 try:
@@ -161,6 +163,7 @@ def check(nova, display, vertical):
                                   'verticalStyles':vertical_styles, 'verticalHover':hover}), flush=True)
                 if (vertical_styles['transform'] != 'uppercase'
                         or vertical_styles['labelTransform'] != 'uppercase'
+                        or vertical_styles['radiusToken'] != '5px' or vertical_styles['backgroundRadius'] != '5px'
                         or vertical_styles['title'] != '"tabs"'
                         or vertical_styles['titleDisplay'] != 'flex'
                         or not hover['matches'] or hover['titleColor'] != 'rgb(19, 83, 137)'):
@@ -204,11 +207,17 @@ def check(nova, display, vertical):
                     const old=document.querySelectorAll(`${base} #vertical-pinned-tabs-container`);
                     const current=document.querySelectorAll(`${base} #pinned-tabs-container`);
                     const stacks=[...document.querySelectorAll(`${base} .tab-stack`)];
+                    const pinned=[...document.querySelectorAll(`${base} .tabbrowser-tab[pinned] .tab-background`)];
                     return {legacyCount:old.length,currentCount:current.length,stackCount:stacks.length,
+                      pinnedRadii:pinned.map(e=>({radius:getComputedStyle(e).borderTopLeftRadius,
+                        token:getComputedStyle(e).getPropertyValue('--tab-border-radius').trim()})),
                       stackWidths:stacks.map(e=>({width:e.getBoundingClientRect().width,
                         computedWidth:getComputedStyle(e).width}))};
                     """, sandbox='system')
-                if selector_state['currentCount'] != 1 or selector_state['stackCount'] < 4:
+                if (selector_state['currentCount'] != 1 or selector_state['stackCount'] < 4
+                        or len(selector_state['pinnedRadii']) != 4
+                        or any(item['token'] != '5px' or item['radius'] != '5px'
+                               for item in selector_state['pinnedRadii'])):
                     raise RuntimeError(f'vertical tab selector fixture unavailable: {selector_state}')
                 print(json.dumps({'nova': nova, 'multiplePinned': multiple,
                                   'collapsedSelectors':selector_state}), flush=True)
