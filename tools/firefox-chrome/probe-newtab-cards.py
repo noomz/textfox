@@ -18,7 +18,7 @@ ROOT = Path(__file__).resolve().parents[2]
 PREFIX = 'browser.newtabpage.activity-stream.'
 
 
-def check(browser_nova, newtab_nova, themed):
+def check(browser_nova, newtab_nova, themed, page):
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0))
         port = sock.getsockname()[1]
@@ -71,11 +71,11 @@ def check(browser_nova, newtab_nova, themed):
                 """, sandbox='system')
             if seeded != 5:
                 raise RuntimeError(f'visited bookmark fixture failed: {seeded}')
-            m.execute_script('gBrowser.selectedTab = gBrowser.addTrustedTab("about:newtab")', sandbox='system')
+            m.execute_script('gBrowser.selectedTab = gBrowser.addTrustedTab(arguments[0])', script_args=[page], sandbox='system')
             m.set_context('content')
             m.switch_to_window(m.window_handles[-1])
             deadline = time.monotonic() + 30
-            while not m.execute_script("return location.href === 'about:newtab' && !!document.querySelector('section.compact-cards')"):
+            while not m.execute_script("return location.href === arguments[0] && !!document.querySelector('section.compact-cards')", script_args=[page]):
                 if time.monotonic() >= deadline:
                     raise RuntimeError('recent-activity section did not initialize')
                 time.sleep(.2)
@@ -108,7 +108,7 @@ def check(browser_nova, newtab_nova, themed):
                 if time.monotonic() >= deadline:
                     raise RuntimeError('visited bookmark card did not initialize')
                 time.sleep(.2)
-            if (result['url'] != 'about:newtab' or not result['card'] or not result['preview']
+            if (result['url'] != page or not result['card'] or not result['preview']
                     or not result['context'] or result['outer']['width'] <= 0 or result['outer']['height'] <= 0):
                 raise RuntimeError(f'card fixture incomplete: {result}')
             if themed and (result['outer']['border'] != '7px' or result['outer']['borderStyle'] != 'solid'
@@ -151,4 +151,5 @@ if __name__ == '__main__':
     for browser_nova in (False, True):
         for newtab_nova in (False, True):
             for themed in (False, True):
-                check(browser_nova, newtab_nova, themed)
+                for page in ('about:newtab', 'about:home'):
+                    check(browser_nova, newtab_nova, themed, page)
