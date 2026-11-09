@@ -99,7 +99,9 @@ def check(browser_nova, newtab_nova, themed):
                       card:inspect(card.querySelector('.card')),
                       preview:inspect(card.querySelector('.card-preview-image-outer')),
                       context:inspect(card.querySelector('.card-context')),
-                      contextText:card.querySelector('.card-context')?.textContent.trim()};
+                      contextText:card.querySelector('.card-context')?.textContent.trim(),
+                      contextMarkup:card.querySelector('.card-context')?.outerHTML,
+                      cardAriaHidden:card.getAttribute('aria-hidden')};
                     """)
                 if result:
                     break
@@ -113,7 +115,25 @@ def check(browser_nova, newtab_nova, themed):
                            or result['outer']['radius'] != '3px' or result['card']['radius'] != '3px'
                            or result['preview']['radius'] != '3px' or result['context']['display'] != 'none'):
                 raise RuntimeError(f'configured card styles did not apply: {result}')
-            print(json.dumps({'firefox':metadata, 'themed':themed, 'result':result}), flush=True)
+            card = m.execute_script("return [...document.querySelectorAll('.card-outer')].find(e => e.textContent.includes('Textfox test'))")
+            link = card.find_element('css selector', 'a')
+            link_properties = link.accessibility_properties
+            pending = list(link_properties['children'])
+            descendants = []
+            while pending:
+                if len(descendants) >= 100:
+                    raise RuntimeError('card accessibility subtree exceeded probe limit')
+                node = m.get_accessibility_properties_for_accessibility_node(pending.pop())
+                descendants.append({'label':node.get('label'), 'role':node.get('role')})
+                pending.extend(node.get('children', []))
+            context_label = card.find_element('css selector', '.card-context-label')
+            context_accessibility = context_label.accessibility_properties
+            accessibility = {'linkLabel':link.computed_label, 'linkRole':link.computed_role,
+                             'descendants':descendants, 'contextLabel':context_accessibility}
+            if accessibility['linkRole'] != 'link' or 'Textfox test' not in accessibility['linkLabel']:
+                raise RuntimeError(f'card link accessibility fixture unavailable: {accessibility}')
+            print(json.dumps({'firefox':metadata, 'themed':themed, 'result':result,
+                              'accessibility':accessibility}), flush=True)
         finally:
             try:
                 if m:
