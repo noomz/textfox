@@ -148,6 +148,37 @@ def check(nova, themed, high_contrast, rtl):
                 time.sleep(.1)
             m.set_context('chrome')
             field.send_keys(Keys.CONTROL, 'a')
+            field.send_keys('UNIQUE-FIND-TARGET')
+            field.click()
+            for tabs in range(20):
+                focus = m.execute_script("""
+                    const e=document.querySelector('findbar:not([hidden]) .findbar-case-sensitive');
+                    const s=getComputedStyle(e);
+                    return {focused:e.matches(':focus-within'), visible:e.matches(':focus-visible'),
+                      outlineStyle:s.outlineStyle, outlineWidth:s.outlineWidth};
+                    """, sandbox='system')
+                if focus['focused']:
+                    break
+                m.actions.sequence('key', 'keyboard').send_keys(Keys.TAB).perform()
+            else:
+                raise RuntimeError(f'keyboard Tab did not reach Match Case: {focus}')
+            if not focus['visible']:
+                raise RuntimeError(f'Match Case keyboard focus is not focus-visible: {focus}')
+            m.actions.sequence('key', 'keyboard').send_keys(Keys.SPACE).perform()
+            deadline = time.monotonic() + 10
+            while not m.execute_script("const b=document.querySelector('findbar:not([hidden])'); return b.querySelector('.findbar-case-sensitive').checked && b._findField.getAttribute('status') === 'notfound'", sandbox='system'):
+                if time.monotonic() >= deadline:
+                    raise RuntimeError('keyboard Match Case did not produce a case-sensitive miss')
+                time.sleep(.1)
+            m.actions.sequence('key', 'keyboard').send_keys(Keys.SPACE).perform()
+            deadline = time.monotonic() + 10
+            while m.execute_script("const b=document.querySelector('findbar:not([hidden])'); return b.querySelector('.findbar-case-sensitive').checked || b._findField.getAttribute('status') === 'notfound'", sandbox='system'):
+                if time.monotonic() >= deadline:
+                    raise RuntimeError('keyboard Match Case did not restore the match')
+                time.sleep(.1)
+            print(json.dumps({'nova':nova, 'themed':themed, 'rtl':rtl, 'highContrast':high_contrast,
+                              'keyboardCase':{'tabs':tabs, 'focus':focus, 'toggledOnAndOff':True}}), flush=True)
+            field.send_keys(Keys.CONTROL, 'a')
             field.send_keys('textfox-definitely-absent')
             deadline = time.monotonic() + 10
             while not m.execute_script("return document.querySelector('findbar:not([hidden]) .findbar-textbox')?.getAttribute('status') === 'notfound'", sandbox='system'):
