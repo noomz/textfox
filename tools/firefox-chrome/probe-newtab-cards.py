@@ -94,6 +94,7 @@ def check(browser_nova, newtab_nova, themed, page):
                     if (!card) return null;
                     const inspect=e=>{if(!e)return null; const s=getComputedStyle(e),r=e.getBoundingClientRect();
                       return {display:s.display,visibility:s.visibility,width:r.width,height:r.height,
+                        background:s.backgroundColor,secondary:s.getPropertyValue('--newtab-background-color-secondary').trim(),
                         border:s.borderTopWidth,borderStyle:s.borderTopStyle,radius:s.borderTopLeftRadius};};
                     return {url:location.href, text:card.textContent.trim(), outer:inspect(card),
                       card:inspect(card.querySelector('.card')),
@@ -115,6 +116,16 @@ def check(browser_nova, newtab_nova, themed, page):
                            or result['outer']['radius'] != '3px' or result['card']['radius'] != '3px'
                            or result['preview']['radius'] != '3px' or result['context']['display'] != 'none'):
                 raise RuntimeError(f'configured card styles did not apply: {result}')
+            secondary_control = m.execute_script("""
+                const card=[...document.querySelectorAll('.card-outer')].find(e=>e.textContent.includes('Textfox test'));
+                const name='--newtab-background-color-secondary', original=card.style.getPropertyValue(name),
+                  priority=card.style.getPropertyPriority(name), before=getComputedStyle(card).backgroundColor;
+                card.style.setProperty(name,'rgb(31, 91, 151)','important');
+                try { return {before,during:getComputedStyle(card).backgroundColor}; }
+                finally { if (original) card.style.setProperty(name,original,priority); else card.style.removeProperty(name); }
+                """)
+            if secondary_control['during'] != 'rgb(31, 91, 151)' or secondary_control['before'] == secondary_control['during']:
+                raise RuntimeError(f'card secondary-background intervention inconclusive: {secondary_control}')
             card = m.execute_script("return [...document.querySelectorAll('.card-outer')].find(e => e.textContent.includes('Textfox test'))")
             link = card.find_element('css selector', 'a')
             link_properties = link.accessibility_properties
@@ -133,7 +144,7 @@ def check(browser_nova, newtab_nova, themed, page):
             if accessibility['linkRole'] != 'link' or 'Textfox test' not in accessibility['linkLabel']:
                 raise RuntimeError(f'card link accessibility fixture unavailable: {accessibility}')
             print(json.dumps({'firefox':metadata, 'themed':themed, 'result':result,
-                              'accessibility':accessibility}), flush=True)
+                              'secondaryControl':secondary_control, 'accessibility':accessibility}), flush=True)
         finally:
             try:
                 if m:
