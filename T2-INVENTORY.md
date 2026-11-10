@@ -4,6 +4,10 @@ This is a working ledger, not a support claim. Each group lists syntax in the ch
 
 Unless noted otherwise, source links use Firefox `FIREFOX_159_0_RELEASE` commit `9a2dc53c369c7ae5172018b35988e1d2ffeff402`. Live evidence in `NOVA-PORT.md` uses Linux Firefox 159.0 build `20261022150525`; the tag-to-build correspondence has not been established. A source match is not a live match, and a computed style is not a painted result.
 
+## Rule-record routing
+
+`tools/firefox-chrome/check-rule-ledger.py` routes every syntactic rule record from `inventory-css.py` to a section of this ledger and, for icons, a specific scope group. In the current checkout it routes 377 records: 136 component records and 241 icon records. The icon scopes are 77 unconditional, 13 extension-toolbar, 23 extension-context, 75 content-context, 10 toolbar/extension-context, 19 Places, 11 downloads, 4 sidebar, and 9 bookmarks-popup records. Counts include parent and nested rules, not distinct selectors or matched DOM elements. The checker rejects unknown CSS files, media contexts, or icon anchors rather than silently routing them. Routing links syntax to group-level evidence and explicit gaps; it does **not** mean each selector, declaration, or state has been audited, and T2 remains open.
+
 ## Custom-property syntax reconciliation
 
 `tools/firefox-chrome/inventory-variables.py --non-textfox` lists every non-`--tf-*` declaration and `var()` reference, with file, line, enclosing rules, and consuming property. In this checkout it reconciles with `inventory-css.py`: 40 distinct names, 55 declaration records, and 63 reference records. Twenty-three names are assigned but not referenced by textfox; nine are referenced but not assigned by textfox. These are checkout-only syntax counts: Firefox may supply or consume them, and they do not establish matching or visual behavior. The component evidence and gaps below remain the T2 gate.
