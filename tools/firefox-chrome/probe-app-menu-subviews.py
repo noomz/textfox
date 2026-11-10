@@ -3,6 +3,7 @@
 import json
 import os
 from pathlib import Path
+import runpy
 import shutil
 import socket
 import subprocess
@@ -27,6 +28,14 @@ VIEWS = (
 
 
 def check(nova, themed):
+    selector_path=os.environ.get('TEXTFOX_SELECTOR_INVENTORY')
+    selector_records=None
+    selector_query=None
+    if selector_path:
+        selector_records=[r for r in json.loads(Path(selector_path).read_text()) if r['file']=='chrome/icons.css']
+        if not selector_records:
+            raise ValueError('selector inventory has no icon records')
+        selector_query=runpy.run_path(str(ROOT / 'tools/firefox-chrome/probe-selector-dom.py'))['query']
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0))
         port = sock.getsockname()[1]
@@ -127,6 +136,8 @@ def check(nova, themed):
                 if negative['loaded'] or negative.get('reason') != 'error':
                     raise RuntimeError(f'icon-resource negative control failed: {negative}')
                 state['resources']=resources[:-1]
+                if selector_query:
+                    state['selectorRecords']=selector_query(m,selector_records)
                 if themed and (any(item['image'] == 'none' for item in [*visible,*visible_developer])
                                or any(not item['loaded'] or item.get('width',0) <= 0 or item.get('height',0) <= 0
                                       for item in state['resources'])):
@@ -154,6 +165,12 @@ def check(nova, themed):
                                    or 'bookmark.svg' not in starred['image']):
                         raise RuntimeError(f'bookmark icon did not change with starred state: {starred}')
                     state['starredControl']=starred
+                    if selector_query:
+                        state['starredSelectorRecords']=selector_query(m,selector_records)
+                        matched=[r for r in state['starredSelectorRecords']
+                                 if r['selector'] == '#panelMenuBookmarkThisPage[starred]']
+                        if len(matched) != 1 or matched[0]['status'] != 'structural-match':
+                            raise RuntimeError(f'starred icon selector did not match: {matched}')
                 states[name]=state
                 m.execute_script('PanelUI.hide()',sandbox='system')
                 deadline=time.monotonic()+10
