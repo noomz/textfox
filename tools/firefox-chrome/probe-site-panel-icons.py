@@ -30,7 +30,7 @@ class Fixture(http.server.BaseHTTPRequestHandler):
         pass
 
 
-def check(nova, themed):
+def check(nova, themed, trust_panel):
     selector_path = os.environ.get('TEXTFOX_SELECTOR_INVENTORY')
     selector_records = None
     selector_query = None
@@ -52,7 +52,7 @@ def check(nova, themed):
                 shutil.copytree(ROOT / 'chrome', profile / 'chrome')
                 (profile / 'chrome/config.css').write_text(':root { --tf-display-urlbar-icons: flex; }\n')
             prefs = {'marionette.port': port, 'browser.nova.enabled': nova,
-                     'browser.urlbar.trustPanel.featureGate': False,
+                     'browser.urlbar.trustPanel.featureGate': trust_panel,
                      'toolkit.legacyUserProfileCustomizations.stylesheets': True,
                      'browser.shell.checkDefaultBrowser': False}
             (profile / 'user.js').write_text(''.join(f'user_pref({json.dumps(k)}, {json.dumps(v)});\n' for k, v in prefs.items()))
@@ -69,7 +69,7 @@ def check(nova, themed):
                       build:Services.appinfo.appBuildID,nova:Services.prefs.getBoolPref('browser.nova.enabled'),
                       trustPanel:Services.prefs.getBoolPref('browser.urlbar.trustPanel.featureGate')};
                     """, sandbox='system')
-                if process.poll() is not None or Path(meta['profile']).resolve() != profile.resolve() or meta['nova'] != nova or meta['trustPanel']:
+                if process.poll() is not None or Path(meta['profile']).resolve() != profile.resolve() or meta['nova'] != nova or meta['trustPanel'] != trust_panel:
                     raise RuntimeError(f'unexpected Firefox process or profile: {meta}')
                 m.set_context('content')
                 m.navigate(f'http://127.0.0.1:{server.server_port}/')
@@ -81,14 +81,15 @@ def check(nova, themed):
                         raise RuntimeError('identity page proxy did not become valid')
                     time.sleep(.1)
                 initial_shield = m.execute_script("const e=document.getElementById('tracking-protection-icon-container'),s=getComputedStyle(e),r=e.getBoundingClientRect();return {display:s.display,width:r.width,height:r.height,token:getComputedStyle(document.documentElement).getPropertyValue('--tf-display-urlbar-icons').trim()}", sandbox='system')
-                if initial_shield['display'] == 'none' or initial_shield['width'] <= 0 or initial_shield['height'] <= 0:
+                if not trust_panel and (initial_shield['display'] == 'none' or initial_shield['width'] <= 0 or initial_shield['height'] <= 0):
                     raise RuntimeError(f'protection icon unavailable: {initial_shield}')
                 results = {}
-                for button_id, popup_id, targets in (
+                panels = (('identity-icon-box', 'trustpanel-popup', ('trustpanel-clear-cookies-button', 'trustpanel-privacy-link')),) if trust_panel else (
                     ('tracking-protection-icon-container', 'protections-popup',
                      ('protections-popup-settings-button', 'protections-popup-show-report-stack')),
                     ('identity-icon-box', 'identity-popup', ('identity-popup-clear-sitedata-button',)),
-                ):
+                )
+                for button_id, popup_id, targets in panels:
                     m.find_element('id', button_id).click()
                     deadline = time.monotonic() + 15
                     while not m.execute_script("return document.getElementById(arguments[0])?.state === 'open'", script_args=[popup_id], sandbox='system'):
@@ -107,7 +108,7 @@ def check(nova, themed):
                            or item['visibility']!='visible' or item['width']<=0 or item['height']<=0 for item in sample):
                         raise RuntimeError(f'{popup_id} targets unavailable: {sample}')
                     resources = []
-                    if themed:
+                    if themed and not trust_panel:
                         resources = m.execute_async_script("""
                             const done=arguments[arguments.length-1],ids=arguments[0], urls=ids.map(id=>getComputedStyle(document.getElementById(id)).listStyleImage);
                             urls.push('url("chrome://global/skin/icons/textfox-nonexistent-resource.svg")');
@@ -124,7 +125,13 @@ def check(nova, themed):
                         if negative.get('loaded') or negative.get('reason') != 'error' or any(not r['loaded'] or r['width']<=0 or r['height']<=0 for r in resources):
                             raise RuntimeError(f'{popup_id} icon resources unavailable: {resources}, {negative}')
                     selectors = selector_query(m, selector_records) if selector_query else []
-                    results[popup_id] = {'targets': sample, 'resources': resources, 'selectorRecords': selectors}
+                    legacy_targets = m.execute_script("""
+                        const popup=document.getElementById(arguments[0]);
+                        return ['protections-popup-settings-button','protections-popup-show-report-stack','identity-popup-clear-sitedata-button']
+                          .map(id=>{const e=document.getElementById(id);return {id,present:!!e,inPopup:!!e && popup.contains(e)};});
+                        """, script_args=[popup_id], sandbox='system')
+                    results[popup_id] = {'targets': sample, 'resources': resources, 'selectorRecords': selectors,
+                                         'legacyTargets': legacy_targets}
                     m.execute_script("document.getElementById(arguments[0]).hidePopup()", script_args=[popup_id], sandbox='system')
                     deadline = time.monotonic() + 10
                     while m.execute_script("return document.getElementById(arguments[0]).state", script_args=[popup_id], sandbox='system') != 'closed':
@@ -153,4 +160,5 @@ def check(nova, themed):
 if __name__ == '__main__':
     for nova in (False, True):
         for themed in (False, True):
-            check(nova, themed)
+            for trust_panel in (False, True):
+                check(nova, themed, trust_panel)
