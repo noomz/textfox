@@ -1,6 +1,6 @@
 # Expanded selector evidence
 
-306 of 377 syntactic records structurally matched in at least one supplied snapshot. Other records are not observed in those snapshots; this is not proof they cannot match.
+310 of 377 syntactic records structurally matched in at least one supplied snapshot. Other records are not observed in those snapshots; this is not proof they cannot match.
 A match may be hidden, come from a synthetic control or prior lazy DOM, or sit under an inactive condition. Grouped selectors need branch-specific checks; pseudo-elements are not queried. See probe code and `T2-INVENTORY.md` for conditions and live versus synthetic provenance.
 
 | CSS record | Selector | Matching snapshot labels and JSON paths |
@@ -73,9 +73,9 @@ A match may be hidden, come from a synthetic control or prior lazy DOM, or sit u
 | `chrome/icons.css:131` | `:is(       .webextension-browser-action,       .eom-addon-button     )[data-extensionid="@testpilot-containers"]     .toolbarbutton-icon` | `extension-toolbar:selectorRecords` |
 | `chrome/icons.css:140` | `.toolbarbutton-badge` | `app-subviews:views.bookmarks.selectorRecords`, `app-subviews:views.bookmarks.starredSelectorRecords`, `app-subviews:views.help.selectorRecords`, `app-subviews:views.history.selectorRecords`, `app-subviews:views.more-tools.selectorRecords`, `bookmarks-menu:toolbarStates.hidden.selectorStates.collapsedControl`, `bookmarks-menu:toolbarStates.hidden.selectorStates.popup`, `bookmarks-menu:toolbarStates.visible.selectorStates.popup`, `default-dom:chrome`, `downloads-menu:selectorRecords`, `dynamic-dom:chrome`, `dynamic-dom:chromeStates.app-menu`, `dynamic-dom:chromeStates.bookmarks-sidebar`, `dynamic-dom:chromeStates.findbar`, `dynamic-dom:chromeStates.link-context`, `dynamic-dom:chromeStates.urlbar-results`, `extension-context:selectorRecords`, `extension-toolbar:selectorRecords`, `places-toolbar:placesContext.selectorRecords`, `places-toolbar:selectorStates.folderPopup`, `places-toolbar:selectorStates.toolbar`, `private-link:selectorRecords`, `site-panels:panels.identity-popup.selectorRecords`, `site-panels:panels.protections-popup.selectorRecords`, `site-panels:panels.trustpanel-popup.selectorRecords`, `unified-menu:selectorStates.initialMenu`, `unified-menu:selectorStates.movedMenu` |
 | `chrome/icons.css:148` | `#contentAreaContextMenu,   #toolbar-context-menu,   #unified-extensions-context-menu` | `app-subviews:views.bookmarks.selectorRecords`, `app-subviews:views.bookmarks.starredSelectorRecords`, `app-subviews:views.help.selectorRecords`, `app-subviews:views.history.selectorRecords`, `app-subviews:views.more-tools.selectorRecords`, `bookmarks-menu:toolbarStates.hidden.selectorStates.collapsedControl`, `bookmarks-menu:toolbarStates.hidden.selectorStates.popup`, `bookmarks-menu:toolbarStates.visible.selectorStates.popup`, `default-dom:chrome`, `downloads-menu:selectorRecords`, `dynamic-dom:chrome`, `dynamic-dom:chromeStates.app-menu`, `dynamic-dom:chromeStates.bookmarks-sidebar`, `dynamic-dom:chromeStates.findbar`, `dynamic-dom:chromeStates.link-context`, `dynamic-dom:chromeStates.urlbar-results`, `extension-context:selectorRecords`, `extension-toolbar:selectorRecords`, `places-toolbar:placesContext.selectorRecords`, `places-toolbar:selectorStates.folderPopup`, `places-toolbar:selectorStates.toolbar`, `private-link:selectorRecords`, `site-panels:panels.identity-popup.selectorRecords`, `site-panels:panels.protections-popup.selectorRecords`, `site-panels:panels.trustpanel-popup.selectorRecords`, `unified-menu:selectorStates.initialMenu`, `unified-menu:selectorStates.movedMenu` |
-| `chrome/icons.css:152` | `menuitem[id*="ublock0_raymondhill_net-menuitem-_uBlock0-"]` | Not observed |
+| `chrome/icons.css:152` | `menuitem[id*="ublock0_raymondhill_net-menuitem-_uBlock0-"]` | `extension-context:selectorRecords` |
 | `chrome/icons.css:153` | `.menu-iconic-icon` | Not observed |
-| `chrome/icons.css:160` | `:is(menu, menuitem):not(menu *)[id*="simple-translate_sienori-menuitem-"]` | Not observed |
+| `chrome/icons.css:160` | `:is(menu, menuitem):not(menu *)[id*="simple-translate_sienori-menuitem-"]` | `extension-context:selectorRecords` |
 | `chrome/icons.css:161` | `.menu-iconic-icon` | Not observed |
 | `chrome/icons.css:168` | `#_446900e4-71c2-419f-a6a7-df9c091e268b_-menuitem-_root` | `extension-context:selectorRecords` |
 | `chrome/icons.css:169` | `.menu-iconic-icon` | Not observed |
@@ -88,9 +88,9 @@ A match may be hidden, come from a synthetic control or prior lazy DOM, or sit u
 | `chrome/icons.css:191` | `& > *[id*="-menuitem-_generate-password"]` | `extension-context:selectorRecords` |
 | `chrome/icons.css:194` | `& > *[id*="-menuitem-_copy-identifier"]` | `extension-context:selectorRecords` |
 | `chrome/icons.css:198` | `*[id*="_create-"]` | `extension-context:selectorRecords` |
-| `chrome/icons.css:205` | `#_74145f27-f039-47ce-a470-a662b129930a_-menuitem-_copy-link-to-clipboard` | Not observed |
+| `chrome/icons.css:205` | `#_74145f27-f039-47ce-a470-a662b129930a_-menuitem-_copy-link-to-clipboard` | `extension-context:selectorRecords` |
 | `chrome/icons.css:206` | `.menu-iconic-icon` | Not observed |
-| `chrome/icons.css:214` | `#_b9db16a4-6edc-47ec-a1f4-b86292ed211d_-menuitem-_vdh-top` | Not observed |
+| `chrome/icons.css:214` | `#_b9db16a4-6edc-47ec-a1f4-b86292ed211d_-menuitem-_vdh-top` | `extension-context:selectorRecords` |
 | `chrome/icons.css:215` | `.menu-iconic-icon` | Not observed |
 | `chrome/icons.css:222` | `#sidebarswitcher_menu__446900e4-71c2-419f-a6a7-df9c091e268b_-sidebar-action` | Not observed |
 | `chrome/icons.css:223` | `.menu-iconic-icon` | Not observed |
