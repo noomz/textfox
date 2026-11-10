@@ -3,6 +3,7 @@
 import json
 import os
 from pathlib import Path
+import runpy
 import shutil
 import socket
 import subprocess
@@ -18,6 +19,14 @@ IDS = ('textfox-unified-a@example.invalid', 'textfox-unified-b@example.invalid')
 
 
 def check(nova, enabled):
+    selector_path = os.environ.get('TEXTFOX_SELECTOR_INVENTORY')
+    selector_records = None
+    selector_query = None
+    if selector_path:
+        selector_records = [r for r in json.loads(Path(selector_path).read_text()) if r['file'] == 'chrome/icons.css']
+        if not selector_records:
+            raise ValueError('selector inventory has no icon records')
+        selector_query = runpy.run_path(str(ROOT / 'tools/firefox-chrome/probe-selector-dom.py'))['query']
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0))
         port = sock.getsockname()[1]
@@ -121,6 +130,9 @@ def check(nova, enabled):
             expected='url("chrome://global/skin/icons/settings.svg")' if enabled else 'none'
             if control != expected:
                 raise RuntimeError(f'unified menu icon control failed: {control}')
+            selector_states={}
+            if selector_query:
+                selector_states['initialMenu']=selector_query(m,selector_records)
             order_script = """
                 const {ExtensionCommon}=ChromeUtils.importESModule('resource://gre/modules/ExtensionCommon.sys.mjs');
                 const ids=arguments[0].map(id=>ExtensionCommon.makeWidgetId(id)+'-browser-action');
@@ -155,6 +167,8 @@ def check(nova, enabled):
                 return ['move-widget-up','move-widget-down'].map(name=>{const e=p.querySelector('.unified-extensions-context-menu-'+name);
                   const r=e.getBoundingClientRect(),s=getComputedStyle(e);return {name,hidden:e.hidden,disabled:e.disabled,width:r.width,height:r.height,image:s.backgroundImage};});
                 """,sandbox='system')
+            if selector_query:
+                selector_states['movedMenu']=selector_query(m,selector_records)
             if moved[0]['hidden'] or moved[0]['disabled'] or not moved[1]['hidden']:
                 raise RuntimeError(f'moved menu state unexpected: {moved}')
             m.find_element('css selector','#unified-extensions-context-menu .unified-extensions-context-menu-move-widget-up').click()
@@ -164,7 +178,8 @@ def check(nova, enabled):
                     raise RuntimeError('move-up did not restore fixture order')
                 time.sleep(.1)
             print(json.dumps({'firefox':metadata, 'fixtureButtons':items, 'menu':menu, 'control':control,
-                              'move':{'before':before,'after':after,'movedMenu':moved,'restored':True}}), flush=True)
+                              'move':{'before':before,'after':after,'movedMenu':moved,'restored':True},
+                              'selectorStates':selector_states}), flush=True)
         finally:
             try:
                 if m:
