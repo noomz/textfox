@@ -64,7 +64,7 @@ def check(nova, themed):
                   '--tab-border-radius','--tab-selected-outline-color','--tab-selected-bgcolor',
                   '--tab-hover-background-color','--tab-min-height','--toolbarbutton-hover-background',
                   '--button-background-color-active','--inactive-titlebar-opacity','--toolbar-field-color',
-                  '--toolbar-bgcolor'];
+                  '--toolbar-bgcolor','--toolbarbutton-icon-fill-opacity'];
                 const measure=()=>{const s=getComputedStyle(root); return Object.fromEntries(names.map(n=>[n,s.getPropertyValue(n).trim()]));};
                 const before=measure();
                 if (!arguments[0]) return {before,intervention:null,restored:null};

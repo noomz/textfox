@@ -282,6 +282,8 @@ def check(nova, enabled, pdf, media, keyboard_media):
                         width:r.width,height:r.height};
                     });
                     return {state:popup.state, hidden:item.hidden, image:style.backgroundImage, menuItems,
+                      fillOpacity:style.fillOpacity,
+                      opacityToken:style.getPropertyValue('--toolbarbutton-icon-fill-opacity').trim(),
                       pdfSelectAll:{legacyCount:legacyPdf.length,currentCount:currentPdf.length,
                         currentHidden:currentPdf[0]?.hidden},
                       legacyMedia:matchMedia('(-moz-bool-pref: "shyfox.enable.context.menu.icons")').matches,
@@ -293,6 +295,14 @@ def check(nova, enabled, pdf, media, keyboard_media):
                 if time.monotonic() >= deadline:
                     raise RuntimeError(f'link context menu did not initialize: {state}')
                 time.sleep(.1)
+            opacity_control = m.execute_script("""
+                const e=document.getElementById('context-openlinkprivate');
+                e.style.setProperty('--toolbarbutton-icon-fill-opacity','0.37','important');
+                try { return getComputedStyle(e).fillOpacity; }
+                finally { e.style.removeProperty('--toolbarbutton-icon-fill-opacity'); }
+                """, sandbox='system')
+            if opacity_control != '0.37':
+                raise RuntimeError(f'context icon opacity intervention failed: {opacity_control}')
             extension_media = m.execute_script("""
                 return Object.fromEntries(['shyfox.enable.ext.mono.context.icons', 'shyfox.enable.ext.mono.toolbar.icons']
                   .map(pref => [pref, {legacy:matchMedia(`(-moz-bool-pref: "${pref}")`).matches,
@@ -373,7 +383,8 @@ def check(nova, enabled, pdf, media, keyboard_media):
                 for kind in ('video', 'audio'):
                     other_contexts.update(check_media(m, kind, keyboard_media))
             pdf_result = check_pdf(m, profile, enabled) if pdf else None
-            print(json.dumps({'firefox':metadata, 'item':state, 'otherContexts':other_contexts,
+            print(json.dumps({'firefox':metadata, 'item':state, 'opacityControl':opacity_control,
+                              'otherContexts':other_contexts,
                               'extensionMedia':extension_media, 'modernIntervention':intervention,
                               'pdfSelectorControl':pdf_control, 'pdfEditor':pdf_result}), flush=True)
         finally:

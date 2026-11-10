@@ -63,6 +63,7 @@ def check(nova, color_preference, activation):
                 const privateButton = document.getElementById('appMenu-new-private-window-button2');
                 if (!privateButton) throw new Error('private window menu item not found');
                 const rect = privateButton.getBoundingClientRect(), buttonStyle = getComputedStyle(privateButton);
+                const pseudoStyle=getComputedStyle(privateButton,'::before');
                 const iconIds=['appMenu-new-tab-button2','appMenu-new-window-button2',
                   'appMenu-new-private-window-button2','appMenu-bookmarks-button','appMenu-history-button',
                   'appMenu-downloads-button','appMenu-passwords-button','appMenu-extensions-themes-button',
@@ -84,7 +85,9 @@ def check(nova, color_preference, activation):
                           shadowIdPresent:!!panel.shadowRoot.querySelector('#shadow-root'),
                           contentSlotPart:slot.getAttribute('part')},
                         privateButton:{image:buttonStyle.listStyleImage, display:buttonStyle.display,
-                          width:rect.width, height:rect.height},
+                          width:rect.width, height:rect.height,
+                          pseudoFillOpacity:pseudoStyle.fillOpacity,
+                          pseudoOpacityToken:pseudoStyle.getPropertyValue('--toolbarbutton-icon-fill-opacity').trim()},
                         rootProperties:Object.fromEntries(properties.map(p => [p, root.getPropertyValue(p).trim()]))};
                 """, sandbox='system')
             if (result['panelTokens']['--panel-background'] != 'rgb(23, 47, 71)'
@@ -117,6 +120,14 @@ def check(nova, color_preference, activation):
             if any(not item['loaded'] or item.get('width', 0) <= 0 or item.get('height', 0) <= 0
                    for item in icon_resources if item['id'] != 'textfox-negative-control'):
                 raise RuntimeError(f'app-menu icon resource failed to load: {icon_resources}')
+            opacity_control = m.execute_script("""
+                const e=document.getElementById('appMenu-new-private-window-button2');
+                e.style.setProperty('--toolbarbutton-icon-fill-opacity','0.37','important');
+                try { return getComputedStyle(e,'::before').fillOpacity; }
+                finally { e.style.removeProperty('--toolbarbutton-icon-fill-opacity'); }
+                """, sandbox='system')
+            if opacity_control != '0.37':
+                raise RuntimeError(f'app menu icon opacity intervention failed: {opacity_control}')
             button = result['privateButton']
             if (button['image'] != 'url("chrome://browser/skin/privateBrowsing.svg")'
                     or button['display'] == 'none' or button['width'] <= 0 or button['height'] <= 0):
@@ -148,7 +159,7 @@ def check(nova, color_preference, activation):
             m.actions.sequence('key', 'keyboard').send_keys(Keys.ESCAPE).perform()
             closed = m.execute_script("return document.getElementById('appMenu-popup').state", sandbox='system')
             print(json.dumps({'firefox': metadata, 'baseline': result, 'privateIconResource': image,
-                              'iconResources':icon_resources,
+                              'iconResources':icon_resources, 'opacityControl':opacity_control,
                               'override': override, 'keyboardFocus': focused, 'afterEscape': closed}), flush=True)
             if focused['panelState'] != 'open' or not focused['inPanel'] or closed != 'closed':
                 raise RuntimeError('app menu keyboard navigation or Escape failed')
