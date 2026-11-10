@@ -61,6 +61,14 @@ def check_context(m, selector, expected_id, expected_selection=None, action_id=N
             return {enabled:matchMedia('-moz-pref("shyfox.enable.context.menu.icons")').matches,
               baseline:snapshot(),directControl:run('>'),descendantControl:run('')};
             """, sandbox='system')
+        result['menuInternals'] = m.execute_script("""
+            const e=document.getElementById('context-savepage'),children=InspectorUtils.getChildrenForNode(e,true,false);
+            return {id:e.id,lightLegacyLeft:!!e.querySelector('.menu-iconic-left'),lightLegacyText:!!e.querySelector('.menu-iconic-text'),
+              children:children.filter(n=>n.nodeType===Node.ELEMENT_NODE).map(n=>{const s=getComputedStyle(n),r=n.getBoundingClientRect();
+                return {tag:n.localName,class:n.getAttribute('class'),width:r.width,height:r.height,display:s.display,marginStart:s.marginInlineStart};})};
+            """,sandbox='system')
+        if not any(item['class']=='menu-text' for item in result['menuInternals']['children']):
+            raise RuntimeError(f'page context menu internals unavailable: {result["menuInternals"]}')
         navigation=result['navigationSelectors']
         if (any(('chrome://browser/skin/back.svg' in item['image']) != (navigation['enabled'] and base['direct'])
                 for item,base in zip(navigation['directControl'],navigation['baseline'],strict=True))
