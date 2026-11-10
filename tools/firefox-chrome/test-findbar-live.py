@@ -3,6 +3,7 @@
 import json
 import os
 from pathlib import Path
+import runpy
 import shutil
 import socket
 import subprocess
@@ -17,6 +18,14 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 def check(nova, themed, high_contrast, rtl):
+    selector_path=os.environ.get('TEXTFOX_SELECTOR_INVENTORY')
+    selector_records=None
+    selector_query=None
+    if selector_path:
+        selector_records=[r for r in json.loads(Path(selector_path).read_text()) if r['file']=='chrome/findbar.css']
+        if not selector_records:
+            raise ValueError('selector inventory has no findbar records')
+        selector_query=runpy.run_path(str(ROOT / 'tools/firefox-chrome/probe-selector-dom.py'))['query']
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0))
         port = sock.getsockname()[1]
@@ -78,6 +87,9 @@ def check(nova, themed, high_contrast, rtl):
                     raise RuntimeError(f'findbar did not select target text: {page}, {bar}')
                 time.sleep(.1)
             m.set_context('chrome')
+            selector_states={}
+            if selector_query:
+                selector_states['open']=selector_query(m,selector_records)
             result = m.execute_script("""
                 const bar = document.querySelector('findbar:not([hidden])'), s = getComputedStyle(bar);
                 return {visible:!bar.hidden && s.display !== 'none', fieldValue:bar._findField.value,
@@ -118,6 +130,22 @@ def check(nova, themed, high_contrast, rtl):
                         or hover['active']['border'] != 'rgb(19, 83, 137)'
                         or hover['active']['titleColor'] != 'rgb(19, 83, 137)'):
                     raise RuntimeError(f'findbar hover styles did not apply: {hover}')
+            bar=m.find_element('css selector','findbar:not([hidden])')
+            m.actions.sequence('pointer','mouse',{'pointerType':'mouse'}).pointer_move(0,0,origin=bar).perform()
+            deadline=time.monotonic()+10
+            while True:
+                pointer_hover=m.execute_script("""
+                    const e=document.querySelector('findbar:not([hidden])');
+                    return {matches:e.matches(':hover'),border:getComputedStyle(e).borderTopColor,
+                      title:getComputedStyle(e,'::before').color};
+                    """,sandbox='system')
+                if pointer_hover['matches'] and (not themed or (pointer_hover['border']=='rgb(19, 83, 137)' and pointer_hover['title']=='rgb(19, 83, 137)')):
+                    break
+                if time.monotonic()>=deadline:
+                    raise RuntimeError(f'findbar pointer hover did not settle: {pointer_hover}')
+                time.sleep(.1)
+            if selector_query:
+                selector_states['hover']=selector_query(m,selector_records)
             visible_checkboxes = [c for c in result['checkboxes'] if c['display'] != 'none' and c['width'] > 0 and c['height'] > 0]
             if not visible_checkboxes:
                 raise RuntimeError('findbar checkbox fixture is unavailable')
@@ -264,7 +292,14 @@ def check(nova, themed, high_contrast, rtl):
                 const r=bar.getBoundingClientRect();
                 return {hidden:bar.hidden, display:getComputedStyle(bar).display, width:r.width, height:r.height};
                 """, sandbox='system')
-            print(json.dumps({'nova':nova, 'themed':themed, 'closedFindbar':hidden}), flush=True)
+            if selector_query:
+                selector_states['hidden']=selector_query(m,selector_records)
+                for name,selector in (('hover','&:hover'),('hidden','&:where([hidden])')):
+                    rows=[r for r in selector_states[name] if r['selector']==selector]
+                    if len(rows)!=1 or rows[0]['status']!='structural-match':
+                        raise RuntimeError(f'findbar {name} selector did not match: {rows}')
+            print(json.dumps({'nova':nova, 'themed':themed, 'closedFindbar':hidden,
+                              'pointerHover':pointer_hover,'selectorStates':selector_states}), flush=True)
             if not hidden or not hidden['hidden']:
                 raise RuntimeError(f'Escape did not mark the same findbar hidden: {hidden}')
             if themed and (hidden['display'] != 'none' or hidden['width'] != 0 or hidden['height'] != 0):
