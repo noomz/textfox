@@ -413,6 +413,10 @@ In eight themed Firefox profiles, `probe-panel-colors.py` finds the real `#appMe
 
 `test-urlbar-live.py` samples an empty URL bar with a visible placeholder in both browser Nova states. With `--tf-text-transform: uppercase` configured, its computed `::placeholder` transform is uppercase; a temporary root-token control changes it to lowercase and is restored. Expanded-selector snapshots intentionally do not query pseudo-elements, so this direct computed-style evidence is separate from their unobserved count. Painted text and other placeholder hosts remain unverified.
 
+## Unobserved selector dispositions
+
+`T2-UNOBSERVED-DISPOSITION.md` assigns each of the 64 records absent from the expanded-selector snapshot union to bounded direct evidence, a verified mismatch, or an explicit untested state. It distinguishes pseudo-elements, signed-in account states, real extensions, Floorp, and platform/paint follow-up. `check-unobserved-disposition.py` checks location coverage and duplicates; it does not validate the accuracy or sufficiency of the prose. Run it and `test-unobserved-disposition.py` after regenerating snapshots. This is an accounting aid, not a support claim or proof all selector branches work.
+
 ## Source search for unobserved selector atoms
 
 `T2-UNOBSERVED-SOURCE.md` lists ID/class atoms heuristically extracted from the 64 records not observed in expanded-selector snapshots, with textual matches across 23,190 tagged Firefox `browser/` and `toolkit/` files. Counts include unrelated contexts, tests, and comments; attributes, tag names, pseudo-elements, conditions, and complete relationships are not checked. Generated extension IDs need not occur literally in source, and no source hit is not proof of removal. The script rejects stale selector text and incomplete tagged checkouts. Reproduce using `python3 tools/firefox-chrome/selector-atoms-source.py /path/to/firefox /path/to/expanded.json T2-SELECTOR-EVIDENCE.md > T2-UNOBSERVED-SOURCE.md`; run `python3 tools/firefox-chrome/test-selector-atoms-source.py` for matching fixtures.
