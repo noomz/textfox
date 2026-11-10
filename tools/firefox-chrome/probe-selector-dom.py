@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Sample expanded selector candidates in several chrome and new-tab DOM states.
 
-Input is JSON from expand-rule-selectors.py. Does not pierce shadow roots,
-inspect pseudo-elements, or prove cascade, painting, or all UI states.
+Input is JSON from expand-rule-selectors.py. The main probe queries documents;
+callers may explicitly sample an open shadow root. It does not cross shadow
+boundaries, inspect pseudo-elements, or prove cascade, painting, or all states.
 New-tab feeds may make network requests.
 """
 import argparse
@@ -22,11 +23,13 @@ from ff_inspect import connect
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def query(m, records):
+def query(m, records, shadow_host=None):
     results = []
     for offset in range(0, len(records), 40):
         chunk = records[offset:offset + 40]
         results.extend(m.execute_script("""
+            const scope=arguments[1] ? document.querySelector(arguments[1])?.shadowRoot : document;
+            if(!scope) throw new Error(`missing open shadow root: ${arguments[1]}`);
             return arguments[0].map(record=>{
               const selector=record.expandedSelector;
               const conditions=record.conditions.map(c=>{
@@ -37,7 +40,7 @@ def query(m, records):
               });
               if(selector.includes('::')) return {status:'pseudo-not-queried',conditions};
               try {
-                const nodes=[...document.querySelectorAll(selector)];
+                const nodes=[...scope.querySelectorAll(selector)];
                 const visible=nodes.filter(e=>{
                   const s=getComputedStyle(e),r=e.getBoundingClientRect();
                   return s.display !== 'none' && s.visibility === 'visible' && r.width > 0 && r.height > 0;
@@ -46,9 +49,9 @@ def query(m, records):
                   visible:visible.length,conditions};
               } catch(error) { return {status:'invalid-query',error:String(error),conditions}; }
             });
-            """, script_args=[chunk], sandbox='system'))
+            """, script_args=[chunk,shadow_host], sandbox='system'))
     return [{'file':record['file'],'line':record['line'],'selector':record['selector'],
-             'expandedSelector':record['expandedSelector'],**result}
+             'expandedSelector':record['expandedSelector'],'scope':shadow_host or 'document',**result}
             for record,result in zip(records,results,strict=True)]
 
 

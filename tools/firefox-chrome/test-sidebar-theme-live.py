@@ -68,6 +68,7 @@ def check(nova, dark):
                 const host = document.querySelector('sidebar-main'), hs = getComputedStyle(host);
                 const wrapper = host.shadowRoot.querySelector('.buttons-wrapper'), ws = getComputedStyle(wrapper);
                 return {rootTheme:document.documentElement.hasAttribute('lwtheme'),
+                        fullSelectorMatches:host.matches(':root[lwtheme] sidebar-main'),
                         hostId:host.id, hostBackground:hs.backgroundColor, hostImage:hs.backgroundImage,
                         hostColor:hs.color, wrapperBackground:ws.backgroundColor, wrapperColor:ws.color,
                         configuredBackground:hs.getPropertyValue('--tf-bg').trim()};
@@ -99,6 +100,8 @@ def check(nova, dark):
             print(json.dumps({'nova':nova, 'dark':dark, 'expandOnHover':hoverState, 'expanded':True}), flush=True)
             if not hoverState['root'] or hoverState['color'] != foreground:
                 raise RuntimeError('expand-on-hover theme state or foreground is incorrect')
+            if not result['fullSelectorMatches']:
+                raise RuntimeError(f'themed sidebar selector did not match: {result}')
             if result['configuredBackground'] != background or result['hostBackground'] != background:
                 raise RuntimeError('themed sidebar launcher background does not follow --tf-bg')
             if result['hostColor'] != foreground or result['wrapperColor'] != foreground:

@@ -118,6 +118,14 @@ def check(nova, display, vertical):
                         if wrapper_hover['border'] == 'rgb(19, 83, 137)' or time.monotonic() >= deadline:
                             break
                         time.sleep(.1)
+                    if selector_query:
+                        shadow_records=[r for r in selector_records if r['file']=='chrome/sidebar.css']
+                        selector_states['wrapperShadowHover']=selector_query(m,shadow_records,shadow_host='sidebar-main')
+                        candidates=[r for r in selector_states['wrapperShadowHover']
+                                    if '.buttons-wrapper' in r['expandedSelector'] and ':hover' in r['selector']
+                                    and '::' not in r['selector']]
+                        if len(candidates)!=1 or candidates[0]['status']!='structural-match':
+                            raise RuntimeError(f'sidebar wrapper shadow selector did not match: {candidates}')
                 finally:
                     m.execute_script("InspectorUtils.removePseudoClassLock(document.querySelector('sidebar-main').shadowRoot.querySelector('.buttons-wrapper'), ':hover')", sandbox='system')
                 print(json.dumps({'nova':nova, 'sidebarWrapperHover':wrapper_hover}), flush=True)
