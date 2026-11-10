@@ -6,6 +6,7 @@ The temporary extension uses an existing selector's ID only inside the fixture.
 import json
 import os
 from pathlib import Path
+import runpy
 import shutil
 import socket
 import subprocess
@@ -25,6 +26,15 @@ MENU_PREFERENCE = 'shyfox.enable.context.menu.icons'
 
 
 def check(nova, enabled, context_enabled, menu_enabled):
+    selector_path=os.environ.get('TEXTFOX_SELECTOR_INVENTORY')
+    selector_records=None
+    selector_query=None
+    if selector_path:
+        selector_records=[r for r in json.loads(Path(selector_path).read_text()) if r['file']=='chrome/icons.css'
+                          and r['selector']=='#toggle_PersonalToolbar' and '#toolbar-context-menu' in r['expandedSelector']]
+        if len(selector_records)!=1:
+            raise ValueError('selector inventory has no unique toolbar bookmark-toggle record')
+        selector_query=runpy.run_path(str(ROOT / 'tools/firefox-chrome/probe-selector-dom.py'))['query']
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0))
         port = sock.getsockname()[1]
@@ -188,6 +198,9 @@ def check(nova, enabled, context_enabled, menu_enabled):
                 time.sleep(.1)
             if toolbar_menu['modern'] != menu_enabled:
                 raise RuntimeError(f'toolbar context preference control failed: {toolbar_menu}')
+            selector_results=selector_query(m,selector_records) if selector_query else []
+            if selector_query and selector_results[0]['status']!='structural-match':
+                raise RuntimeError(f'toolbar bookmark-toggle selector did not match: {selector_results}')
             toolbar_control=m.execute_script("""
                 const item=document.querySelector('#toolbar-context-menu .customize-context-manageExtension');
                 const css='@media -moz-pref("shyfox.enable.context.menu.icons") { #toolbar-context-menu .customize-context-manageExtension { background-image: url("chrome://global/skin/icons/settings.svg") !important; } }';
@@ -208,7 +221,7 @@ def check(nova, enabled, context_enabled, menu_enabled):
             print(json.dumps({'firefox':metadata,'extension':installed,'sample':sample,'control':control,
                               'badgeControl':badge_control,'context':context,'contextControl':context_control,
                               'toolbarContext':toolbar_menu,'toolbarControl':toolbar_control,
-                              'customizeActionEntered':True}), flush=True)
+                              'customizeActionEntered':True,'selectorRecords':selector_results}), flush=True)
         finally:
             try:
                 if m:

@@ -32,4 +32,5 @@ exec python3 "$tool" "$base/textfox-t2-expanded-final.json" \
   "bookmarks-menu=$base/textfox-t2-bookmarks-menu-selectors-final.jsonl" \
   "site-panels=$base/textfox-t2-site-panel-selectors-final.jsonl" \
   "private-link=$base/textfox-t2-private-selector-final.jsonl" \
-  "extension-sidebar=$base/textfox-t2-extension-sidebar-selectors-final.jsonl"
+  "extension-sidebar=$base/textfox-t2-extension-sidebar-selectors-final.jsonl" \
+  "toolbar-extension=$base/textfox-t2-toolbar-ext-selectors-final.jsonl"
