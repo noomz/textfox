@@ -3,6 +3,7 @@
 import json
 import os
 from pathlib import Path
+import runpy
 import shutil
 import socket
 import subprocess
@@ -15,6 +16,14 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 def check(nova, icons):
+    selector_path = os.environ.get('TEXTFOX_SELECTOR_INVENTORY')
+    selector_records = None
+    selector_query = None
+    if selector_path:
+        selector_records = [r for r in json.loads(Path(selector_path).read_text()) if r['file'] == 'chrome/icons.css']
+        if not selector_records:
+            raise ValueError('selector inventory has no icon records')
+        selector_query = runpy.run_path(str(ROOT / 'tools/firefox-chrome/probe-selector-dom.py'))['query']
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0))
         port = sock.getsockname()[1]
@@ -108,6 +117,11 @@ def check(nova, icons):
             expected = 'url("chrome://global/skin/icons/folder.svg")' if icons else 'none'
             if intervention != expected:
                 raise RuntimeError(f'download icon intervention failed: {intervention}')
+            selector_results = selector_query(m, selector_records) if selector_query else []
+            if selector_query:
+                candidates = [r for r in selector_results if '#downloadsContextMenu' in r['expandedSelector']]
+                if not candidates or not any(r['status'] == 'structural-match' for r in candidates):
+                    raise RuntimeError(f'download selector inventory did not match: {candidates}')
             remove = m.find_element('css selector', '#downloadsContextMenu .downloadRemoveFromHistoryMenuItem')
             m.actions.sequence('pointer', 'mouse', {'pointerType':'mouse'}).click(remove).perform()
             deadline = time.monotonic() + 10
@@ -132,7 +146,8 @@ def check(nova, icons):
                 raise RuntimeError('removing download history altered fixture file')
             print(json.dumps({'firefox':meta, 'download':completed, 'menu':menu,
                               'modernIntervention':intervention,
-                              'historyAfter':remaining, 'fixtureFileIntact':True}), flush=True)
+                              'historyAfter':remaining, 'fixtureFileIntact':True,
+                              'selectorRecords':selector_results}), flush=True)
         finally:
             try:
                 if m:
