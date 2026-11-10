@@ -6,6 +6,7 @@ The probe enables new-tab feeds, which may make network requests.
 import json
 import os
 from pathlib import Path
+import runpy
 import shutil
 import socket
 import subprocess
@@ -19,6 +20,14 @@ PREFIX = 'browser.newtabpage.activity-stream.'
 
 
 def check(browser_nova, newtab_nova, themed, page):
+    selector_path=os.environ.get('TEXTFOX_SELECTOR_INVENTORY')
+    selector_records=None
+    selector_query=None
+    if selector_path:
+        selector_records=[r for r in json.loads(Path(selector_path).read_text()) if r['file']=='chrome/content/newtab.css']
+        if not selector_records:
+            raise ValueError('selector inventory has no new-tab records')
+        selector_query=runpy.run_path(str(ROOT / 'tools/firefox-chrome/probe-selector-dom.py'))['query']
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0))
         port = sock.getsockname()[1]
@@ -126,6 +135,12 @@ def check(browser_nova, newtab_nova, themed, page):
                 """)
             if secondary_control['during'] != 'rgb(31, 91, 151)' or secondary_control['before'] == secondary_control['during']:
                 raise RuntimeError(f'card secondary-background intervention inconclusive: {secondary_control}')
+            selector_results=selector_query(m,selector_records) if selector_query else []
+            if selector_query:
+                expected={'.card-outer','.card','.card-preview-image-outer','.card-context'}
+                matched={r['selector'] for r in selector_results if r['status']=='structural-match'}
+                if not expected.issubset(matched):
+                    raise RuntimeError(f'card selector inventory incomplete: {expected-matched}')
             card = m.execute_script("return [...document.querySelectorAll('.card-outer')].find(e => e.textContent.includes('Textfox test'))")
             link = card.find_element('css selector', 'a')
             link_properties = link.accessibility_properties
@@ -144,7 +159,8 @@ def check(browser_nova, newtab_nova, themed, page):
             if accessibility['linkRole'] != 'link' or 'Textfox test' not in accessibility['linkLabel']:
                 raise RuntimeError(f'card link accessibility fixture unavailable: {accessibility}')
             print(json.dumps({'firefox':metadata, 'themed':themed, 'result':result,
-                              'secondaryControl':secondary_control, 'accessibility':accessibility}), flush=True)
+                              'secondaryControl':secondary_control, 'selectorRecords':selector_results,
+                              'accessibility':accessibility}), flush=True)
         finally:
             try:
                 if m:
