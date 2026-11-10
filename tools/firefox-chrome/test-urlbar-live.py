@@ -22,7 +22,7 @@ def check(nova):
         profile = Path(profile)
         shutil.copytree(ROOT / 'chrome', profile / 'chrome')
         (profile / 'chrome' / 'config.css').write_text(
-            ':root { --tf-accent: rgb(19, 83, 137); --tf-border-width: 3px; }\n')
+            ':root { --tf-accent: rgb(19, 83, 137); --tf-border-width: 3px; --tf-text-transform: uppercase; }\n')
         prefs = {'marionette.port': port, 'browser.nova.enabled': nova,
                  'toolkit.legacyUserProfileCustomizations.stylesheets': True,
                  'browser.shell.checkDefaultBrowser': False}
@@ -40,6 +40,18 @@ def check(nova):
             metadata = m.execute_script("return {profile:Services.dirsvc.get('ProfD', Ci.nsIFile).path, version:Services.appinfo.version, build:Services.appinfo.appBuildID, nova:Services.prefs.getBoolPref('browser.nova.enabled')}", sandbox='system')
             if process.poll() is not None or Path(metadata['profile']).resolve() != profile.resolve() or metadata['nova'] != nova:
                 raise RuntimeError('unexpected Firefox process, profile, or Nova preference')
+            placeholder = m.execute_script("""
+                const input=document.getElementById('urlbar-input'),root=document.documentElement;
+                const s=root.style,old=s.getPropertyValue('--tf-text-transform'),priority=s.getPropertyPriority('--tf-text-transform');
+                const sample=()=>({placeholder:input.getAttribute('placeholder'),shown:input.matches(':placeholder-shown'),
+                  transform:getComputedStyle(input,'::placeholder').textTransform});
+                const before=sample();
+                try{s.setProperty('--tf-text-transform','lowercase','important');return {before,control:sample()};}
+                finally{if(old)s.setProperty('--tf-text-transform',old,priority);else s.removeProperty('--tf-text-transform');}
+                """,sandbox='system')
+            if placeholder['before']['transform']!='uppercase' or placeholder['control']['transform']!='lowercase':
+                raise RuntimeError(f'URL bar placeholder token control failed: {placeholder}')
+            print(json.dumps({'firefox':metadata,'placeholder':placeholder}),flush=True)
             m.execute_script("gURLBar.focus(); gURLBar.search('mozilla')", sandbox='system')
             deadline = time.monotonic() + 20
             while not m.execute_script("return !!document.querySelector('#urlbar[open] .urlbarView-results .urlbarView-row')", sandbox='system'):
