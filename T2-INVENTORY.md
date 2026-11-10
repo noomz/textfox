@@ -12,6 +12,8 @@ Unless noted otherwise, source links use Firefox `FIREFOX_159_0_RELEASE` commit 
 
 `tools/firefox-chrome/inventory-variables.py --non-textfox` lists every non-`--tf-*` declaration and `var()` reference, with file, line, enclosing rules, and consuming property. In this checkout it reconciles with `inventory-css.py`: 40 distinct names, 55 declaration records, and 63 reference records. Twenty-three names are assigned but not referenced by textfox; nine are referenced but not assigned by textfox. These are checkout-only syntax counts: Firefox may supply or consume them, and they do not establish matching or visual behavior. The component evidence and gaps below remain the T2 gate.
 
+[Pinned-source search](T2-FIREFOX-VARIABLES.md) reports exact-name textual matches for all 40 names across 4,022 tracked Firefox files in eight specified source scopes. Fifteen names have no textual match within those scopes. Matches include comments and tests, and neither a hit nor an absence proves a runtime consumer or applies outside the listed paths.
+
 - Shared root and identity: `--border-radius-medium`, `--border-radius-small`, `--border-width`, `--button-background-color-active`, `--color`, `--identity-icon-color`, `--identity-tab-color`, `--inactive-titlebar-opacity`, `--link-color`, `--lwt-accent-color`, `--lwt-text-color`.
 - New-tab: `--newtab-background-color`, `--newtab-background-color-secondary`, `--newtab-border-color`, `--newtab-contextual-text-primary-color`, `--newtab-element-hover-color`, `--newtab-wallpaper-color`, `--newtab-weather-background-color`.
 - Panels and split view: `--panel-background`, `--panel-border-color`, `--panel-border-radius`, `--panel-separator-color`, `--splitborder`.
