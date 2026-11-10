@@ -86,7 +86,11 @@ def check(nova, color_preference, activation):
                   return [id,{image:st.listStyleImage,display:st.display,visibility:st.visibility,
                     width:r.width,height:r.height,inPanel:panel.contains(e)}];
                 }));
-                return {icons, background:s.backgroundColor, color:s.color, border:s.border,
+                const zoom=document.getElementById('appMenu-zoom-controls'),zr=zoom?.getBoundingClientRect();
+                const zp=zoom && getComputedStyle(zoom,'::before');
+                const zoomPseudo=zoom ? {width:zr.width,height:zr.height,display:zp.display,content:zp.content,
+                  fill:zp.fill,fillOpacity:zp.fillOpacity,token:zp.getPropertyValue('--toolbarbutton-icon-fill-opacity').trim()} : null;
+                return {icons, zoomPseudo, background:s.backgroundColor, color:s.color, border:s.border,
                         radius:s.borderRadius, forcedColors:matchMedia('(forced-colors: active)').matches,
                         panelTokens:Object.fromEntries(panelTokens.map(p=>[p,ps.getPropertyValue(p).trim()])),
                         slotTokens:Object.fromEntries(panelTokens.map(p=>[p,s.getPropertyValue(p).trim()])),
@@ -99,6 +103,16 @@ def check(nova, color_preference, activation):
                           pseudoOpacityToken:pseudoStyle.getPropertyValue('--toolbarbutton-icon-fill-opacity').trim()},
                         rootProperties:Object.fromEntries(properties.map(p => [p, root.getPropertyValue(p).trim()]))};
                 """, sandbox='system')
+            zoom_resource=m.execute_async_script("""
+                const done=arguments[arguments.length-1],raw=getComputedStyle(document.getElementById('appMenu-zoom-controls'),'::before').content;
+                const match=raw.match(/^url\\(["']?(.*?)["']?\\)$/);
+                if(!match){done({loaded:false,raw});return;}
+                const image=new Image(),timer=setTimeout(()=>done({loaded:false,reason:'timeout'}),5000);
+                image.onload=()=>{clearTimeout(timer);done({loaded:true,width:image.naturalWidth,height:image.naturalHeight});};
+                image.onerror=()=>{clearTimeout(timer);done({loaded:false,reason:'error'});};image.src=match[1];
+                """,sandbox='system')
+            if not zoom_resource.get('loaded') or zoom_resource.get('width',0)<=0 or zoom_resource.get('height',0)<=0:
+                raise RuntimeError(f'zoom pseudo icon resource did not load: {zoom_resource}')
             selector_states={}
             if selector_query:
                 selector_states['document']=selector_query(m,selector_records)
@@ -106,6 +120,9 @@ def check(nova, color_preference, activation):
                 slot=[r for r in selector_states['panelShadow'] if r['selector']=='slot[part="content"]']
                 if len(slot)!=1 or slot[0]['status']!='structural-match':
                     raise RuntimeError(f'panel content slot selector did not match: {slot}')
+            if (not result['zoomPseudo'] or result['zoomPseudo']['width']<=0 or result['zoomPseudo']['height']<=0
+                    or 'screenshot.svg' not in result['zoomPseudo']['content']):
+                raise RuntimeError(f'app-menu zoom pseudo-element fixture unavailable: {result["zoomPseudo"]}')
             if (result['panelTokens']['--panel-background'] != 'rgb(23, 47, 71)'
                     or result['panelTokens']['--panel-border-radius'] != '7px'
                     or result['panelTokens']['--panel-separator-color'] != 'rgb(71, 31, 111)'
@@ -175,6 +192,7 @@ def check(nova, color_preference, activation):
             m.actions.sequence('key', 'keyboard').send_keys(Keys.ESCAPE).perform()
             closed = m.execute_script("return document.getElementById('appMenu-popup').state", sandbox='system')
             print(json.dumps({'firefox': metadata, 'baseline': result, 'privateIconResource': image,
+                              'zoomPseudoResource':zoom_resource,
                               'iconResources':icon_resources, 'opacityControl':opacity_control,
                               'selectorStates':selector_states,
                               'override': override, 'keyboardFocus': focused, 'afterEscape': closed}), flush=True)

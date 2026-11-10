@@ -393,6 +393,10 @@ On this continuation, `test-firefox-live.sh` and `test-findbar-live.py` passed a
 
 `probe-tab-colors.py` and `probe-private-indicator.py` now inspect the two `chrome/tabs.css` selectors that require a toolbar button or palette item immediately before `#tabbrowser-tabs`. On headless Firefox 159.0 build `20261022150525`, the sampled four non-private themed horizontal-tab profiles and six private vanilla/textfox horizontal/vertical profiles had no preceding element sibling and no matching adjacency selector. Both probes temporarily inserted a disposable toolbar button immediately before the tab strip as a positive control; the corresponding normal or private selector matched once, then the button was removed. The root private and `firefoxviewhidden` attributes were checked for the control. This inventories sampled default layouts, not custom toolbar layouts, Firefox View hidden states, painted borders, or other platforms. Run `MOZ_HEADLESS=1 "$HOME/.cache/textfox-firefox-live/venv/bin/python" tools/firefox-chrome/probe-tab-colors.py` and the same command with `probe-private-indicator.py`.
 
+## App-menu zoom pseudo-element
+
+In eight themed Firefox profiles, `probe-panel-colors.py` finds the real `#appMenu-zoom-controls` host with nonzero geometry and a computed `::before` content URL for textfox's screenshot SVG; the resource loads. This separately inventories one branch of the grouped pseudo-element rule. Host geometry and a loadable URL do not establish pseudo-element geometry, painting, contrast, the alternate zoom ID, or the other grouped branches.
+
 ## URL-bar placeholder pseudo-element
 
 `test-urlbar-live.py` samples an empty URL bar with a visible placeholder in both browser Nova states. With `--tf-text-transform: uppercase` configured, its computed `::placeholder` transform is uppercase; a temporary root-token control changes it to lowercase and is restored. Expanded-selector snapshots intentionally do not query pseudo-elements, so this direct computed-style evidence is separate from their unobserved count. Painted text and other placeholder hosts remain unverified.
