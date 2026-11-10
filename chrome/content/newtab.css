@@ -48,6 +48,23 @@
     }
   }
 
+  /* nova: contain the generated logo in its grid area without replacing the configured font */
+  .container.nova-enabled {
+    grid-template-rows: minmax(var(--row-height), auto) var(--row-height) !important;
+  }
+  .nova-enabled {
+    .sidebar-inline-start {
+      grid-row: 1 !important;
+    }
+    .wordmark {
+      height: auto !important;
+      max-inline-size: calc(100cqi - var(--side-col-width) - 3 * var(--space-xlarge)) !important;
+      &::before {
+        overflow-wrap: anywhere !important;
+      }
+    }
+  }
+
   /* search bar */
   .search-wrapper {
     .search-handoff-button,
