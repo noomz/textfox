@@ -14,9 +14,7 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[2]
 REVISION = '9a2dc53c369c7ae5172018b35988e1d2ffeff402'
-SCOPES = ('browser/themes', 'toolkit/themes', 'browser/extensions/newtab',
-          'browser/components/urlbar', 'browser/components/contextualidentity',
-          'toolkit/components/contextualidentity', 'browser/base/content', 'toolkit/content/widgets')
+SCOPES = ('browser', 'toolkit')
 
 
 def search(root, paths, names):

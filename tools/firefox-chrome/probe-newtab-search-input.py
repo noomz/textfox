@@ -59,6 +59,13 @@ def check(browser_nova, newtab_nova, themed):
                     or metadata['browserNova'] != browser_nova or metadata['newtabNova'] != newtab_nova
                     or metadata['handoff']):
                 raise RuntimeError('unexpected Firefox process, profile, or preferences')
+            seeded = m.execute_async_script("""
+                const done=arguments[arguments.length-1],{FormHistory}=ChromeUtils.importESModule('resource://gre/modules/FormHistory.sys.mjs');
+                FormHistory.update({op:'bump',fieldname:'searchbar-history',value:'textfoxprobe saved fixture'})
+                  .then(()=>done(true),error=>done(String(error)));
+                """, sandbox='system')
+            if seeded is not True:
+                raise RuntimeError(f'local form-history fixture failed: {seeded}')
             m.execute_script('gBrowser.selectedTab = gBrowser.addTrustedTab("about:newtab")', sandbox='system')
             m.set_context('content')
             m.switch_to_window(m.window_handles[-1])
@@ -151,10 +158,47 @@ def check(browser_nova, newtab_nova, themed):
                 """)
             if value != 'textfoxprobe':
                 raise RuntimeError(f'non-handoff input did not receive typed text: {value!r}')
+            deadline=time.monotonic()+15
+            while True:
+                suggestions=m.execute_script("""
+                    const host=document.querySelector('.search-wrapper content-search-handoff-ui');
+                    const table=host?.shadowRoot?.querySelector('.contentSearchSuggestionTable');
+                    if(!table)return null;
+                    const s=getComputedStyle(table),r=table.getBoundingClientRect();
+                    return {display:s.display,visibility:s.visibility,width:r.width,height:r.height,
+                      borderToken:s.getPropertyValue('--newtab-border-color').trim(),
+                      text:table.textContent.includes('textfoxprobe saved fixture')};
+                    """)
+                if suggestions and suggestions['text'] and suggestions['width']>0 and suggestions['height']>0:
+                    break
+                if time.monotonic()>=deadline:
+                    raise RuntimeError(f'local non-handoff suggestion did not appear: {suggestions}')
+                time.sleep(.1)
+            suggestion_control=m.execute_script("""
+                const host=document.querySelector('.search-wrapper content-search-handoff-ui');
+                const table=host.shadowRoot.querySelector('.contentSearchSuggestionTable');
+                const oneoffs=table.querySelector('.contentSearchOneOffsTable'),body=document.body;
+                if(!oneoffs)throw new Error('non-handoff one-offs table missing');
+                const name='--newtab-border-color', saved=[body,table].map(e=>({e,value:e.style.getPropertyValue(name),priority:e.style.getPropertyPriority(name)}));
+                const sample=()=>({token:getComputedStyle(table).getPropertyValue(name).trim(),border:getComputedStyle(oneoffs).borderBlockStartColor});
+                const before=sample();
+                try {
+                  body.style.setProperty(name,'rgb(19, 83, 137)','important');
+                  const inherited=sample();
+                  table.style.setProperty(name,'rgb(173, 89, 41)','important');
+                  return {before,inherited,direct:sample()};
+                } finally {
+                  for(const {e,value,priority} of saved) {if(value)e.style.setProperty(name,value,priority);else e.style.removeProperty(name);}
+                }
+                """)
+            if (suggestion_control['before']!=suggestion_control['inherited']
+                    or suggestion_control['direct']['border']!='rgb(173, 89, 41)'):
+                raise RuntimeError(f'suggestion table border control failed: {suggestion_control}')
             m.set_context('chrome')
             if m.execute_script('return gURLBar.focused', sandbox='system'):
                 raise RuntimeError('non-handoff click unexpectedly focused URL bar')
             print(json.dumps({'firefox': metadata, 'themed': themed, 'baseline': baseline,
+                              'suggestions':suggestions,'suggestionControl':suggestion_control,
                               'control': control, 'inputValue': value,
                               'staleClickRetries': stale_retries,
                               'missingClickRetries': missing_retries}), flush=True)
