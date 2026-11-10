@@ -7,6 +7,7 @@ Firefox profile. Both fixture hostnames resolve to the local server.
 import json
 import os
 from pathlib import Path
+import runpy
 import shutil
 import socket
 import ssl
@@ -39,6 +40,14 @@ def check(nova, display):
         raise ValueError(f'unknown fake media kind: {media_kind}')
     expected_tracks = {'both':'audio,video', 'camera':'video', 'microphone':'audio'}[media_kind]
     expected_sharing = 'microphone' if media_kind == 'microphone' else 'camera'
+    selector_path = os.environ.get('TEXTFOX_SELECTOR_INVENTORY')
+    selector_records = None
+    selector_query = None
+    if selector_path:
+        selector_records = [r for r in json.loads(Path(selector_path).read_text()) if r['file'] == 'chrome/navbar.css']
+        if not selector_records:
+            raise ValueError('selector inventory has no navbar records')
+        selector_query = runpy.run_path(str(ROOT / 'tools/firefox-chrome/probe-selector-dom.py'))['query']
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0))
         port = sock.getsockname()[1]
@@ -144,6 +153,7 @@ def check(nova, display):
                     or meta['geoProviderURL'] != f'http://127.0.0.1:{http.server_port}/geo'):
                 raise RuntimeError(f'unexpected Firefox process, profile, or preferences: {meta}')
             samples = {}
+            selector_states = {}
             for name in ('secure', 'mixed'):
                 url = f'https://{HOST}:{https.server_port}/{name}'
                 m.set_context('content')
@@ -204,6 +214,8 @@ def check(nova, display):
                             raise RuntimeError(f'mixed branch intervention inconclusive: {branch_control}')
                 samples[name] = {'page':body, 'identity':state, 'mixedRequests':Handler.mixed_requests,
                                  'mixedBranchControl':branch_control}
+                if selector_query:
+                    selector_states[name] = selector_query(m, selector_records)
             m.set_context('content')
             m.navigate(f'https://{HOST}:{https.server_port}/{sharing_page}')
             m.execute_script("""
@@ -264,6 +276,8 @@ def check(nova, display):
                     or sharing['permissionWidth'] <= 0 or sharing['permissionHeight'] <= 0
                     or (display is not None and (sharing['grantedDisplay'] != display or sharing['siblingMarginLeft'] != '-4px'))):
                 raise RuntimeError(f'geolocation sharing selector fixture failed: {sharing}, requests={Handler.geo_requests}')
+            if selector_query:
+                selector_states['geolocation'] = selector_query(m, selector_records)
             m.set_context('content')
             m.execute_script("navigator.geolocation.clearWatch(Number(document.documentElement.getAttribute('data-textfox-geo-watch')))")
             m.set_context('chrome')
@@ -346,6 +360,14 @@ def check(nova, display):
                     """, sandbox='system')
                 if media_control != '-4px':
                     raise RuntimeError(f'fake-media sharing selector intervention failed: {media_control}')
+            if selector_query:
+                selector_states['media'] = selector_query(m, selector_records)
+                def matching(state):
+                    return [r for r in selector_states[state]
+                            if 'box:has(image[sharing="true"])' in r['selector']
+                            and r['status'] == 'structural-match']
+                if len(matching('geolocation')) != (2 if sharing_page == 'mixed' else 1) or matching('media'):
+                    raise RuntimeError(f'identity sharing selector inventory inconclusive: {selector_states}')
             m.set_context('content')
             stopped = m.execute_script("""
                 document.dispatchEvent(new Event('textfox-stop-stream'));
@@ -359,7 +381,7 @@ def check(nova, display):
                               'geo':geo,'sharing':sharing,'geoRequests':Handler.geo_requests,
                               'mixedRequests':Handler.mixed_requests,
                               'mediaKind':media_kind,'media':media,'mediaSharing':media_sharing,'mediaControl':media_control,
-                              'mediaStopped':stopped}),flush=True)
+                              'mediaStopped':stopped,'selectorStates':selector_states}),flush=True)
         finally:
             try:
                 if m:
