@@ -22,7 +22,7 @@ VIEWS = (
     ('more-tools','appMenu-more-button2','appmenu-moreTools',('appmenu-moreTools-button',)),
     ('help','appMenu-help-button2','PanelUI-helpView',
      ('appMenu_menu_openHelp','appMenu_feedbackPage','appMenu_helpSafeMode','appMenu_troubleShooting',
-      'appMenu-report-broken-site-button','appMenu_help_reportSiteIssue',
+      'appMenu-report-broken-site-button','appMenu_help_reportSiteIssue','appMenu_help_reportBrokenSite',
       'appMenu_menu_HelpPopup_reportPhishingtoolmenu','appMenu_helpSwitchDevice','appMenu_aboutName')),
 )
 
@@ -111,7 +111,7 @@ def check(nova, themed):
                     if time.monotonic() >= deadline:
                         raise RuntimeError(f'app menu subview {name} did not open: {state}')
                     time.sleep(.1)
-                visible=[item for item in state['items'].values() if item and item['inView'] and not item['hidden']
+                visible=[item for item_id,item in state['items'].items() if item_id != 'appMenu_help_reportBrokenSite' and item and item['inView'] and not item['hidden']
                          and item['display'] != 'none' and item['visibility'] == 'visible'
                          and item['width'] > 0 and item['height'] > 0]
                 if not visible:
@@ -120,6 +120,10 @@ def check(nova, themed):
                                    and item['visibility'] == 'visible' and item['width'] > 0 and item['height'] > 0]
                 if name == 'more-tools' and not visible_developer:
                     raise RuntimeError(f'developer-tools fixture is unavailable: {state}')
+                if name == 'help':
+                    report=state['items']['appMenu_help_reportBrokenSite']
+                    if not report or not report['inView'] or report['hidden'] or report['width']<=0 or report['height']<=0:
+                        raise RuntimeError(f'current report-broken-site item unavailable: {report}')
                 raws=sorted({item['image'] for item in [*visible,*visible_developer] if item['image'] != 'none'})
                 resources=m.execute_async_script("""
                     const done=arguments[arguments.length-1], values=[...arguments[0],'url("chrome://global/skin/icons/textfox-nonexistent-resource.svg")'];
