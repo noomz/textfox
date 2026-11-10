@@ -61,7 +61,7 @@ def check(nova, alignment, icons):
         profile = Path(directory)
         shutil.copytree(ROOT / 'chrome', profile / 'chrome')
         (profile / 'chrome' / 'config.css').write_text(
-            f':root {{ --tf-bookmarks-alignment: {alignment}; }}\n')
+            f':root {{ --tf-bookmarks-alignment: {alignment}; --tf-accent: rgb(19, 83, 137); }}\n')
         prefs = {'marionette.port': port, 'browser.nova.enabled': nova,
                  'shyfox.enable.context.menu.icons': icons,
                  'toolkit.legacyUserProfileCustomizations.stylesheets': True,
@@ -128,6 +128,23 @@ def check(nova, alignment, icons):
                 offset = abs(item['left'] - container['left'])
             if offset > 4:
                 raise RuntimeError(f'bookmark is not positioned at requested alignment: {result}')
+            toolbar_hover={}
+            for bar_id in ('nav-bar','PersonalToolbar'):
+                bar=m.find_element('id',bar_id)
+                m.actions.sequence('pointer','mouse',{'pointerType':'mouse'}).pointer_move(0,0,origin=bar).perform()
+                deadline=time.monotonic()+10
+                while True:
+                    hover=m.execute_script("""
+                        const e=document.getElementById(arguments[0]),s=getComputedStyle(e),p=getComputedStyle(e,'::before');
+                        return {matches:e.matches(':hover'),border:s.borderTopColor,titleColor:p.color};
+                        """,script_args=[bar_id],sandbox='system')
+                    if hover['matches'] and hover['border']=='rgb(19, 83, 137)' and hover['titleColor']=='rgb(19, 83, 137)':
+                        break
+                    if time.monotonic()>=deadline:
+                        raise RuntimeError(f'toolbar pointer hover did not settle: {bar_id}, {hover}')
+                    time.sleep(.1)
+                toolbar_hover[bar_id]=hover
+            print(json.dumps({'firefox':metadata,'toolbarHover':toolbar_hover}),flush=True)
             bookmark = m.find_element('css selector', '#PlacesToolbarItems .bookmark-item[label="Textfox bookmark fixture"]')
             menu = inspect_places(m, bookmark, icons, 'placesContext_show_bookmark:info')
             print(json.dumps({'firefox':metadata, 'placesKind':'bookmark', 'placesContext':menu}), flush=True)

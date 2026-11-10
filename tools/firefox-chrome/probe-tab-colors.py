@@ -133,6 +133,24 @@ def check(nova, dark, source, forced, mismatch):
             selector_states={}
             if selector_query:
                 selector_states['horizontal']=selector_query(m,selector_records)
+            menubar_control = m.execute_script("""
+                const root=document.documentElement, menu=document.getElementById('toolbar-menubar');
+                const selector=':root[tabsintitlebar] #toolbar-menubar[autohide="true"]';
+                const measure=()=>{const s=getComputedStyle(menu),r=menu.getBoundingClientRect();
+                  return {rootHasAttribute:root.hasAttribute('tabsintitlebar'),autohide:menu.getAttribute('autohide'),
+                    matches:menu.matches(selector),tabMinHeight:s.getPropertyValue('--tab-min-height').trim(),
+                    minHeight:s.minHeight,paddingTop:s.paddingTop,width:r.width,height:r.height};};
+                const initial=measure(),saved=root.getAttribute('tabsintitlebar');
+                root.removeAttribute('tabsintitlebar');
+                const without=measure();
+                root.setAttribute('tabsintitlebar','true');
+                try { return {initial,without,control:measure()}; }
+                finally { if(saved===null) root.removeAttribute('tabsintitlebar'); else root.setAttribute('tabsintitlebar',saved); }
+                """,sandbox='system')
+            if (menubar_control['without']['matches'] or not menubar_control['control']['matches']
+                    or menubar_control['control']['tabMinHeight']!='fit-content'
+                    or menubar_control['control']['paddingTop']!='3px'):
+                raise RuntimeError(f'titlebar menubar selector control failed: {menubar_control}')
             toolbar = m.execute_script("""
                 const tabs=document.getElementById('tabbrowser-tabs');
                 const items=document.querySelector('#TabsToolbar .toolbar-items');
@@ -289,6 +307,7 @@ def check(nova, dark, source, forced, mismatch):
                 raise RuntimeError('requested contrast preference state not active')
             print(json.dumps({'firefox': meta, 'dark': dark, 'forced':forced, 'mismatch':mismatch, 'before': before, 'hover':hover, 'after': after,
                               'multi':multi, 'multiIntervention':multi_intervention, 'toolbar':toolbar, 'browserRoot':browser_root,
+                              'menubarControl':menubar_control,
                               'toolbarHover':toolbar_hover, 'toolbarPointerHover':pointer_hover,
                               'firefoxView':view, 'firefoxViewIntervention':view_intervention,'selectorStates':selector_states,
                               'computedSelectedContrast':contrast(before['background'], before['color']),
