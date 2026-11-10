@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Inspect one conditional extension toolbar icon in disposable Firefox profiles.
+"""Inspect extension toolbar and context icon rules in disposable Firefox profiles.
 
 The temporary extension uses an existing selector's ID only inside the fixture.
 """
@@ -21,9 +21,10 @@ ROOT = Path(__file__).resolve().parents[2]
 EXTENSION_ID = 'uBlock0@raymondhill.net'
 PREFERENCE = 'shyfox.enable.ext.mono.toolbar.icons'
 CONTEXT_PREFERENCE = 'shyfox.enable.ext.mono.context.icons'
+MENU_PREFERENCE = 'shyfox.enable.context.menu.icons'
 
 
-def check(nova, enabled, context_enabled):
+def check(nova, enabled, context_enabled, menu_enabled):
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0))
         port = sock.getsockname()[1]
@@ -40,6 +41,7 @@ def check(nova, enabled, context_enabled):
             archive.writestr('fixture.svg', '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"><path fill="black" d="M0 0h16v16H0z"/></svg>')
             archive.writestr('background.js', 'browser.menus.create({id:"uBlock0-fixture",title:"Textfox context fixture",contexts:["link"]}); browser.browserAction.setBadgeText({text:"7"});')
         prefs = {'marionette.port':port, 'browser.nova.enabled':nova, PREFERENCE:enabled, CONTEXT_PREFERENCE:context_enabled,
+                 MENU_PREFERENCE:menu_enabled,
                  'toolkit.legacyUserProfileCustomizations.stylesheets':True,
                  'browser.shell.checkDefaultBrowser':False}
         (profile / 'user.js').write_text(''.join(
@@ -58,10 +60,12 @@ def check(nova, enabled, context_enabled):
                   version:Services.appinfo.version,build:Services.appinfo.appBuildID,
                   nova:Services.prefs.getBoolPref('browser.nova.enabled'),
                   iconPref:Services.prefs.getBoolPref(arguments[0]),
-                  contextPref:Services.prefs.getBoolPref(arguments[1])};
-                """, script_args=[PREFERENCE, CONTEXT_PREFERENCE], sandbox='system')
+                  contextPref:Services.prefs.getBoolPref(arguments[1]),
+                  menuPref:Services.prefs.getBoolPref(arguments[2])};
+                """, script_args=[PREFERENCE, CONTEXT_PREFERENCE, MENU_PREFERENCE], sandbox='system')
             if (process.poll() is not None or Path(metadata['profile']).resolve() != profile.resolve()
-                    or metadata['nova'] != nova or metadata['iconPref'] != enabled or metadata['contextPref'] != context_enabled):
+                    or metadata['nova'] != nova or metadata['iconPref'] != enabled or metadata['contextPref'] != context_enabled
+                    or metadata['menuPref'] != menu_enabled):
                 raise RuntimeError('unexpected Firefox process, profile, or preferences')
             installed = m.execute_async_script("""
                 const done=arguments[arguments.length-1];
@@ -159,8 +163,52 @@ def check(nova, enabled, context_enabled):
                 if time.monotonic() >= deadline:
                     raise RuntimeError('Escape did not close the extension context menu')
                 time.sleep(.1)
+            button=m.find_element('css selector', '#nav-bar .webextension-browser-action[data-extensionid="uBlock0@raymondhill.net"]')
+            m.actions.sequence('pointer','mouse',{'pointerType':'mouse'}).click(button,button=2).perform()
+            deadline=time.monotonic()+15
+            while True:
+                toolbar_menu=m.execute_script("""
+                    const popup=document.getElementById('toolbar-context-menu');
+                    const item=popup.querySelector('.customize-context-manageExtension');
+                    if (popup.state !== 'open' || !item || item.hidden) return null;
+                    const r=item.getBoundingClientRect(); if(r.width <= 0 || r.height <= 0) return null;
+                    const selector=':is(.customize-context-manageExtension,.customize-context-removeExtension,.customize-context-reportExtension,.customize-context-moveToPanel,.customize-context-removeFromToolbar,#toggle_PersonalToolbar,.viewCustomizeToolbar)';
+                    return {legacy:matchMedia('(-moz-bool-pref: "shyfox.enable.context.menu.icons")').matches,
+                      modern:matchMedia('-moz-pref("shyfox.enable.context.menu.icons")').matches,
+                      items:[...popup.querySelectorAll(selector)].map(e=>{
+                        const s=getComputedStyle(e),r=e.getBoundingClientRect();
+                        return {id:e.id,classes:e.className,hidden:e.hidden,disabled:e.disabled,
+                          display:s.display,visibility:s.visibility,width:r.width,height:r.height,image:s.backgroundImage};
+                      })};
+                    """, sandbox='system')
+                if toolbar_menu:
+                    break
+                if time.monotonic() >= deadline:
+                    raise RuntimeError(f'extension toolbar context menu unavailable: {toolbar_menu}')
+                time.sleep(.1)
+            if toolbar_menu['modern'] != menu_enabled:
+                raise RuntimeError(f'toolbar context preference control failed: {toolbar_menu}')
+            toolbar_control=m.execute_script("""
+                const item=document.querySelector('#toolbar-context-menu .customize-context-manageExtension');
+                const css='@media -moz-pref("shyfox.enable.context.menu.icons") { #toolbar-context-menu .customize-context-manageExtension { background-image: url("chrome://global/skin/icons/settings.svg") !important; } }';
+                const uri='data:text/css,'+encodeURIComponent(css);
+                window.windowUtils.loadSheetUsingURIString(uri,Ci.nsIDOMWindowUtils.USER_SHEET);
+                try { return getComputedStyle(item).backgroundImage; }
+                finally { window.windowUtils.removeSheetUsingURIString(uri,Ci.nsIDOMWindowUtils.USER_SHEET); }
+                """, sandbox='system')
+            expected='url("chrome://global/skin/icons/settings.svg")' if menu_enabled else 'none'
+            if toolbar_control != expected:
+                raise RuntimeError(f'toolbar context icon intervention failed: {toolbar_control}')
+            m.find_element('id','toolbar-context-customize').click()
+            deadline=time.monotonic()+15
+            while not m.execute_script("return document.documentElement.hasAttribute('customizing')",sandbox='system'):
+                if time.monotonic() >= deadline:
+                    raise RuntimeError('toolbar customize action did not enter customization')
+                time.sleep(.1)
             print(json.dumps({'firefox':metadata,'extension':installed,'sample':sample,'control':control,
-                              'badgeControl':badge_control,'context':context,'contextControl':context_control}), flush=True)
+                              'badgeControl':badge_control,'context':context,'contextControl':context_control,
+                              'toolbarContext':toolbar_menu,'toolbarControl':toolbar_control,
+                              'customizeActionEntered':True}), flush=True)
         finally:
             try:
                 if m:
@@ -178,4 +226,5 @@ if __name__ == '__main__':
     for nova in (False, True):
         for enabled in (False, True):
             for context_enabled in (False, True):
-                check(nova, enabled, context_enabled)
+                for menu_enabled in (False, True):
+                    check(nova, enabled, context_enabled, menu_enabled)
