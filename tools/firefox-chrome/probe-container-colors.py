@@ -3,6 +3,7 @@
 import json
 import os
 from pathlib import Path
+import runpy
 import shutil
 import socket
 import subprocess
@@ -14,6 +15,14 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 def check(nova, themed, vertical):
+    selector_path=os.environ.get('TEXTFOX_SELECTOR_INVENTORY')
+    selector_records=None
+    selector_query=None
+    if selector_path:
+        selector_records=[r for r in json.loads(Path(selector_path).read_text()) if r['file']=='chrome/overwrites.css']
+        if not selector_records:
+            raise ValueError('selector inventory has no overwrite records')
+        selector_query=runpy.run_path(str(ROOT / 'tools/firefox-chrome/probe-selector-dom.py'))['query']
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0))
         port = sock.getsockname()[1]
@@ -72,6 +81,32 @@ def check(nova, themed, vertical):
                     or not item['tabColor'] or not item['iconColor'] or item['lineDisplay'] is None
                     for item in result)):
                 raise RuntimeError(f'container tab fixture unavailable: {result}')
+            selector_states={}
+            turquoise_control=None
+            if selector_query:
+                selector_states['realIdentities']=selector_query(m,selector_records)
+                for color in ('yellow','purple','blue','green','orange','red','pink'):
+                    candidates=[r for r in selector_states['realIdentities'] if f'[data-color="{color}"]' in r['selector']]
+                    if len(candidates)!=1 or candidates[0]['status']!='structural-match':
+                        raise RuntimeError(f'container selector did not match real identity {color}: {candidates}')
+                turquoise=m.execute_script("""
+                    const e=document.createXULElement('box');
+                    e.setAttribute('data-color','turquoise');e.setAttribute('data-textfox-turquoise-probe','true');
+                    document.getElementById('mainPopupSet').append(e);
+                    const s=getComputedStyle(e);
+                    return {color:s.getPropertyValue('--color').trim(),tab:s.getPropertyValue('--identity-tab-color').trim(),
+                      icon:s.getPropertyValue('--identity-icon-color').trim()};
+                    """,sandbox='system')
+                try:
+                    selector_states['turquoiseControl']=selector_query(m,selector_records)
+                    candidate=[r for r in selector_states['turquoiseControl'] if '[data-color="turquoise"]' in r['selector']]
+                    if len(candidate)!=1 or candidate[0]['status']!='structural-match':
+                        raise RuntimeError(f'turquoise selector control failed: {candidate}')
+                    if themed and (not turquoise['color'] or turquoise['color']!=turquoise['tab'] or turquoise['color']!=turquoise['icon']):
+                        raise RuntimeError(f'turquoise variable control failed: {turquoise}')
+                    turquoise_control=turquoise
+                finally:
+                    m.execute_script("document.querySelector('[data-textfox-turquoise-probe]')?.remove()",sandbox='system')
             selected_pinned = m.execute_async_script("""
                 const done=arguments[arguments.length-1];
                 const tab=[...gBrowser.tabs].find(t => t.userContextId === arguments[0]);
@@ -93,7 +128,8 @@ def check(nova, themed, vertical):
                            for state in selected_pinned.values())):
                 raise RuntimeError(f'container selected/pinned fixture failed: {selected_pinned}')
             print(json.dumps({'firefox':meta, 'themed':themed, 'tabs':result,
-                              'selectedPinned':selected_pinned}), flush=True)
+                              'selectedPinned':selected_pinned,'selectorStates':selector_states,
+                              'turquoiseControl':turquoise_control}), flush=True)
         finally:
             try:
                 if m:
