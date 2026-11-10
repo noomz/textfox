@@ -171,10 +171,10 @@ def check(nova, alignment, icons):
                 PlacesUtils.bookmarks.insert({parentGuid:PlacesUtils.bookmarks.toolbarGuid,
                   type:PlacesUtils.bookmarks.TYPE_FOLDER, title:'Textfox folder fixture'})
                   .then(folder=>PlacesUtils.bookmarks.insert({parentGuid:folder.guid,
-                    url:'about:mozilla', title:'Textfox folder child'}))
-                  .then(()=>done(true), error=>done(String(error)));
+                    url:'about:mozilla', title:'Textfox folder child'}).then(()=>folder.guid))
+                  .then(guid=>done(guid), error=>done(String(error)));
                 """, sandbox='system')
-            if inserted_folder is not True:
+            if not isinstance(inserted_folder, str) or len(inserted_folder) != 12:
                 raise RuntimeError(f'could not insert bookmark folder: {inserted_folder}')
             folder_selector = '#PlacesToolbarItems .bookmark-item[label="Textfox folder fixture"]'
             deadline = time.monotonic() + 20
@@ -209,6 +209,38 @@ def check(nova, alignment, icons):
                     break
                 if time.monotonic() >= deadline:
                     raise RuntimeError(f'folder context command did not open fixture child: {opened}')
+                time.sleep(.1)
+            second_child = m.execute_async_script("""
+                const done=arguments[arguments.length-1];
+                PlacesUtils.bookmarks.insert({parentGuid:arguments[0],url:'about:robots',title:'Textfox second folder child'})
+                  .then(()=>done(true),error=>done(String(error)));
+                """, script_args=[inserted_folder], sandbox='system')
+            if second_child is not True:
+                raise RuntimeError(f'could not insert second folder child: {second_child}')
+            m.find_element('css selector', folder_selector).click()
+            deadline=time.monotonic()+15
+            while True:
+                folder_popup=m.execute_script("""
+                    const folder=document.querySelector(arguments[0]),popup=folder?.querySelector('menupopup');
+                    const item=document.querySelector('#PlacesToolbar .openintabs-menuitem'),s=item && getComputedStyle(item),r=item?.getBoundingClientRect();
+                    return {state:popup?.state,found:!!item,hidden:item?.hidden,display:s?.display,
+                      visibility:s?.visibility,width:r?.width,height:r?.height,image:s?.backgroundImage};
+                    """,script_args=[folder_selector],sandbox='system')
+                if folder_popup['state']=='open' and folder_popup['found'] and folder_popup['width']>0 and folder_popup['height']>0:
+                    break
+                if time.monotonic()>=deadline:
+                    raise RuntimeError(f'folder open-in-tabs fixture unavailable: {folder_popup}')
+                time.sleep(.1)
+            folder_selectors=selector_query(m,selector_records) if selector_query else []
+            before_open_all=m.execute_script('return gBrowser.tabs.length',sandbox='system')
+            m.find_element('css selector','#PlacesToolbar .openintabs-menuitem').click()
+            deadline=time.monotonic()+15
+            while True:
+                opened_all=m.execute_script("return {count:gBrowser.tabs.length,urls:[...gBrowser.tabs].slice(arguments[0]).map(t=>t.linkedBrowser.currentURI.spec)}",script_args=[before_open_all],sandbox='system')
+                if opened_all['count']==before_open_all+2 and set(opened_all['urls'])=={'about:robots','about:mozilla'}:
+                    break
+                if time.monotonic()>=deadline:
+                    raise RuntimeError(f'folder open-in-tabs action failed: {opened_all}')
                 time.sleep(.1)
             inserted_other = m.execute_async_script("""
                 const done=arguments[arguments.length-1];
@@ -319,7 +351,8 @@ def check(nova, alignment, icons):
                               'folderIcon':folder_icon, 'otherBookmarks':other, 'otherIconResource':resource,
                               'otherPopupOpened':True, 'openedTabs':opened,
                               'chevron':chevron, 'chevronResource':chevron_resource,
-                              'overflowPopup':overflow, 'selectorRecords':toolbar_selectors}), flush=True)
+                              'overflowPopup':overflow, 'selectorStates':{'toolbar':toolbar_selectors,'folderPopup':folder_selectors},
+                              'folderPopup':folder_popup,'openedAll':opened_all}), flush=True)
         finally:
             try:
                 if m:
