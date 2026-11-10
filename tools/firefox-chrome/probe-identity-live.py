@@ -29,6 +29,9 @@ def run(*args):
 
 def check(nova, display):
     media_kind = os.environ.get('TEXTFOX_FAKE_MEDIA_KIND', 'both')
+    sharing_page = os.environ.get('TEXTFOX_SHARING_PAGE', 'secure')
+    if sharing_page not in ('secure', 'mixed'):
+        raise ValueError(f'unknown sharing page: {sharing_page}')
     media_options = {'both':{'video':True, 'audio':True},
                      'camera':{'video':True, 'audio':False},
                      'microphone':{'video':False, 'audio':True}}
@@ -81,7 +84,7 @@ def check(nova, display):
                     content_type = 'application/javascript'
                 else:
                     mixed = (f'<script src="http://{MIXED_HOST}:{self.mixed_port}/mixed-script.js"></script>'
-                             if self.path == '/mixed' else '')
+                             if self.path.split('?', 1)[0] == '/mixed' else '')
                     body = f'<!doctype html><title>textfox identity</title>{mixed}<p>identity fixture</p>'.encode()
                     content_type = 'text/html'
                 self.send_response(200)
@@ -202,7 +205,7 @@ def check(nova, display):
                 samples[name] = {'page':body, 'identity':state, 'mixedRequests':Handler.mixed_requests,
                                  'mixedBranchControl':branch_control}
             m.set_context('content')
-            m.navigate(f'https://{HOST}:{https.server_port}/secure')
+            m.navigate(f'https://{HOST}:{https.server_port}/{sharing_page}')
             m.execute_script("""
                 const root=document.documentElement;
                 root.setAttribute('data-textfox-geo-positions','0');
@@ -256,14 +259,15 @@ def check(nova, display):
                 if time.monotonic() >= deadline:
                     raise RuntimeError(f'geolocation sharing indicator did not initialize: {sharing}')
                 time.sleep(.1)
-            if (not Handler.geo_requests or not sharing['siblingMatches'] or sharing['permissionDisplay'] == 'none'
+            if ((sharing_page == 'mixed' and 'mixedActiveBlocked' not in sharing['classes'])
+                    or not Handler.geo_requests or not sharing['siblingMatches'] or sharing['permissionDisplay'] == 'none'
                     or sharing['permissionWidth'] <= 0 or sharing['permissionHeight'] <= 0
                     or (display is not None and (sharing['grantedDisplay'] != display or sharing['siblingMarginLeft'] != '-4px'))):
                 raise RuntimeError(f'geolocation sharing selector fixture failed: {sharing}, requests={Handler.geo_requests}')
             m.set_context('content')
             m.execute_script("navigator.geolocation.clearWatch(Number(document.documentElement.getAttribute('data-textfox-geo-watch')))")
             m.set_context('chrome')
-            media_url = f'https://{HOST}:{https.server_port}/secure?media=1'
+            media_url = f'https://{HOST}:{https.server_port}/{sharing_page}?media=1'
             m.execute_script('gBrowser.selectedTab=gBrowser.addTrustedTab(arguments[0])', script_args=[media_url], sandbox='system')
             m.set_context('content')
             m.switch_to_window(m.window_handles[-1])
@@ -325,7 +329,8 @@ def check(nova, display):
                 if time.monotonic() >= deadline:
                     raise RuntimeError(f'fake-media sharing indicator did not initialize: {media_sharing}')
                 time.sleep(.1)
-            if (media_sharing['sharing'] != expected_sharing or media_sharing['siblingMatches']
+            if ((sharing_page == 'mixed' and 'mixedActiveBlocked' not in media_sharing['classes'])
+                    or media_sharing['sharing'] != expected_sharing or media_sharing['siblingMatches']
                     or media_sharing['permissionDisplay'] == 'none' or media_sharing['permissionWidth'] <= 0
                     or media_sharing['permissionHeight'] <= 0 or (display is not None and media_sharing['grantedDisplay'] != display)):
                 raise RuntimeError(f'fake-media identity selector fixture failed: {media_sharing}')
@@ -348,8 +353,11 @@ def check(nova, display):
                 """)
             if stopped != 'true':
                 raise RuntimeError(f'fake media tracks did not stop: {stopped}')
-            print(json.dumps({'firefox':meta,'display':display,'samples':samples,
+            if Handler.mixed_requests:
+                raise RuntimeError(f'mixed fixture script unexpectedly reached server: {Handler.mixed_requests}')
+            print(json.dumps({'firefox':meta,'display':display,'sharingPage':sharing_page,'samples':samples,
                               'geo':geo,'sharing':sharing,'geoRequests':Handler.geo_requests,
+                              'mixedRequests':Handler.mixed_requests,
                               'mediaKind':media_kind,'media':media,'mediaSharing':media_sharing,'mediaControl':media_control,
                               'mediaStopped':stopped}),flush=True)
         finally:
