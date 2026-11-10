@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import re
+import runpy
 import shutil
 import socket
 import subprocess
@@ -18,6 +19,14 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 def check(nova, icons):
+    selector_path = os.environ.get('TEXTFOX_SELECTOR_INVENTORY')
+    selector_records = None
+    selector_query = None
+    if selector_path:
+        selector_records = [r for r in json.loads(Path(selector_path).read_text()) if r['file'] == 'chrome/icons.css']
+        if not selector_records:
+            raise ValueError('selector inventory has no icon records')
+        selector_query = runpy.run_path(str(ROOT / 'tools/firefox-chrome/probe-selector-dom.py'))['query']
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0))
         port = sock.getsockname()[1]
@@ -105,6 +114,15 @@ def check(nova, icons):
                         or not toggle['inPopup']
                         or toggle['width'] <= 0 or toggle['height'] <= 0):
                     raise RuntimeError(f'bookmarks menu fixture or conditional selector failed: {state}')
+                selector_states = {}
+                if selector_query:
+                    selector_states['popup'] = selector_query(m, selector_records)
+                    if not visible:
+                        original = m.execute_script("const e=document.getElementById('PersonalToolbar'),v=e.getAttribute('collapsed'); e.setAttribute('collapsed','true'); return v", sandbox='system')
+                        try:
+                            selector_states['collapsedControl'] = selector_query(m, selector_records)
+                        finally:
+                            m.execute_script("const e=document.getElementById('PersonalToolbar'); if(arguments[0]===null)e.removeAttribute('collapsed'); else e.setAttribute('collapsed',arguments[0])", script_args=[original], sandbox='system')
                 collapsed_control = None
                 if not visible:
                     collapsed_control = m.execute_script("""
@@ -154,7 +172,8 @@ def check(nova, icons):
                         raise RuntimeError(f'bookmarks popup did not close: {open_states}')
                     time.sleep(.1)
                 states['visible' if visible else 'hidden'] = {'menu':state,'modernControl':control,
-                                                               'collapsedControl':collapsed_control,'showAction':toggled}
+                                                               'collapsedControl':collapsed_control,'showAction':toggled,
+                                                               'selectorStates':selector_states}
             print(json.dumps({'firefox':meta,'toolbarStates':states}),flush=True)
         finally:
             try:
