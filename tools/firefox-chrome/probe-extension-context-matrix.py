@@ -147,12 +147,22 @@ def check(nova,enabled):
             baseline=m.execute_script(measure,script_args=[ROOT_ID],sandbox='system')
             extra_baseline=m.execute_script("""
                 return arguments[0].map(fragment=>{const e=[...document.querySelectorAll('#contentAreaContextMenu [id]')].find(node=>node.id.includes(fragment));
-                  const s=getComputedStyle(e),r=e.getBoundingClientRect();return {id:e.id,hidden:e.hidden,display:s.display,visibility:s.visibility,
+                  const s=getComputedStyle(e),r=e.getBoundingClientRect(),nodes=[];
+                  const visit=(node,depth)=>{if(depth>6)return;for(const child of InspectorUtils.getChildrenForNode(node,true,false)){
+                    if(child.nodeType===Node.ELEMENT_NODE){nodes.push({tag:child.localName,class:child.getAttribute('class'),opacity:getComputedStyle(child).opacity,
+                      display:getComputedStyle(child).display,width:child.getBoundingClientRect().width,height:child.getBoundingClientRect().height,
+                      src:child.currentSrc || null,naturalWidth:child.naturalWidth ?? null});visit(child,depth+1);}}};
+                  visit(e,0);
+                  return {id:e.id,hidden:e.hidden,display:s.display,visibility:s.visibility,
                     width:r.width,height:r.height,image:s.backgroundImage,hasShadow:!!e.shadowRoot,
-                    lightIcon:!!e.querySelector('.menu-iconic-icon'),shadowIcon:!!e.shadowRoot?.querySelector('.menu-iconic-icon')};});
+                    lightIcon:!!e.querySelector('.menu-iconic-icon'),shadowIcon:!!e.shadowRoot?.querySelector('.menu-iconic-icon'),inspectorChildren:nodes};});
                 """,script_args=[[entry[2] for entry in EXTRAS]],sandbox='system')
             if any(e['hidden'] or e['display']=='none' or e['visibility']!='visible' or e['width']<=0 or e['height']<=0 for e in extra_baseline):
                 raise RuntimeError(f'extra extension menu fixtures not visible: {extra_baseline}')
+            for item in extra_baseline:
+                native=[n for n in item['inspectorChildren'] if n['class']=='menu-icon']
+                if len(native)!=1 or native[0]['opacity']!='1' or native[0]['width']<=0 or native[0]['height']<=0 or native[0]['naturalWidth']<=0:
+                    raise RuntimeError(f'extension native icon fixture unavailable: {item}')
             if (baseline['modern']!=enabled or len(baseline['children'])!=len(CHILDREN)
                     or any(item['hidden'] or item['display']=='none' or item['visibility']!='visible'
                            or item['width']<=0 or item['height']<=0 for item in baseline['children'])):
@@ -178,10 +188,12 @@ def check(nova,enabled):
             extra_control=m.execute_script("""
                 const uri='data:text/css,'+encodeURIComponent(arguments[0]);
                 window.windowUtils.loadSheetUsingURIString(uri,Ci.nsIDOMWindowUtils.USER_SHEET);
-                try{return arguments[1].map(fragment=>{const e=[...document.querySelectorAll('#contentAreaContextMenu [id]')].find(node=>node.id.includes(fragment));return {id:e.id,image:getComputedStyle(e).backgroundImage};});}
+                try{return arguments[1].map(fragment=>{const e=[...document.querySelectorAll('#contentAreaContextMenu [id]')].find(node=>node.id.includes(fragment));
+                  const icon=InspectorUtils.getChildrenForNode(e,true,false).find(node=>node.nodeType===Node.ELEMENT_NODE && node.classList.contains('menu-icon'));
+                  return {id:e.id,image:getComputedStyle(e).backgroundImage,iconOpacity:icon && getComputedStyle(icon).opacity};});}
                 finally{window.windowUtils.removeSheetUsingURIString(uri,Ci.nsIDOMWindowUtils.USER_SHEET);}
                 """,script_args=[modern_css(profile),[entry[2] for entry in EXTRAS]],sandbox='system')
-            if any((icon in item['image'])!=enabled for item,(*_,icon) in zip(extra_control,EXTRAS,strict=True)):
+            if any((icon in item['image'])!=enabled or item['iconOpacity']!='1' for item,(*_,icon) in zip(extra_control,EXTRAS,strict=True)):
                 raise RuntimeError(f'extra extension context controls failed: {extra_control}')
             resources=[]
             if enabled:
