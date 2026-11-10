@@ -3,6 +3,7 @@
 import json
 import os
 from pathlib import Path
+import runpy
 import shutil
 import socket
 import subprocess
@@ -16,7 +17,15 @@ from ff_inspect import connect
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def check(nova):
+def check(nova, icons):
+    selector_path = os.environ.get('TEXTFOX_SELECTOR_INVENTORY')
+    selector_records = None
+    selector_query = None
+    if selector_path:
+        selector_records = [r for r in json.loads(Path(selector_path).read_text()) if r['file'] == 'chrome/icons.css']
+        if not selector_records:
+            raise ValueError('selector inventory has no icon records')
+        selector_query = runpy.run_path(str(ROOT / 'tools/firefox-chrome/probe-selector-dom.py'))['query']
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0))
         port = sock.getsockname()[1]
@@ -26,6 +35,7 @@ def check(nova):
         (profile / 'chrome' / 'config.css').write_text(
             ':root { --tf-accent: rgb(19, 83, 137); --tf-border-width: 3px; }\n')
         prefs = {'marionette.port': port, 'browser.nova.enabled': nova,
+                 'shyfox.enable.context.menu.icons': icons,
                  'toolkit.legacyUserProfileCustomizations.stylesheets': True,
                  'browser.shell.checkDefaultBrowser': False}
         (profile / 'user.js').write_text(''.join(
@@ -40,9 +50,9 @@ def check(nova):
         try:
             m = connect(port)
             m.set_context('chrome')
-            meta = m.execute_script("return {profile:Services.dirsvc.get('ProfD',Ci.nsIFile).path,version:Services.appinfo.version,build:Services.appinfo.appBuildID,nova:Services.prefs.getBoolPref('browser.nova.enabled'),private:PrivateBrowsingUtils.isWindowPrivate(window)}", sandbox='system')
+            meta = m.execute_script("return {profile:Services.dirsvc.get('ProfD',Ci.nsIFile).path,version:Services.appinfo.version,build:Services.appinfo.appBuildID,nova:Services.prefs.getBoolPref('browser.nova.enabled'),private:PrivateBrowsingUtils.isWindowPrivate(window),iconPref:Services.prefs.getBoolPref('shyfox.enable.context.menu.icons')}", sandbox='system')
             if (process.poll() is not None or Path(meta['profile']).resolve() != profile.resolve()
-                    or meta['nova'] != nova or not meta['private']):
+                    or meta['nova'] != nova or not meta['private'] or meta['iconPref'] != icons):
                 raise RuntimeError(f'unexpected Firefox process, profile, or window: {meta}')
             deadline = time.monotonic() + 20
             while not m.execute_script('return gBrowserInit.delayedStartupFinished', sandbox='system'):
@@ -73,7 +83,7 @@ def check(nova):
             m.actions.sequence('key', 'keyboard').send_keys(Keys.ESCAPE).perform()
             m.actions.sequence('key', 'keyboard').key_down(Keys.CONTROL).key_down('l').key_up('l').key_up(Keys.CONTROL).perform()
             field = m.find_element('id', 'urlbar-input')
-            field.send_keys(Keys.CONTROL, 'a')
+            m.execute_script('gURLBar.select()', sandbox='system')
             field.send_keys('about:blank')
             entered = m.execute_script('return gURLBar.value', sandbox='system')
             if entered != 'about:blank':
@@ -88,6 +98,42 @@ def check(nova):
             if not m.execute_script('return PrivateBrowsingUtils.isWindowPrivate(window)', sandbox='system'):
                 raise RuntimeError('navigation left private window')
             print(json.dumps({'nova':nova, 'privateNavigation':'about:blank'}), flush=True)
+            m.set_context('content')
+            m.navigate('data:text/html,<a href="https://example.invalid/">private fixture link</a>')
+            m.actions.sequence('pointer','mouse',{'pointerType':'mouse'}).click(m.find_element('css selector','a'),button=2).perform()
+            m.set_context('chrome')
+            deadline=time.monotonic()+15
+            while m.execute_script("return document.getElementById('contentAreaContextMenu')?.state",sandbox='system')!='open':
+                if time.monotonic()>=deadline:
+                    raise RuntimeError('private link context menu did not open')
+                time.sleep(.1)
+            private_menu=m.execute_script("""
+                const popup=document.getElementById('contentAreaContextMenu');
+                return {private:PrivateBrowsingUtils.isWindowPrivate(window),
+                  legacy:matchMedia('(-moz-bool-pref: "shyfox.enable.context.menu.icons")').matches,
+                  modern:matchMedia('-moz-pref("shyfox.enable.context.menu.icons")').matches,
+                  items:['context-openlinkintab','context-openlinkprivate'].map(id=>{const e=document.getElementById(id);
+                    if(!e)return {id,found:false};const s=getComputedStyle(e),r=e.getBoundingClientRect();
+                    return {id,found:true,inPopup:popup.contains(e),hidden:e.hidden,display:s.display,visibility:s.visibility,
+                      width:r.width,height:r.height,image:s.backgroundImage};})};
+                """,sandbox='system')
+            if (not private_menu['private'] or private_menu['modern']!=icons
+                    or not all(i['found'] and i['inPopup'] and not i['hidden'] and i['display']!='none'
+                               and i['visibility']=='visible' and i['width']>0 and i['height']>0 for i in private_menu['items'])):
+                raise RuntimeError(f'private link context fixture unavailable: {private_menu}')
+            control=m.execute_script("""
+                const css='@media -moz-pref("shyfox.enable.context.menu.icons") { #contentAreaContextMenu #context-openlinkprivate { background-image: url("chrome://browser/skin/privateBrowsing.svg") !important; } }';
+                const uri='data:text/css,'+encodeURIComponent(css);
+                window.windowUtils.loadSheetUsingURIString(uri,Ci.nsIDOMWindowUtils.USER_SHEET);
+                try { return getComputedStyle(document.getElementById('context-openlinkprivate')).backgroundImage; }
+                finally { window.windowUtils.removeSheetUsingURIString(uri,Ci.nsIDOMWindowUtils.USER_SHEET); }
+                """,sandbox='system')
+            expected='url("chrome://browser/skin/privateBrowsing.svg")' if icons else 'none'
+            if control!=expected:
+                raise RuntimeError(f'private context icon control failed: {control}')
+            selectors=selector_query(m,selector_records) if selector_query else []
+            m.actions.sequence('key','keyboard').send_keys(Keys.ESCAPE).perform()
+            print(json.dumps({'firefox':meta,'privateMenu':private_menu,'modernControl':control,'selectorRecords':selectors}),flush=True)
         finally:
             try:
                 if m:
@@ -103,4 +149,5 @@ def check(nova):
 
 if __name__ == '__main__':
     for nova in (False, True):
-        check(nova)
+        for icons in (False, True):
+            check(nova, icons)
