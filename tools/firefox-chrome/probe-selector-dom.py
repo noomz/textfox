@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Sample expanded selector candidates in default chrome and new-tab DOMs.
+"""Sample expanded selector candidates in several chrome and new-tab DOM states.
 
 Input is JSON from expand-rule-selectors.py. Does not pierce shadow roots,
-inspect pseudo-elements, or prove cascade, painting, or non-default states.
+inspect pseudo-elements, or prove cascade, painting, or all UI states.
 New-tab feeds may make network requests.
 """
 import argparse
@@ -14,6 +14,8 @@ import socket
 import subprocess
 import tempfile
 import time
+
+from marionette_driver.keys import Keys
 
 from ff_inspect import connect
 
@@ -60,6 +62,7 @@ def check(browser_nova, newtab_nova, records):
         prefs = {'marionette.port':port,'browser.nova.enabled':browser_nova,
                  'browser.newtabpage.activity-stream.nova.enabled':newtab_nova,
                  'browser.newtabpage.activity-stream.testing.shouldInitializeFeeds':True,
+                 'browser.search.suggest.enabled':False,'browser.urlbar.suggest.searches':False,
                  'toolkit.legacyUserProfileCustomizations.stylesheets':True,
                  'browser.shell.checkDefaultBrowser':False}
         (profile / 'user.js').write_text(''.join(
@@ -90,6 +93,63 @@ def check(browser_nova, newtab_nova, records):
             chrome_records = [r for r in records if not r['file'].startswith('chrome/content/')]
             content_records = [r for r in records if r['file'].startswith('chrome/content/')]
             chrome_results = query(m, chrome_records)
+            chrome_states = {}
+            m.execute_script('PanelUI.show()', sandbox='system')
+            deadline = time.monotonic() + 15
+            while m.execute_script("return document.getElementById('appMenu-popup').state", sandbox='system') != 'open':
+                if time.monotonic() >= deadline:
+                    raise RuntimeError('app menu did not open')
+                time.sleep(.1)
+            chrome_states['app-menu'] = query(m, chrome_records)
+            m.actions.sequence('key','keyboard').send_keys(Keys.ESCAPE).perform()
+            deadline = time.monotonic() + 10
+            while m.execute_script("return document.getElementById('appMenu-popup').state", sandbox='system') != 'closed':
+                if time.monotonic() >= deadline:
+                    raise RuntimeError('app menu did not close')
+                time.sleep(.1)
+            m.execute_script("gURLBar.focus(); gURLBar.search('mozilla')", sandbox='system')
+            deadline = time.monotonic() + 15
+            while not m.execute_script("return gURLBar.view.isOpen && !!document.querySelector('#urlbar .urlbarView-row')", sandbox='system'):
+                if time.monotonic() >= deadline:
+                    raise RuntimeError('URL bar results did not open')
+                time.sleep(.1)
+            chrome_states['urlbar-results'] = query(m, chrome_records)
+            m.execute_script('gURLBar.view.close()', sandbox='system')
+            m.execute_script('SidebarController.show("viewBookmarksSidebar")', sandbox='system')
+            deadline = time.monotonic() + 15
+            while not m.execute_script("const e=document.getElementById('sidebar-box'); return e.getAttribute('sidebarcommand') === 'viewBookmarksSidebar' && !e.hidden", sandbox='system'):
+                if time.monotonic() >= deadline:
+                    raise RuntimeError('bookmarks sidebar did not open')
+                time.sleep(.1)
+            chrome_states['bookmarks-sidebar'] = query(m, chrome_records)
+            opened=m.execute_async_script("""
+                const done=arguments[arguments.length-1];
+                gBrowser.getFindBar(gBrowser.selectedTab).then(bar=>{bar.open();done(true);},error=>done(String(error)));
+                """, sandbox='system')
+            if opened is not True:
+                raise RuntimeError(f'findbar did not open: {opened}')
+            deadline = time.monotonic() + 10
+            while not m.execute_script("return !!document.querySelector('findbar:not([hidden])')", sandbox='system'):
+                if time.monotonic() >= deadline:
+                    raise RuntimeError('findbar did not become visible')
+                time.sleep(.1)
+            chrome_states['findbar'] = query(m, chrome_records)
+            m.set_context('content')
+            m.navigate('data:text/html,<a id="tf-link" href="https://example.invalid/">selector fixture</a>')
+            m.actions.sequence('pointer','mouse',{'pointerType':'mouse'}).click(m.find_element('id','tf-link'),button=2).perform()
+            m.set_context('chrome')
+            deadline = time.monotonic() + 15
+            while m.execute_script("return document.getElementById('contentAreaContextMenu').state", sandbox='system') != 'open':
+                if time.monotonic() >= deadline:
+                    raise RuntimeError('link context menu did not open')
+                time.sleep(.1)
+            chrome_states['link-context'] = query(m, chrome_records)
+            m.actions.sequence('key','keyboard').send_keys(Keys.ESCAPE).perform()
+            deadline = time.monotonic() + 10
+            while m.execute_script("return document.getElementById('contentAreaContextMenu').state", sandbox='system') != 'closed':
+                if time.monotonic() >= deadline:
+                    raise RuntimeError('link context menu did not close')
+                time.sleep(.1)
             m.execute_script('gBrowser.selectedTab=gBrowser.addTrustedTab("about:newtab")', sandbox='system')
             m.set_context('content')
             m.switch_to_window(m.window_handles[-1])
@@ -99,7 +159,8 @@ def check(browser_nova, newtab_nova, records):
                     raise RuntimeError('new-tab content did not initialize')
                 time.sleep(.2)
             content_results = query(m, content_records)
-            print(json.dumps({'firefox':meta,'chrome':chrome_results,'newtab':content_results}),flush=True)
+            print(json.dumps({'firefox':meta,'chrome':chrome_results,'chromeStates':chrome_states,
+                              'newtab':content_results}),flush=True)
         finally:
             try:
                 if m:
