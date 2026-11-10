@@ -45,6 +45,27 @@ def check_context(m, selector, expected_id, expected_selection=None, action_id=N
         if time.monotonic() >= deadline:
             raise RuntimeError(f'context fixture {selector} did not initialize: {result}')
         time.sleep(.1)
+    if selector == '#page':
+        result['navigationSelectors'] = m.execute_script("""
+            const ids=['context-back','context-forward','context-reload','context-stop','context-bookmarkpage'];
+            const nodes=ids.map(id=>document.getElementById(id));
+            const snapshot=()=>nodes.map(e=>{const s=getComputedStyle(e),r=e.getBoundingClientRect();return {id:e.id,parent:e.parentElement?.id,
+              direct:e.matches('#contentAreaContextMenu > #'+e.id),hidden:e.hidden,display:s.display,
+              width:r.width,height:r.height,image:s.backgroundImage};});
+            const run=relation=>{
+              const selector=ids.map(id=>'#contentAreaContextMenu '+relation+' #'+id).join(',');
+              const uri='data:text/css,'+encodeURIComponent(`@media -moz-pref("shyfox.enable.context.menu.icons") { ${selector} { background-image:url("chrome://browser/skin/back.svg") !important; } }`);
+              window.windowUtils.loadSheetUsingURIString(uri,Ci.nsIDOMWindowUtils.USER_SHEET);
+              try{return snapshot();}finally{window.windowUtils.removeSheetUsingURIString(uri,Ci.nsIDOMWindowUtils.USER_SHEET);}
+            };
+            return {enabled:matchMedia('-moz-pref("shyfox.enable.context.menu.icons")').matches,
+              baseline:snapshot(),directControl:run('>'),descendantControl:run('')};
+            """, sandbox='system')
+        navigation=result['navigationSelectors']
+        if (any(('chrome://browser/skin/back.svg' in item['image']) != (navigation['enabled'] and base['direct'])
+                for item,base in zip(navigation['directControl'],navigation['baseline'],strict=True))
+                or any(('chrome://browser/skin/back.svg' in item['image']) != navigation['enabled'] for item in navigation['descendantControl'])):
+            raise RuntimeError(f'context navigation selector control failed: {navigation}')
     if action_id:
         actionable = m.execute_script("const e=document.getElementById(arguments[0]); const r=e?.getBoundingClientRect(); return !!e && !e.hidden && !e.disabled && r.width > 0 && r.height > 0", script_args=[action_id], sandbox='system')
         if not actionable:
