@@ -210,15 +210,16 @@ def check(nova, alignment, icons):
             if (other['labelDisplay'] != 'none' or other['imageMarginLeft'] != '0px'
                     or other['imageMarginRight'] != '0px' or 'book.svg' not in other['background']):
                 raise RuntimeError(f'Other Bookmarks icon styles did not apply: {other}')
-            resource = m.execute_async_script("""
-                const done=arguments[arguments.length-1], raw=getComputedStyle(document.getElementById('OtherBookmarks')).backgroundImage;
+            resource_js = """
+                const done=arguments[arguments.length-1], raw=getComputedStyle(document.getElementById(arguments[0]))[arguments[1]];
                 const match=raw.match(/^url\\(["']?(.*?)["']?\\)$/);
                 if (!match) { done({loaded:false,raw}); return; }
                 const image=new Image(), timer=setTimeout(()=>done({loaded:false,reason:'timeout'}),5000);
                 image.onload=()=>{clearTimeout(timer);done({loaded:true,width:image.naturalWidth,height:image.naturalHeight});};
                 image.onerror=()=>{clearTimeout(timer);done({loaded:false,reason:'error'});};
                 image.src=match[1];
-                """, sandbox='system')
+                """
+            resource = m.execute_async_script(resource_js, script_args=['OtherBookmarks','backgroundImage'], sandbox='system')
             if not resource.get('loaded') or resource.get('width', 0) <= 0 or resource.get('height', 0) <= 0:
                 raise RuntimeError(f'Other Bookmarks icon resource did not load: {resource}')
             m.find_element('id', 'OtherBookmarks').click()
@@ -233,9 +234,61 @@ def check(nova, alignment, icons):
                 if time.monotonic() >= deadline:
                     raise RuntimeError('Other Bookmarks popup did not close')
                 time.sleep(.1)
+            overflow_inserted = m.execute_async_script("""
+                const done=arguments[arguments.length-1];
+                Promise.all(Array.from({length:35},(_,i)=>PlacesUtils.bookmarks.insert({
+                  parentGuid:PlacesUtils.bookmarks.toolbarGuid,
+                  url:`https://example.invalid/overflow-${i}`, title:`Textfox overflow fixture ${i}`})))
+                  .then(items=>done(items.length),error=>done(String(error)));
+                """, sandbox='system')
+            if overflow_inserted != 35:
+                raise RuntimeError(f'could not insert bookmark overflow fixtures: {overflow_inserted}')
+            deadline = time.monotonic() + 20
+            while True:
+                chevron = m.execute_script("""
+                    const e=document.getElementById('PlacesChevron');
+                    const s=getComputedStyle(e),r=e.getBoundingClientRect();
+                    return {collapsed:e.collapsed,display:s.display,visibility:s.visibility,
+                      width:r.width,height:r.height,image:s.listStyleImage};
+                    """, sandbox='system')
+                if (not chevron['collapsed'] and chevron['display'] != 'none'
+                        and chevron['visibility'] == 'visible' and chevron['width'] > 0 and chevron['height'] > 0):
+                    break
+                if time.monotonic() >= deadline:
+                    raise RuntimeError(f'bookmarks toolbar did not overflow: {chevron}')
+                time.sleep(.1)
+            if 'bookmarks-toolbar.svg' not in chevron['image']:
+                raise RuntimeError(f'bookmark overflow icon rule did not apply: {chevron}')
+            chevron_resource = m.execute_async_script(resource_js, script_args=['PlacesChevron','listStyleImage'], sandbox='system')
+            if not chevron_resource.get('loaded') or chevron_resource.get('width', 0) <= 0 or chevron_resource.get('height', 0) <= 0:
+                raise RuntimeError(f'bookmark overflow icon resource did not load: {chevron_resource}')
+            m.find_element('id', 'PlacesChevron').click()
+            deadline = time.monotonic() + 15
+            while True:
+                overflow = m.execute_script("""
+                    const menu=document.getElementById('PlacesChevronPopup');
+                    const items=[...menu.querySelectorAll('[label^="Textfox overflow fixture"]')];
+                    return {state:menu.state,fixtureCount:items.length,visibleFixtures:items.filter(e=>{
+                      const s=getComputedStyle(e),r=e.getBoundingClientRect();
+                      return !e.hidden && s.display !== 'none' && s.visibility === 'visible' && r.width > 0 && r.height > 0;
+                    }).length};
+                    """, sandbox='system')
+                if overflow['state'] == 'open' and overflow['visibleFixtures'] > 0:
+                    break
+                if time.monotonic() >= deadline:
+                    raise RuntimeError(f'bookmark overflow popup did not expose fixtures: {overflow}')
+                time.sleep(.1)
+            m.actions.sequence('key', 'keyboard').send_keys(Keys.ESCAPE).perform()
+            deadline = time.monotonic() + 10
+            while m.execute_script("return document.getElementById('PlacesChevronPopup').state", sandbox='system') != 'closed':
+                if time.monotonic() >= deadline:
+                    raise RuntimeError('bookmark overflow popup did not close')
+                time.sleep(.1)
             print(json.dumps({'firefox':metadata, 'placesKind':'folder', 'placesContext':folder_menu,
                               'folderIcon':folder_icon, 'otherBookmarks':other, 'otherIconResource':resource,
-                              'otherPopupOpened':True, 'openedTabs':opened}), flush=True)
+                              'otherPopupOpened':True, 'openedTabs':opened,
+                              'chevron':chevron, 'chevronResource':chevron_resource,
+                              'overflowPopup':overflow}), flush=True)
         finally:
             try:
                 if m:
