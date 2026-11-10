@@ -4,6 +4,16 @@ This is a working ledger, not a support claim. Each group lists syntax in the ch
 
 Unless noted otherwise, source links use Firefox `FIREFOX_159_0_RELEASE` commit `9a2dc53c369c7ae5172018b35988e1d2ffeff402`. Live evidence in `NOVA-PORT.md` uses Linux Firefox 159.0 build `20261022150525`; the tag-to-build correspondence has not been established. A source match is not a live match, and a computed style is not a painted result.
 
+## Custom-property syntax reconciliation
+
+`tools/firefox-chrome/inventory-variables.py --non-textfox` lists every non-`--tf-*` declaration and `var()` reference, with file, line, enclosing rules, and consuming property. In this checkout it reconciles with `inventory-css.py`: 40 distinct names, 55 declaration records, and 63 reference records. Twenty-three names are assigned but not referenced by textfox; nine are referenced but not assigned by textfox. These are checkout-only syntax counts: Firefox may supply or consume them, and they do not establish matching or visual behavior. The component evidence and gaps below remain the T2 gate.
+
+- Shared root and identity: `--border-radius-medium`, `--border-radius-small`, `--border-width`, `--button-background-color-active`, `--color`, `--identity-icon-color`, `--identity-tab-color`, `--inactive-titlebar-opacity`, `--link-color`, `--lwt-accent-color`, `--lwt-text-color`.
+- New-tab: `--newtab-background-color`, `--newtab-background-color-secondary`, `--newtab-border-color`, `--newtab-contextual-text-primary-color`, `--newtab-element-hover-color`, `--newtab-wallpaper-color`, `--newtab-weather-background-color`.
+- Panels and split view: `--panel-background`, `--panel-border-color`, `--panel-border-radius`, `--panel-separator-color`, `--splitborder`.
+- Tabs and toolbar: `--tab-border-radius`, `--tab-hover-background-color`, `--tab-min-height`, `--tab-selected-bgcolor`, `--tab-selected-outline-color`, `--toolbar-bgcolor`, `--toolbar-color`, `--toolbar-field-background-color`, `--toolbar-field-color`, `--toolbarbutton-border-radius`, `--toolbarbutton-hover-background`, `--toolbarbutton-icon-fill`, `--toolbarbutton-icon-fill-opacity`, `--toolbox-non-lwt-bgcolor`.
+- URL bar: `--urlbar-container-height`, `--urlbar-toolbar-height`, `--urlbarView-highlight-background`.
+
 ## Platform checks carried to T8
 
 | Check | Current access and limitation | Candidate route |
