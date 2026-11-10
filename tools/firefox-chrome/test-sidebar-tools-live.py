@@ -3,6 +3,7 @@
 import json
 import os
 from pathlib import Path
+import runpy
 import shutil
 import socket
 import subprocess
@@ -15,6 +16,15 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 def check(nova, display, vertical):
+    selector_path=os.environ.get('TEXTFOX_SELECTOR_INVENTORY')
+    selector_records=None
+    selector_query=None
+    if selector_path:
+        selector_records=[r for r in json.loads(Path(selector_path).read_text())
+                          if r['file'] in ('chrome/tabs.css','chrome/sidebar.css')]
+        if not selector_records:
+            raise ValueError('selector inventory has no tab/sidebar records')
+        selector_query=runpy.run_path(str(ROOT / 'tools/firefox-chrome/probe-selector-dom.py'))['query']
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0))
         port = sock.getsockname()[1]
@@ -88,6 +98,7 @@ def check(nova, display, vertical):
             if vertical and display == 'none' and result['splitter']['display'] != 'none':
                 raise RuntimeError('hidden sidebar tools still show resize splitter')
             if vertical and display == 'flex':
+                selector_states={}
                 collapsed = m.execute_async_script("""
                     const done = arguments[arguments.length - 1];
                     SidebarController.updateUIState({launcherExpanded:false}).then(() => done(true), e => done(String(e)));
@@ -157,6 +168,13 @@ def check(nova, display, vertical):
                         if time.monotonic() >= deadline:
                             raise RuntimeError(f'vertical tab hover border did not settle: {hover}')
                         time.sleep(.1)
+                    if selector_query:
+                        selector_states['verticalHover']=selector_query(m,selector_records)
+                        candidates=[r for r in selector_states['verticalHover']
+                                    if r['file']=='chrome/tabs.css' and 'box#vertical-tabs' in r['expandedSelector']
+                                    and ':hover' in r['selector'] and '::' not in r['selector']]
+                        if len(candidates)!=1 or candidates[0]['status']!='structural-match':
+                            raise RuntimeError(f'vertical tab hover selector did not match: {candidates}')
                 finally:
                     m.execute_script("InspectorUtils.removePseudoClassLock(document.querySelector('box#vertical-tabs'), ':hover')", sandbox='system')
                 print(json.dumps({'nova': nova, 'verticalStrip': vertical_strip,
@@ -219,8 +237,10 @@ def check(nova, display, vertical):
                         or any(item['token'] != '5px' or item['radius'] != '5px'
                                for item in selector_state['pinnedRadii'])):
                     raise RuntimeError(f'vertical tab selector fixture unavailable: {selector_state}')
+                if selector_query:
+                    selector_states['collapsedPins']=selector_query(m,selector_records)
                 print(json.dumps({'nova': nova, 'multiplePinned': multiple,
-                                  'collapsedSelectors':selector_state}), flush=True)
+                                  'collapsedSelectors':selector_state,'selectorStates':selector_states}), flush=True)
                 if (multiple['orient'] != 'vertical' or multiple['expanded']
                         or abs(multiple['containerWidth'] - multiple['tabsWidth']) > 1):
                     raise RuntimeError(f'unexpected multiple pinned tab geometry: {multiple}')

@@ -5,6 +5,7 @@ import json
 import os
 import re
 from pathlib import Path
+import runpy
 import shutil
 import socket
 import subprocess
@@ -32,6 +33,14 @@ def contrast(background, foreground):
 
 
 def check(nova, dark, source, forced, mismatch):
+    selector_path=os.environ.get('TEXTFOX_SELECTOR_INVENTORY')
+    selector_records=None
+    selector_query=None
+    if selector_path:
+        selector_records=[r for r in json.loads(Path(selector_path).read_text()) if r['file']=='chrome/tabs.css']
+        if not selector_records:
+            raise ValueError('selector inventory has no tab records')
+        selector_query=runpy.run_path(str(ROOT / 'tools/firefox-chrome/probe-selector-dom.py'))['query']
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0))
         port = sock.getsockname()[1]
@@ -121,6 +130,9 @@ def check(nova, dark, source, forced, mismatch):
                         targetSelected:bg.getPropertyValue('--tab-selected-bgcolor').trim(),
                         props:Object.fromEntries(names.map(n => [n, root.getPropertyValue(n).trim()]))};
                 """
+            selector_states={}
+            if selector_query:
+                selector_states['horizontal']=selector_query(m,selector_records)
             toolbar = m.execute_script("""
                 const tabs=document.getElementById('tabbrowser-tabs');
                 const items=document.querySelector('#TabsToolbar .toolbar-items');
@@ -176,6 +188,8 @@ def check(nova, dark, source, forced, mismatch):
                 if time.monotonic() >= deadline:
                     raise RuntimeError(f'pointer did not reach horizontal tab toolbar: {pointer_hover}')
                 time.sleep(.1)
+            if selector_query:
+                selector_states['toolbarHover']=selector_query(m,selector_records)
             m.actions.sequence('pointer', 'mouse', {'pointerType':'mouse'}).pointer_move(1, 1).perform()
             if m.execute_script("return document.getElementById('TabsToolbar').matches(':hover')", sandbox='system'):
                 raise RuntimeError('pointer did not leave the horizontal tab toolbar')
@@ -184,13 +198,17 @@ def check(nova, dark, source, forced, mismatch):
                 raise RuntimeError(f'configured tab radius missing: {before}')
             hover = m.execute_script("""
                 const tab=gBrowser.addTrustedTab('about:blank');
+                tab.setAttribute('data-textfox-hover-probe','true');
                 InspectorUtils.addPseudoClassLock(tab, ':hover');
                 const bg=getComputedStyle(tab.querySelector('.tab-background'));
-                const result={background:bg.backgroundColor, color:getComputedStyle(tab.querySelector('.tab-content')).color,
-                              hover:tab.matches(':hover')};
-                InspectorUtils.removePseudoClassLock(tab, ':hover');
-                return result;
+                return {background:bg.backgroundColor, color:getComputedStyle(tab.querySelector('.tab-content')).color,
+                        hover:tab.matches(':hover')};
                 """, sandbox='system')
+            try:
+                if selector_query:
+                    selector_states['unselectedHover']=selector_query(m,selector_records)
+            finally:
+                m.execute_script("const tab=document.querySelector('.tabbrowser-tab[data-textfox-hover-probe]'); InspectorUtils.removePseudoClassLock(tab, ':hover'); tab.removeAttribute('data-textfox-hover-probe')",sandbox='system')
             m.execute_script("""
                 const tab=gBrowser.addTrustedTab('about:blank');
                 tab.setAttribute('data-textfox-multi-probe','true');
@@ -253,6 +271,11 @@ def check(nova, dark, source, forced, mismatch):
                 if time.monotonic() >= deadline:
                     raise RuntimeError(f'Firefox View button did not open: {view}')
                 time.sleep(.1)
+            if selector_query:
+                selector_states['firefoxView']=selector_query(m,selector_records)
+                hover_rule=[r for r in selector_states['unselectedHover'] if '.tabbrowser-tab:hover' in r['selector']]
+                if len(hover_rule)!=1 or hover_rule[0]['status']!='structural-match':
+                    raise RuntimeError(f'unselected tab hover selector did not match: {hover_rule}')
             view_intervention = m.execute_script("""
                 const icon=document.querySelector('#TabsToolbar #firefox-view-button .toolbarbutton-icon');
                 icon.style.setProperty('--tab-selected-bgcolor','rgb(19, 83, 137)','important');
@@ -267,7 +290,7 @@ def check(nova, dark, source, forced, mismatch):
             print(json.dumps({'firefox': meta, 'dark': dark, 'forced':forced, 'mismatch':mismatch, 'before': before, 'hover':hover, 'after': after,
                               'multi':multi, 'multiIntervention':multi_intervention, 'toolbar':toolbar, 'browserRoot':browser_root,
                               'toolbarHover':toolbar_hover, 'toolbarPointerHover':pointer_hover,
-                              'firefoxView':view, 'firefoxViewIntervention':view_intervention,
+                              'firefoxView':view, 'firefoxViewIntervention':view_intervention,'selectorStates':selector_states,
                               'computedSelectedContrast':contrast(before['background'], before['color']),
                               'computedHoverContrast':contrast(hover['background'], hover['color'])}), flush=True)
         finally:
