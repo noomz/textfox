@@ -6,6 +6,7 @@ The disposable new-tab profile enables feeds and may make network requests.
 import json
 import os
 from pathlib import Path
+import runpy
 import shutil
 import socket
 import subprocess
@@ -20,6 +21,14 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 def check(browser_nova, newtab_nova, themed):
+    selector_path=os.environ.get('TEXTFOX_SELECTOR_INVENTORY')
+    selector_records=None
+    selector_query=None
+    if selector_path:
+        selector_records=[r for r in json.loads(Path(selector_path).read_text()) if r['file']=='chrome/content/newtab.css']
+        if not selector_records:
+            raise ValueError('selector inventory has no new-tab records')
+        selector_query=runpy.run_path(str(ROOT / 'tools/firefox-chrome/probe-selector-dom.py'))['query']
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0))
         port = sock.getsockname()[1]
@@ -88,6 +97,25 @@ def check(browser_nova, newtab_nova, themed):
                 raise RuntimeError(f'shortcut menu fixture is not visible: {result}')
             if themed and (result['configuredWidth'] != '7px' or result['configuredRounding'] != '3px'):
                 raise RuntimeError('requested custom properties did not reach new-tab document')
+            selector_states={}
+            menu_control=None
+            if selector_query:
+                selector_states['open']=selector_query(m,selector_records)
+                menu_control=m.execute_script("""
+                    const e=document.createElement('div'); e.className='context-menu';
+                    e.setAttribute('data-textfox-context-probe','true');document.body.append(e);
+                    const s=getComputedStyle(e);
+                    return {border:s.borderTopWidth,radius:s.borderTopLeftRadius,shadow:s.boxShadow};
+                    """)
+                try:
+                    selector_states['classControl']=selector_query(m,selector_records)
+                    candidates=[r for r in selector_states['classControl'] if r['selector']=='.context-menu']
+                    if len(candidates)!=1 or candidates[0]['status']!='structural-match':
+                        raise RuntimeError(f'context menu selector control did not match: {candidates}')
+                    if themed and (menu_control['border']!='7px' or menu_control['radius']!='3px'):
+                        raise RuntimeError(f'context menu style control failed: {menu_control}')
+                finally:
+                    m.execute_script("document.querySelector('[data-textfox-context-probe]')?.remove()")
             m.find_element('tag name', 'body').send_keys(Keys.ARROW_DOWN)
             focus = m.execute_script("""
                 const active = document.activeElement, inner = active?.shadowRoot?.activeElement;
@@ -97,7 +125,7 @@ def check(browser_nova, newtab_nova, themed):
                   outlineWidth:style?.outlineWidth};
                 """)
             print(json.dumps({'firefox': metadata, 'themed': themed, 'result': result,
-                              'focus': focus}), flush=True)
+                              'focus': focus,'selectorStates':selector_states,'menuControl':menu_control}), flush=True)
             if (not focus.get('inner') or 'role="menuitem"' not in focus['inner']
                     or not focus.get('focusVisible') or focus.get('outlineStyle') == 'none'
                     or focus.get('outlineWidth') == '0px'):

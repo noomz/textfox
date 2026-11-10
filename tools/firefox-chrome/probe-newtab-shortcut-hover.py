@@ -6,6 +6,7 @@ New-tab feeds are enabled for the fixture and may make network requests.
 import json
 import os
 from pathlib import Path
+import runpy
 import shutil
 import socket
 import subprocess
@@ -18,6 +19,14 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 def check(browser_nova, newtab_nova, themed):
+    selector_path=os.environ.get('TEXTFOX_SELECTOR_INVENTORY')
+    selector_records=None
+    selector_query=None
+    if selector_path:
+        selector_records=[r for r in json.loads(Path(selector_path).read_text()) if r['file']=='chrome/content/newtab.css']
+        if not selector_records:
+            raise ValueError('selector inventory has no new-tab records')
+        selector_query=runpy.run_path(str(ROOT / 'tools/firefox-chrome/probe-selector-dom.py'))['query']
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0))
         port = sock.getsockname()[1]
@@ -131,8 +140,13 @@ def check(browser_nova, newtab_nova, themed):
             baseline = move('safe')
             title = move('.title')
             tile = move('.tile')
+            selector_results=selector_query(m,selector_records) if selector_query else []
+            if selector_query:
+                matched=[r for r in selector_results if r['selector']=='&:hover' and '.tile' in r['expandedSelector']]
+                if len(matched)!=1 or matched[0]['status']!='structural-match':
+                    raise RuntimeError(f'tile hover selector did not match: {matched}')
             print(json.dumps({'firefox': meta, 'themed': themed, 'icon':icon, 'baseline': baseline,
-                              'title': title, 'tile': tile}), flush=True)
+                              'title': title, 'tile': tile,'selectorRecords':selector_results}), flush=True)
             if not title['innerHover'] or not tile['innerHover']:
                 raise RuntimeError('shortcut inner hover selector did not match')
             if themed and tile['tileBackground'] != tile['tokenColor']:

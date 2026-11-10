@@ -7,6 +7,7 @@ import argparse
 import json
 import os
 from pathlib import Path
+import runpy
 import shutil
 import socket
 import subprocess
@@ -22,6 +23,14 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 def check(browser_nova, newtab_nova, themed, variant, contrast_cycle=False):
+    selector_path=os.environ.get('TEXTFOX_SELECTOR_INVENTORY')
+    selector_records=None
+    selector_query=None
+    if selector_path:
+        selector_records=[r for r in json.loads(Path(selector_path).read_text()) if r['file']=='chrome/content/newtab.css']
+        if not selector_records:
+            raise ValueError('selector inventory has no new-tab records')
+        selector_query=runpy.run_path(str(ROOT / 'tools/firefox-chrome/probe-selector-dom.py'))['query']
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0))
         port = sock.getsockname()[1]
@@ -313,7 +322,18 @@ def check(browser_nova, newtab_nova, themed, variant, contrast_cycle=False):
                 m.set_context('content')
                 restored = wait_switcher(False)
                 contrast = {'normal': normal, 'high': high, 'restored': restored}
+            selector_results=[]
+            if selector_query:
+                if browser_nova:
+                    search_input=m.find_element('css selector','.search-wrapper moz-urlbar input.urlbar-input')
+                    m.actions.sequence('pointer','mouse',{'pointerType':'mouse'}).pointer_move(0,0,origin=search_input).perform()
+                selector_results=selector_query(m,selector_records)
+                if browser_nova:
+                    candidates=[r for r in selector_results if r['selector']=='&:hover' and 'search-handoff-button' in r['expandedSelector']]
+                    if len(candidates)!=1 or candidates[0]['status']!='structural-match':
+                        raise RuntimeError(f'search hover selector did not match: {candidates}')
             print(json.dumps({'firefox':metadata,'themed':themed,'variant':variant,'result':result,'inputState':state,
+                              'selectorRecords':selector_results,
                               'contrastCycle':contrast,'keyboard':keyboard,
                               'interactionReplacements':replaced if browser_nova else None,
                               'switcherReplacements':switcher_replacements if browser_nova and variant != 'default' else None}),flush=True)
