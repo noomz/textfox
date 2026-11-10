@@ -86,6 +86,7 @@ def check(nova, dark, source, forced, mismatch):
                 const measure=()=>{
                   const s=getComputedStyle(e), rootStyle=getComputedStyle(root);
                   return {matches:e.matches('#browser:not(.browser-toolbox-background)'),
+                    fullRuleMatches:e.matches(':root[lwtheme] #browser:not(.browser-toolbox-background)'),
                     className:e.getAttribute('class'), backgroundColor:s.backgroundColor,
                     backgroundImage:s.backgroundImage,
                     accent:rootStyle.getPropertyValue('--lwt-accent-color').trim(),
@@ -98,7 +99,7 @@ def check(nova, dark, source, forced, mismatch):
                 finally { e.classList.toggle('browser-toolbox-background', hadClass); }
                 """, sandbox='system')
             initial, control = browser_root['initial'], browser_root['classControl']
-            if (not initial['matches'] or control['matches'] or initial['accentIsImage']
+            if (not initial['matches'] or not initial['fullRuleMatches'] or control['matches'] or control['fullRuleMatches'] or initial['accentIsImage']
                     or initial['backgroundColor'] != initial['accent']
                     or control['backgroundColor'] != control['tfBackground']
                     or (mismatch and initial['backgroundColor'] == control['backgroundColor'])):

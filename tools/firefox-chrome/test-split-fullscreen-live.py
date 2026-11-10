@@ -3,6 +3,7 @@
 import json
 import os
 from pathlib import Path
+import runpy
 import shutil
 import socket
 import subprocess
@@ -15,6 +16,14 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 def check(nova):
+    selector_path=os.environ.get('TEXTFOX_SELECTOR_INVENTORY')
+    selector_records=None
+    selector_query=None
+    if selector_path:
+        selector_records=[r for r in json.loads(Path(selector_path).read_text()) if r['file']=='chrome/browser.css']
+        if not selector_records:
+            raise ValueError('selector inventory has no browser records')
+        selector_query=runpy.run_path(str(ROOT / 'tools/firefox-chrome/probe-selector-dom.py'))['query']
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0))
         port = sock.getsockname()[1]
@@ -22,7 +31,7 @@ def check(nova):
         profile = Path(directory)
         shutil.copytree(ROOT / 'chrome', profile / 'chrome')
         (profile / 'chrome' / 'config.css').write_text(
-            ':root { --tf-border-width: 3px; --tf-display-titles: flex; }\n')
+            ':root { --tf-border-width: 3px; --tf-display-titles: flex; --tf-accent: rgb(19, 83, 137); }\n')
         prefs = {'marionette.port': port, 'browser.nova.enabled': nova,
                  'toolkit.legacyUserProfileCustomizations.stylesheets': True,
                  'browser.shell.checkDefaultBrowser': False}
@@ -73,7 +82,28 @@ def check(nova):
                       })};
                     """, sandbox='system')
 
+            selector_states={}
             initial = snapshot()
+            if selector_query:
+                selector_states['initial']=selector_query(m,selector_records)
+            panel=m.find_element('css selector','.split-view-panel.deck-selected')
+            m.actions.sequence('pointer','mouse',{'pointerType':'mouse'}).pointer_move(0,0,origin=panel).perform()
+            deadline=time.monotonic()+10
+            while True:
+                hover=m.execute_script("""
+                    const e=document.querySelector('.split-view-panel.deck-selected'),s=getComputedStyle(e),p=getComputedStyle(e,'::before');
+                    return {matches:e.matches(':hover'),border:s.borderTopColor,title:p.color};
+                    """,sandbox='system')
+                if hover['matches'] and hover['border']=='rgb(19, 83, 137)' and hover['title']=='rgb(19, 83, 137)':
+                    break
+                if time.monotonic()>=deadline:
+                    raise RuntimeError(f'split panel pointer hover did not settle: {hover}')
+                time.sleep(.1)
+            if selector_query:
+                selector_states['splitHover']=selector_query(m,selector_records)
+                hover_rules=[r for r in selector_states['splitHover'] if r['selector']=='&:hover']
+                if len(hover_rules)!=2 or any(r['status']!='structural-match' for r in hover_rules):
+                    raise RuntimeError(f'split hover selector inventory inconclusive: {hover_rules}')
             m.execute_script('window.fullScreen = true', sandbox='system')
             deadline = time.monotonic() + 15
             while not m.execute_script("return window.fullScreen && document.documentElement.hasAttribute('inFullscreen')", sandbox='system'):
@@ -81,6 +111,8 @@ def check(nova):
                     raise RuntimeError('Firefox did not enter fullscreen')
                 time.sleep(.1)
             fullscreen = snapshot()
+            if selector_query:
+                selector_states['fullscreen']=selector_query(m,selector_records)
             m.execute_script('window.fullScreen = false', sandbox='system')
             deadline = time.monotonic() + 15
             while m.execute_script("return window.fullScreen || document.documentElement.hasAttribute('inFullscreen')", sandbox='system'):
@@ -103,6 +135,8 @@ def check(nova):
                     raise RuntimeError('browser did not enter DOM fullscreen state')
                 time.sleep(.1)
             dom_fullscreen = snapshot()
+            if selector_query:
+                selector_states['domFullscreen']=selector_query(m,selector_records)
             dom_fullscreen['domAttribute'] = m.execute_script("return document.documentElement.getAttribute('inDOMFullscreen')", sandbox='system')
             m.set_context('content')
             m.execute_async_script("document.exitFullscreen().then(() => arguments[arguments.length-1](true))")
@@ -113,9 +147,15 @@ def check(nova):
                     raise RuntimeError('browser did not exit DOM fullscreen state')
                 time.sleep(.1)
             dom_restored = snapshot()
-            print(json.dumps({'firefox': metadata, 'initial': initial, 'fullscreen': fullscreen,
+            if selector_query:
+                for name in ('initial','fullscreen','domFullscreen'):
+                    candidates=[r for r in selector_states[name] if r['selector']==':root[inFullscreen="true"]']
+                    expected='not-found-in-sampled-document' if name=='initial' else 'structural-match'
+                    if len(candidates)!=1 or candidates[0]['status']!=expected:
+                        raise RuntimeError(f'fullscreen selector inventory inconclusive: {name}, {candidates}')
+            print(json.dumps({'firefox': metadata, 'initial': initial, 'splitHover':hover, 'fullscreen': fullscreen,
                               'restored': restored, 'domFullscreen':dom_fullscreen,
-                              'domRestored':dom_restored}), flush=True)
+                              'domRestored':dom_restored,'selectorStates':selector_states}), flush=True)
             if dom_fullscreen['domAttribute'] != 'true':
                 raise RuntimeError(f'DOM fullscreen attribute missing: {dom_fullscreen}')
             for state in (fullscreen, dom_fullscreen):
