@@ -153,6 +153,22 @@ def check(nova, alignment, icons):
                 if time.monotonic() >= deadline:
                     raise RuntimeError('bookmark folder did not appear')
                 time.sleep(.1)
+            folder_icon = m.execute_script("""
+                const folder=document.querySelector(arguments[0]), icon=folder?.querySelector('.toolbarbutton-icon');
+                if (!folder || !icon) throw new Error('bookmark folder icon fixture missing');
+                const s=getComputedStyle(icon),r=icon.getBoundingClientRect();
+                const before={tag:folder.localName,container:folder.getAttribute('container'),
+                  matches:icon.matches('.bookmark-item[container="true"] .toolbarbutton-icon'),
+                  display:s.display,width:r.width,height:r.height};
+                const prior=icon.style.getPropertyValue('display'), priority=icon.style.getPropertyPriority('display');
+                icon.style.setProperty('display','flex','important');
+                try { const cr=icon.getBoundingClientRect(); return {...before,control:{display:getComputedStyle(icon).display,width:cr.width,height:cr.height}}; }
+                finally { if(prior) icon.style.setProperty('display',prior,priority); else icon.style.removeProperty('display'); }
+                """, script_args=[folder_selector], sandbox='system')
+            if (not folder_icon['matches'] or folder_icon['display'] != 'none'
+                    or folder_icon['control']['display'] != 'flex'
+                    or folder_icon['control']['width'] <= 0 or folder_icon['control']['height'] <= 0):
+                raise RuntimeError(f'bookmark folder icon rule did not apply: {folder_icon}')
             folder = m.find_element('css selector', folder_selector)
             count_before = m.execute_script('return gBrowser.tabs.length', sandbox='system')
             folder_menu = inspect_places(m, folder, icons, 'placesContext_openBookmarkContainer:tabs', activate=True)
@@ -164,8 +180,62 @@ def check(nova, alignment, icons):
                 if time.monotonic() >= deadline:
                     raise RuntimeError(f'folder context command did not open fixture child: {opened}')
                 time.sleep(.1)
+            inserted_other = m.execute_async_script("""
+                const done=arguments[arguments.length-1];
+                PlacesUtils.bookmarks.insert({parentGuid:PlacesUtils.bookmarks.unfiledGuid,
+                  url:'about:robots',title:'Textfox other bookmark fixture'})
+                  .then(()=>done(true), error=>done(String(error)));
+                """, sandbox='system')
+            if inserted_other is not True:
+                raise RuntimeError(f'could not insert other bookmark: {inserted_other}')
+            deadline = time.monotonic() + 20
+            while True:
+                other = m.execute_script("""
+                    const e=document.getElementById('OtherBookmarks'), label=e?.querySelector(':scope > label'),
+                      image=e?.querySelector(':scope > image');
+                    if (!e || !label || !image) return null;
+                    const s=getComputedStyle(e),r=e.getBoundingClientRect();
+                    return {display:s.display,visibility:s.visibility,width:r.width,height:r.height,
+                      label:e.getAttribute('label'),ariaLabel:e.getAttribute('aria-label'),
+                      background:s.backgroundImage,labelDisplay:getComputedStyle(label).display,
+                      imageMarginLeft:getComputedStyle(image).marginLeft,
+                      imageMarginRight:getComputedStyle(image).marginRight};
+                    """, sandbox='system')
+                if (other and other['label'] and other['width'] > 0 and other['height'] > 0
+                        and other['display'] != 'none'):
+                    break
+                if time.monotonic() >= deadline:
+                    raise RuntimeError(f'Other Bookmarks fixture unavailable: {other}')
+                time.sleep(.1)
+            if (other['labelDisplay'] != 'none' or other['imageMarginLeft'] != '0px'
+                    or other['imageMarginRight'] != '0px' or 'book.svg' not in other['background']):
+                raise RuntimeError(f'Other Bookmarks icon styles did not apply: {other}')
+            resource = m.execute_async_script("""
+                const done=arguments[arguments.length-1], raw=getComputedStyle(document.getElementById('OtherBookmarks')).backgroundImage;
+                const match=raw.match(/^url\\(["']?(.*?)["']?\\)$/);
+                if (!match) { done({loaded:false,raw}); return; }
+                const image=new Image(), timer=setTimeout(()=>done({loaded:false,reason:'timeout'}),5000);
+                image.onload=()=>{clearTimeout(timer);done({loaded:true,width:image.naturalWidth,height:image.naturalHeight});};
+                image.onerror=()=>{clearTimeout(timer);done({loaded:false,reason:'error'});};
+                image.src=match[1];
+                """, sandbox='system')
+            if not resource.get('loaded') or resource.get('width', 0) <= 0 or resource.get('height', 0) <= 0:
+                raise RuntimeError(f'Other Bookmarks icon resource did not load: {resource}')
+            m.find_element('id', 'OtherBookmarks').click()
+            deadline = time.monotonic() + 15
+            while not m.execute_script("return document.getElementById('OtherBookmarksPopup')?.state === 'open' && !!document.querySelector('#OtherBookmarksPopup [label=\"Textfox other bookmark fixture\"]')", sandbox='system'):
+                if time.monotonic() >= deadline:
+                    raise RuntimeError('Other Bookmarks popup did not expose fixture')
+                time.sleep(.1)
+            m.actions.sequence('key', 'keyboard').send_keys(Keys.ESCAPE).perform()
+            deadline = time.monotonic() + 10
+            while m.execute_script("return document.getElementById('OtherBookmarksPopup').state", sandbox='system') != 'closed':
+                if time.monotonic() >= deadline:
+                    raise RuntimeError('Other Bookmarks popup did not close')
+                time.sleep(.1)
             print(json.dumps({'firefox':metadata, 'placesKind':'folder', 'placesContext':folder_menu,
-                              'openedTabs':opened}), flush=True)
+                              'folderIcon':folder_icon, 'otherBookmarks':other, 'otherIconResource':resource,
+                              'otherPopupOpened':True, 'openedTabs':opened}), flush=True)
         finally:
             try:
                 if m:
