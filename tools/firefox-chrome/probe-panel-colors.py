@@ -3,6 +3,7 @@
 import json
 import os
 from pathlib import Path
+import runpy
 import shutil
 import socket
 import subprocess
@@ -17,6 +18,14 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 def check(nova, color_preference, activation):
+    selector_path=os.environ.get('TEXTFOX_SELECTOR_INVENTORY')
+    selector_records=None
+    selector_query=None
+    if selector_path:
+        selector_records=[r for r in json.loads(Path(selector_path).read_text()) if r['file']=='chrome/menus.css']
+        if not selector_records:
+            raise ValueError('selector inventory has no menu records')
+        selector_query=runpy.run_path(str(ROOT / 'tools/firefox-chrome/probe-selector-dom.py'))['query']
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0))
         port = sock.getsockname()[1]
@@ -90,6 +99,13 @@ def check(nova, color_preference, activation):
                           pseudoOpacityToken:pseudoStyle.getPropertyValue('--toolbarbutton-icon-fill-opacity').trim()},
                         rootProperties:Object.fromEntries(properties.map(p => [p, root.getPropertyValue(p).trim()]))};
                 """, sandbox='system')
+            selector_states={}
+            if selector_query:
+                selector_states['document']=selector_query(m,selector_records)
+                selector_states['panelShadow']=selector_query(m,selector_records,shadow_host='#appMenu-popup')
+                slot=[r for r in selector_states['panelShadow'] if r['selector']=='slot[part="content"]']
+                if len(slot)!=1 or slot[0]['status']!='structural-match':
+                    raise RuntimeError(f'panel content slot selector did not match: {slot}')
             if (result['panelTokens']['--panel-background'] != 'rgb(23, 47, 71)'
                     or result['panelTokens']['--panel-border-radius'] != '7px'
                     or result['panelTokens']['--panel-separator-color'] != 'rgb(71, 31, 111)'
@@ -160,6 +176,7 @@ def check(nova, color_preference, activation):
             closed = m.execute_script("return document.getElementById('appMenu-popup').state", sandbox='system')
             print(json.dumps({'firefox': metadata, 'baseline': result, 'privateIconResource': image,
                               'iconResources':icon_resources, 'opacityControl':opacity_control,
+                              'selectorStates':selector_states,
                               'override': override, 'keyboardFocus': focused, 'afterEscape': closed}), flush=True)
             if focused['panelState'] != 'open' or not focused['inPanel'] or closed != 'closed':
                 raise RuntimeError('app menu keyboard navigation or Escape failed')

@@ -84,6 +84,8 @@ The sidebar's `--lwt-text-color` and `--lwt-accent-color` come from Firefox them
 | Enabled and disabled `menu`/`menuitem` with `[_moz-menuactive]` | `probe-menu-active.py` reaches an enabled item in a synthetic XUL menu and, with `--builtin`, Firefox's toolbar context menu. In both Nova states, themed active background computed transparent while vanilla computed a blue background. A temporary item-level `--tab-selected-bgcolor: Highlight` intervention changed the themed background. The synthetic menu also acquires `_moz-menuactive` on a pointer-hovered disabled item and responds to a `--tab-hover-background-color` control. | Other built-in items, disabled keyboard behavior, painted focus visibility and contrast, real OS forced colors, and safe color pairing. |
 | `.menupopup-arrowscrollbox` and `menuitem` radius | `probe-menu-active.py` checks a non-default 7px radius on synthetic and built-in toolbar-menu items. Its overflow fixture finds the shadow scrollbox, verifies the configured 5px border, and scrolls with End in both Nova states. | Built-in overflow menus, other menu items, painted layout, and platform variations. |
 
+Eight of ten `menus.css` records structurally match across document and explicit open-shadow-root samples, including active and disabled-hover states. The two nested `#appMenu-popup #shadow-root` records do not match the sampled actual shadow structure. This does not establish painted output.
+
 Menu colors reuse `--tab-selected-bgcolor` and `--tab-hover-background-color` from `overwrites.css`; those depend on Firefox theme inputs that were empty in the sampled profiles. The intervention is not a proposed fix or evidence of contrast across themes.
 
 ## New-tab and `about:` content

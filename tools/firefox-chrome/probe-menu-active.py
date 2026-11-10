@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 from pathlib import Path
+import runpy
 import shutil
 import socket
 import subprocess
@@ -18,6 +19,14 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 def check(nova, themed, builtin, overflow):
+    selector_path=os.environ.get('TEXTFOX_SELECTOR_INVENTORY')
+    selector_records=None
+    selector_query=None
+    if selector_path:
+        selector_records=[r for r in json.loads(Path(selector_path).read_text()) if r['file']=='chrome/menus.css']
+        if not selector_records:
+            raise ValueError('selector inventory has no menu records')
+        selector_query=runpy.run_path(str(ROOT / 'tools/firefox-chrome/probe-selector-dom.py'))['query']
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0))
         port = sock.getsockname()[1]
@@ -103,6 +112,12 @@ def check(nova, themed, builtin, overflow):
                 raise RuntimeError(f'active menu item has no geometry: {sample}')
             if themed and sample['radius'] != '7px':
                 raise RuntimeError(f'configured menu item radius did not apply: {sample}')
+            selector_states={}
+            if selector_query:
+                selector_states['active']=selector_query(m,selector_records)
+                active_rule=[r for r in selector_states['active'] if ':not([disabled="true"])' in r['selector']]
+                if len(active_rule)!=1 or active_rule[0]['status']!='structural-match':
+                    raise RuntimeError(f'active menu selector did not match: {active_rule}')
             intervention = None
             if themed:
                 intervention = m.execute_script("""
@@ -181,6 +196,11 @@ def check(nova, themed, builtin, overflow):
                     time.sleep(.1)
                 if not disabled_state['disabled']:
                     raise RuntimeError(f'disabled menu fixture unexpectedly enabled: {disabled_state}')
+                if selector_query:
+                    selector_states['disabledHover']=selector_query(m,selector_records)
+                    disabled_rule=[r for r in selector_states['disabledHover'] if '[_moz-menuactive="true"][disabled="true"]' in r['selector']]
+                    if disabled_state['active']=='true' and (len(disabled_rule)!=1 or disabled_rule[0]['status']!='structural-match'):
+                        raise RuntimeError(f'disabled menu selector did not match: {disabled_rule}')
                 if themed and disabled_state['active'] == 'true':
                     disabled_state['control'] = m.execute_script("""
                         const e=document.querySelector('menupopup[data-textfox-probe] menuitem[data-textfox-disabled]');
@@ -206,6 +226,11 @@ def check(nova, themed, builtin, overflow):
                     raise RuntimeError(f'menu overflow fixture is inconclusive: {overflow_state}')
                 if themed and (overflow_state['hostBorder'] != '5px' or overflow_state['hostBorderStyle'] != 'solid'):
                     raise RuntimeError(f'configured menu scrollbox border missing: {overflow_state}')
+                if selector_query:
+                    selector_states['overflowShadow']=selector_query(m,selector_records,shadow_host='menupopup[data-textfox-probe]')
+                    arrow=[r for r in selector_states['overflowShadow'] if r['selector']=='.menupopup-arrowscrollbox']
+                    if len(arrow)!=1 or arrow[0]['status']!='structural-match':
+                        raise RuntimeError(f'menu scrollbox shadow selector did not match: {arrow}')
                 m.actions.sequence('key', 'keyboard').send_keys(Keys.END).perform()
                 deadline = time.monotonic() + 10
                 while True:
@@ -229,7 +254,8 @@ def check(nova, themed, builtin, overflow):
             print(json.dumps({'firefox':metadata, 'themed':themed, 'builtin':builtin, 'active':sample,
                               'intervention':intervention, 'disabledHover':disabled_state,
                               'separator':separator_state, 'builtinSeparators':builtin_separators,
-                              'builtinSeparatorControl':builtin_separator_control, 'overflow':overflow_state}), flush=True)
+                              'builtinSeparatorControl':builtin_separator_control, 'overflow':overflow_state,
+                              'selectorStates':selector_states}), flush=True)
         finally:
             try:
                 if m:
