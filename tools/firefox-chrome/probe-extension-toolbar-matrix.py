@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import re
+import runpy
 import shutil
 import socket
 import subprocess
@@ -34,6 +35,14 @@ EXTENSIONS=(
 
 
 def check(nova, enabled):
+    selector_path=os.environ.get('TEXTFOX_SELECTOR_INVENTORY')
+    selector_records=None
+    selector_query=None
+    if selector_path:
+        selector_records=[r for r in json.loads(Path(selector_path).read_text()) if r['file']=='chrome/icons.css']
+        if not selector_records:
+            raise ValueError('selector inventory has no icon records')
+        selector_query=runpy.run_path(str(ROOT / 'tools/firefox-chrome/probe-selector-dom.py'))['query']
     with socket.socket() as sock:
         sock.bind(('127.0.0.1',0))
         port=sock.getsockname()[1]
@@ -139,7 +148,13 @@ def check(nova, enabled):
             negative=resources.pop()
             if negative['loaded'] or negative.get('reason')!='error' or any(not r['loaded'] or r.get('width',0)<=0 or r.get('height',0)<=0 for r in resources):
                 raise RuntimeError(f'extension toolbar icon resources unavailable: {resources}, {negative}')
-            print(json.dumps({'firefox':meta,'sample':sample,'control':control,'resources':resources}),flush=True)
+            selector_results=selector_query(m,selector_records) if selector_query else []
+            if selector_query:
+                selected=[r for r in selector_results if '[data-extensionid=' in r['selector'] and '.toolbarbutton-icon' in r['selector']]
+                if len(selected)!=len(EXTENSIONS) or any(r['status']!='structural-match' for r in selected):
+                    raise RuntimeError(f'extension selector inventory did not match: {selected}')
+            print(json.dumps({'firefox':meta,'sample':sample,'control':control,'resources':resources,
+                              'selectorRecords':selector_results}),flush=True)
         finally:
             try:
                 if m:

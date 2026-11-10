@@ -3,6 +3,7 @@
 import json
 import os
 from pathlib import Path
+import runpy
 import shutil
 import socket
 import subprocess
@@ -16,7 +17,7 @@ from ff_inspect import connect
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def inspect_places(m, item, icons, expected_id, activate=False):
+def inspect_places(m, item, icons, expected_id, activate=False, selector_query=None, selector_records=None):
     m.actions.sequence('pointer', 'mouse', {'pointerType':'mouse'}).click(item, button=2).perform()
     deadline = time.monotonic() + 15
     while True:
@@ -40,6 +41,8 @@ def inspect_places(m, item, icons, expected_id, activate=False):
                and x['visibility'] == 'visible' and x['width'] > 0 and x['height'] > 0}
     if menu['modern'] != icons or expected_id not in visible:
         raise RuntimeError(f'Places context fixture or preference control failed: {menu}')
+    if selector_query:
+        menu['selectorRecords'] = selector_query(m, selector_records)
     if activate:
         target = m.find_element('id', expected_id)
         m.actions.sequence('pointer', 'mouse', {'pointerType':'mouse'}).click(target).perform()
@@ -54,6 +57,14 @@ def inspect_places(m, item, icons, expected_id, activate=False):
 
 
 def check(nova, alignment, icons):
+    selector_path = os.environ.get('TEXTFOX_SELECTOR_INVENTORY')
+    selector_records = None
+    selector_query = None
+    if selector_path:
+        selector_records = [r for r in json.loads(Path(selector_path).read_text()) if r['file'] == 'chrome/icons.css']
+        if not selector_records:
+            raise ValueError('selector inventory has no icon records')
+        selector_query = runpy.run_path(str(ROOT / 'tools/firefox-chrome/probe-selector-dom.py'))['query']
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0))
         port = sock.getsockname()[1]
@@ -146,7 +157,8 @@ def check(nova, alignment, icons):
                 toolbar_hover[bar_id]=hover
             print(json.dumps({'firefox':metadata,'toolbarHover':toolbar_hover}),flush=True)
             bookmark = m.find_element('css selector', '#PlacesToolbarItems .bookmark-item[label="Textfox bookmark fixture"]')
-            menu = inspect_places(m, bookmark, icons, 'placesContext_show_bookmark:info')
+            menu = inspect_places(m, bookmark, icons, 'placesContext_show_bookmark:info',
+                                  selector_query=selector_query, selector_records=selector_records)
             print(json.dumps({'firefox':metadata, 'placesKind':'bookmark', 'placesContext':menu}), flush=True)
             bookmark.click()
             deadline = time.monotonic() + 15
@@ -188,7 +200,8 @@ def check(nova, alignment, icons):
                 raise RuntimeError(f'bookmark folder icon rule did not apply: {folder_icon}')
             folder = m.find_element('css selector', folder_selector)
             count_before = m.execute_script('return gBrowser.tabs.length', sandbox='system')
-            folder_menu = inspect_places(m, folder, icons, 'placesContext_openBookmarkContainer:tabs', activate=True)
+            folder_menu = inspect_places(m, folder, icons, 'placesContext_openBookmarkContainer:tabs', activate=True,
+                                         selector_query=selector_query, selector_records=selector_records)
             deadline = time.monotonic() + 15
             while True:
                 opened = m.execute_script("return {count:gBrowser.tabs.length, urls:[...gBrowser.tabs].map(t=>t.linkedBrowser.currentURI.spec)}", sandbox='system')
@@ -295,6 +308,7 @@ def check(nova, alignment, icons):
                 if time.monotonic() >= deadline:
                     raise RuntimeError(f'bookmark overflow popup did not expose fixtures: {overflow}')
                 time.sleep(.1)
+            toolbar_selectors = selector_query(m, selector_records) if selector_query else []
             m.actions.sequence('key', 'keyboard').send_keys(Keys.ESCAPE).perform()
             deadline = time.monotonic() + 10
             while m.execute_script("return document.getElementById('PlacesChevronPopup').state", sandbox='system') != 'closed':
@@ -305,7 +319,7 @@ def check(nova, alignment, icons):
                               'folderIcon':folder_icon, 'otherBookmarks':other, 'otherIconResource':resource,
                               'otherPopupOpened':True, 'openedTabs':opened,
                               'chevron':chevron, 'chevronResource':chevron_resource,
-                              'overflowPopup':overflow}), flush=True)
+                              'overflowPopup':overflow, 'selectorRecords':toolbar_selectors}), flush=True)
         finally:
             try:
                 if m:

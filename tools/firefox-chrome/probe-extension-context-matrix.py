@@ -6,6 +6,7 @@ Requires tinycss2 1.4.0 and the live-tool venv. No real extension code is used.
 import json
 import os
 from pathlib import Path
+import runpy
 import shutil
 import socket
 import subprocess
@@ -41,6 +42,14 @@ def modern_css(profile):
 
 
 def check(nova,enabled):
+    selector_path=os.environ.get('TEXTFOX_SELECTOR_INVENTORY')
+    selector_records=None
+    selector_query=None
+    if selector_path:
+        selector_records=[r for r in json.loads(Path(selector_path).read_text()) if r['file']=='chrome/icons.css']
+        if not selector_records:
+            raise ValueError('selector inventory has no icon records')
+        selector_query=runpy.run_path(str(ROOT / 'tools/firefox-chrome/probe-selector-dom.py'))['query']
     with socket.socket() as sock:
         sock.bind(('127.0.0.1',0))
         port=sock.getsockname()[1]
@@ -153,9 +162,15 @@ def check(nova,enabled):
                 negative=resources.pop()
                 if negative['loaded'] or negative.get('reason')!='error' or any(not r['loaded'] or r.get('width',0)<=0 or r.get('height',0)<=0 for r in resources):
                     raise RuntimeError(f'extension context icon resources unavailable: {resources}, {negative}')
+            selector_results=selector_query(m,selector_records) if selector_query else []
+            if selector_query:
+                root_records=[r for r in selector_results if r['selector']=='#'+ROOT_ID]
+                if len(root_records)!=1 or root_records[0]['status']!='structural-match':
+                    raise RuntimeError(f'extension root selector inventory did not match: {root_records}')
             m.actions.sequence('key','keyboard').send_keys(Keys.ESCAPE).perform()
             m.actions.sequence('key','keyboard').send_keys(Keys.ESCAPE).perform()
-            print(json.dumps({'firefox':meta,'baseline':baseline,'modernControl':control,'resources':resources}),flush=True)
+            print(json.dumps({'firefox':meta,'baseline':baseline,'modernControl':control,'resources':resources,
+                              'selectorRecords':selector_results}),flush=True)
         finally:
             try:
                 if m:
