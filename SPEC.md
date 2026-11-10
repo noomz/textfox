@@ -43,7 +43,7 @@ Port textfox to Firefox Nova without losing TUI appearance, existing configurati
 | id | status | task | cites |
 |---|---|---|---|
 | T1 | x | Pin Firefox release and build per delivery path. Record effective Nova preferences and defaults; establish repeatable vanilla and textfox baselines. | V1,V6,I.prefs,I.probes |
-| T2 | ~ | Inventory selectors and Firefox-owned variables against release source and live DOM for all listed components. Record verified gaps. | V5,V6,I.chrome |
+| T2 | x | Inventory selectors and Firefox-owned variables against release source and live DOM for all listed components. Record verified gaps. | V5,V6,I.chrome |
 | T3 | ~ | Build reliable failing layout checks. Trace Nova logo grid and shortcut width constraints; fix verified defects without replacing configured font. Verify responsive, RTL, clipping, and focus behavior. | V4,V5,V6,V8,I.config,I.chrome,I.probes |
 | T4 | ~ | Port remaining verified component gaps. Test interactions, menu activation, accessibility, and Nova preference matrix in real Firefox. | V4,V5,V6,I.config,I.chrome,I.prefs |
 | T5 | . | Compare manual imports and NixOS concatenation order. Design and verify safe ownership, migration, failure, and retry protocol; test manual, home-manager, and real NixOS delivery separately. | V2,V7,V9,I.manual,I.home,I.nixos |
