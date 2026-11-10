@@ -111,7 +111,7 @@ The sampled Firefox 159.0 `about:about` index listed: `about:about`, `about:addo
 | `#urlbar[open] > .urlbarView > .urlbarView-results` | Live result fixture matches this direct-child selector and checks the separator reset in both Nova states. | Other result layouts and painted separator. |
 | `#urlbar:not([noresults]) > .urlbarView > .search-one-offs:not([hidden])` | Live fixture toggles the real root `noresults` attribute and one-offs `hidden` attribute and checks configured border response in both Nova states. | Naturally displayed one-offs and no-results states, keyboard interaction, and painted output. |
 
-The rules consume `--border-width` from `overwrites.css` and textfox options. `overwrites.css` also assigns `--urlbarView-highlight-background`; the separate URL bar color probe found a different Firefox selection variable in its sampled profiles. Full shared-variable inventory remains open.
+All five `urlbar.css` rule records structurally match in sampled open-results DOMs. A separate attribute intervention confirms the full one-offs selector and border respond to `noresults` and `hidden`; it is not a naturally produced empty-results state. The rules consume `--border-width` from `overwrites.css` and textfox options. `overwrites.css` also assigns `--urlbarView-highlight-background`; the separate URL bar color probe found a different Firefox selection variable in its sampled profiles. Full shared-variable inventory remains open.
 
 ## Browser content and split view
 

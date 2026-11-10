@@ -50,7 +50,9 @@ def check(nova):
                 const url=document.getElementById('urlbar');
                 const one=url.querySelector('.urlbarView > .search-one-offs');
                 if (!one) return null;
+                const selector='#urlbar:not([noresults]) > .urlbarView > .search-one-offs:not([hidden])';
                 const measure=()=>({urlNoResults:url.hasAttribute('noresults'), hidden:one.hidden,
+                  selectorMatches:one.matches(selector),
                   display:getComputedStyle(one).display, border:getComputedStyle(one).borderTopWidth,
                   style:getComputedStyle(one).borderTopStyle});
                 const original=one.hidden;
@@ -65,7 +67,9 @@ def check(nova):
                 return {populated,empty,hidden};
                 """, sandbox='system')
             print(json.dumps({'nova':nova, 'oneOffDiagnostic':diagnostic}), flush=True)
-            if diagnostic is None or diagnostic['populated']['border'] != '3px' or diagnostic['populated']['style'] != 'solid':
+            if (diagnostic is None or not diagnostic['populated']['selectorMatches']
+                    or diagnostic['empty']['selectorMatches'] or diagnostic['hidden']['selectorMatches']
+                    or diagnostic['populated']['border'] != '3px' or diagnostic['populated']['style'] != 'solid'):
                 raise RuntimeError('configured one-offs separator missing with results')
             if diagnostic['empty']['border'] != '0px':
                 raise RuntimeError('one-offs separator remains when URL bar has no results')
