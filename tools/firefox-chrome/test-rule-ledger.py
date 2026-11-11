@@ -12,13 +12,13 @@ def record(selector, context):
     return {'line':1, 'context':context, 'selector':selector}
 
 assert module.route('chrome/tabs.css', record('&:hover', ['#TabsToolbar'])) == ('Tabs', 'component')
-media = '@media (-moz-bool-pref: "shyfox.enable.context.menu.icons")'
+media = '@media -moz-pref("shyfox.enable.context.menu.icons")'
 assert module.route('chrome/icons.css', record('#placesContext', [media])) == ('Shared icon scope', 'places-context')
 assert module.route('chrome/icons.css', record('#placesContext_open\\:newtab', [media, '#placesContext'])) == ('Shared icon scope', 'places-context')
 assert module.route('chrome/icons.css', record('context-openlinkincontainertab', [media, '#contentAreaContextMenu'])) == ('Shared icon scope', 'content-context')
 assert module.route('chrome/icons.css', record('#appMenu-downloads-button', [])) == ('Shared icon scope', 'unconditional')
 for file, context in [('chrome/new-file.css', []), ('chrome/icons.css', ['@media (unknown)']),
-                      ('chrome/icons.css', ['@media (-moz-bool-pref: "shyfox.enable.context.menu.icons") or (unknown)'])]:
+                      ('chrome/icons.css', ['@media -moz-pref("shyfox.enable.context.menu.icons") or (unknown)'])]:
     try:
         module.route(file, record('x', context))
     except ValueError:

@@ -39,11 +39,11 @@ def route(file, rule):
         return 'Shared icon scope', 'unconditional'
     if len(media) != 1:
         raise ValueError(f'unmapped icon media context: {context}')
-    if media[0] == '@media (-moz-bool-pref: "shyfox.enable.ext.mono.toolbar.icons")':
+    if media[0] == '@media -moz-pref("shyfox.enable.ext.mono.toolbar.icons")':
         return 'Shared icon scope', 'extension-toolbar'
-    if media[0] == '@media (-moz-bool-pref: "shyfox.enable.ext.mono.context.icons")':
+    if media[0] == '@media -moz-pref("shyfox.enable.ext.mono.context.icons")':
         return 'Shared icon scope', 'extension-context'
-    if media[0] != '@media (-moz-bool-pref: "shyfox.enable.context.menu.icons")':
+    if media[0] != '@media -moz-pref("shyfox.enable.context.menu.icons")':
         raise ValueError(f'unmapped icon media context: {context}')
     anchor = next((c for c in context if not c.startswith('@')), rule['selector'])
     if '#contentAreaContextMenu' in anchor:
