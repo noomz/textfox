@@ -106,7 +106,7 @@ def check(nova, icons):
                         const s=getComputedStyle(e),r=e.getBoundingClientRect();
                         return [id,{hidden:e.hidden,display:s.display,visibility:s.visibility,width:r.width,height:r.height,
                           image:s.backgroundImage,inPopup:popup.contains(e),
-                          hiddenToolbarRule:e.matches('#main-window:has(#PersonalToolbar[collapsed="true"]) #BMB_bookmarksPopup #BMB_viewBookmarksToolbar')}];
+                          hiddenToolbarRule:e.matches('#main-window:has(#PersonalToolbar[collapsed]) #BMB_bookmarksPopup #BMB_viewBookmarksToolbar')}];
                       }))};
                     """, sandbox='system')
                 toggle = state['items']['BMB_viewBookmarksToolbar']
@@ -118,7 +118,7 @@ def check(nova, icons):
                 if selector_query:
                     selector_states['popup'] = selector_query(m, selector_records)
                     if not visible:
-                        original = m.execute_script("const e=document.getElementById('PersonalToolbar'),v=e.getAttribute('collapsed'); e.setAttribute('collapsed','true'); return v", sandbox='system')
+                        original = m.execute_script("const e=document.getElementById('PersonalToolbar'),v=e.getAttribute('collapsed'); e.setAttribute('collapsed',''); return v", sandbox='system')
                         try:
                             selector_states['collapsedControl'] = selector_query(m, selector_records)
                         finally:
@@ -128,8 +128,8 @@ def check(nova, icons):
                     collapsed_control = m.execute_script("""
                         const bar=document.getElementById('PersonalToolbar'), item=document.getElementById('BMB_viewBookmarksToolbar');
                         const original=bar.getAttribute('collapsed');
-                        bar.setAttribute('collapsed','true');
-                        try { return {matches:item.matches('#main-window:has(#PersonalToolbar[collapsed="true"]) #BMB_bookmarksPopup #BMB_viewBookmarksToolbar'),
+                        bar.setAttribute('collapsed','');
+                        try { return {matches:item.matches('#main-window:has(#PersonalToolbar[collapsed]) #BMB_bookmarksPopup #BMB_viewBookmarksToolbar'),
                           property:bar.collapsed,attribute:bar.getAttribute('collapsed')}; }
                         finally { if(original === null) bar.removeAttribute('collapsed'); else bar.setAttribute('collapsed',original); }
                         """, sandbox='system')
@@ -146,9 +146,15 @@ def check(nova, icons):
                     try { return getComputedStyle(item).backgroundImage; }
                     finally { window.windowUtils.removeSheetUsingURIString(uri, Ci.nsIDOMWindowUtils.USER_SHEET); }
                     """, sandbox='system')
-                expected = 'url("chrome://global/skin/icons/folder.svg")' if icons else 'none'
-                if control != expected:
-                    raise RuntimeError(f'bookmarks menu icon intervention failed: {control}')
+                if icons and not visible:
+                    # The production collapsed-toolbar rule (three IDs, !important) outranks
+                    # the two-ID temporary control, so the sampled value is the production icon.
+                    if 'eye-show.svg' not in control:
+                        raise RuntimeError(f'production collapsed-toolbar eye icon missing: {control}')
+                else:
+                    expected = 'url("chrome://global/skin/icons/folder.svg")' if icons else 'none'
+                    if control != expected:
+                        raise RuntimeError(f'bookmarks menu icon intervention failed: {control}')
                 toggled = None
                 if not visible:
                     m.find_element('id','BMB_viewBookmarksToolbar').click()
@@ -190,7 +196,7 @@ def check(nova, icons):
 
 if __name__ == '__main__':
     source = (ROOT / 'chrome/icons.css').read_text()
-    selector = r'#main-window:has\(#PersonalToolbar\[collapsed="true"\]\)\s+#BMB_bookmarksPopup\s+#BMB_viewBookmarksToolbar'
+    selector = r'#main-window:has\(#PersonalToolbar\[collapsed\]\)\s+#BMB_bookmarksPopup\s+#BMB_viewBookmarksToolbar'
     if not re.search(selector, source):
         raise RuntimeError('collapsed-toolbar selector changed; update this diagnostic before rerunning')
     for nova in (False, True):

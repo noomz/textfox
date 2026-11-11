@@ -54,7 +54,7 @@ def check_context(m, selector, expected_id, expected_selection=None, action_id=N
               width:r.width,height:r.height,image:s.backgroundImage};});
             const run=relation=>{
               const selector=ids.map(id=>'#contentAreaContextMenu '+relation+' #'+id).join(',');
-              const uri='data:text/css,'+encodeURIComponent(`@media -moz-pref("shyfox.enable.context.menu.icons") { ${selector} { background-image:url("chrome://browser/skin/back.svg") !important; } }`);
+              const uri='data:text/css,'+encodeURIComponent(`@media -moz-pref("shyfox.enable.context.menu.icons") { ${selector} { background-image:url("chrome://browser/skin/privateBrowsing.svg") !important; } }`);
               window.windowUtils.loadSheetUsingURIString(uri,Ci.nsIDOMWindowUtils.USER_SHEET);
               try{return snapshot();}finally{window.windowUtils.removeSheetUsingURIString(uri,Ci.nsIDOMWindowUtils.USER_SHEET);}
             };
@@ -70,9 +70,9 @@ def check_context(m, selector, expected_id, expected_selection=None, action_id=N
         if not any(item['class']=='menu-text' for item in result['menuInternals']['children']):
             raise RuntimeError(f'page context menu internals unavailable: {result["menuInternals"]}')
         navigation=result['navigationSelectors']
-        if (any(('chrome://browser/skin/back.svg' in item['image']) != (navigation['enabled'] and base['direct'])
+        if (any(('chrome://browser/skin/privateBrowsing.svg' in item['image']) != (navigation['enabled'] and base['direct'])
                 for item,base in zip(navigation['directControl'],navigation['baseline'],strict=True))
-                or any(('chrome://browser/skin/back.svg' in item['image']) != navigation['enabled'] for item in navigation['descendantControl'])):
+                or any(('chrome://browser/skin/privateBrowsing.svg' in item['image']) != navigation['enabled'] for item in navigation['descendantControl'])):
             raise RuntimeError(f'context navigation selector control failed: {navigation}')
     if action_id:
         actionable = m.execute_script("const e=document.getElementById(arguments[0]); const r=e?.getBoundingClientRect(); return !!e && !e.hidden && !e.disabled && r.width > 0 && r.height > 0", script_args=[action_id], sandbox='system')
