@@ -56,4 +56,4 @@ Port textfox to Firefox Nova without losing TUI appearance, existing configurati
 | id | date | cause | fix |
 |---|---|---|---|
 | B1 | 2026-11-05 | NixOS autoconfig imports removed `FileUtils.jsm` on Firefox 159. | V2,V7; fix pending. |
-| B2 | 2026-11-09 | Firefox 159 legacy `-moz-bool-pref` queries did not match in sampled profiles, disabling conditional theme rules. | V4,V5,V6; fix pending. |
+| B2 | 2026-11-09 | Firefox 159 legacy `-moz-bool-pref` queries did not match in sampled profiles, disabling conditional theme rules. | V4,V5,V6; fixed: all four gates converted to `@media -moz-pref(...)`; regression `test-pref-icons-live.py` (8 cases, both Nova states). |
