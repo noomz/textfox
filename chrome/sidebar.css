@@ -72,7 +72,7 @@ sidebar-main {
 
 #tabbrowser-tabs[orient="vertical"] {
   &:not([expanded]) {
-    #vertical-pinned-tabs-container, .tab-stack {
+    .tab-stack {
       width: 100% !important;
     }
   }
