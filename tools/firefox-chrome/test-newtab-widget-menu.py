@@ -74,7 +74,11 @@ def check(browser_nova, newtab_nova, themed, forced_colors, rtl, reduced_motion)
                     raise RuntimeError('widget menu did not open')
                 time.sleep(.1)
             m.find_element('tag name', 'body').send_keys(Keys.ARROW_DOWN)
-            state = m.execute_script("""
+            # Nova's popover menu moves focus asynchronously; classic is synchronous.
+            expected = 'newtab-widget-section-menu-hide-all' if newtab_nova else 'newtab-widget-timer-menu-notifications'
+            deadline = time.monotonic() + 5
+            while True:
+                state = m.execute_script("""
                 const active = document.activeElement, inner=active?.shadowRoot?.activeElement;
                 const s=inner && getComputedStyle(inner);
                 const menu=[...document.querySelectorAll('[role=menu]')].find(e => e.getClientRects().length);
@@ -85,11 +89,13 @@ def check(browser_nova, newtab_nova, themed, forced_colors, rtl, reduced_motion)
                         outlineStyle:s?.outlineStyle, outlineWidth:s?.outlineWidth,
                         menuBackground:ms?.backgroundColor, menuColor:ms?.color};
                 """)
-            print(json.dumps({'firefox': meta, 'themed': themed, 'focus': state}), flush=True)
-            expected = 'newtab-widget-section-menu-hide-all' if newtab_nova else 'newtab-widget-timer-menu-notifications'
-            if (not state['active'] or expected not in state['active']
-                    or not state['shadowActive'] or 'role="menuitem"' not in state['shadowActive']):
-                raise RuntimeError('expected first widget menu item is not focused')
+                print(json.dumps({'firefox': meta, 'themed': themed, 'focus': state}), flush=True)
+                if (state['active'] and expected in state['active']
+                        and state['shadowActive'] and 'role="menuitem"' in state['shadowActive']):
+                    break
+                if time.monotonic() >= deadline:
+                    raise RuntimeError('expected first widget menu item is not focused')
+                time.sleep(.25)
             if not state['focusVisible'] or state['outlineStyle'] == 'none' or state['outlineWidth'] == '0px':
                 raise RuntimeError('widget menu item has no computed focus outline')
             m.find_element('tag name', 'body').send_keys(Keys.ENTER)
