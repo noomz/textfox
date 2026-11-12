@@ -204,6 +204,59 @@ def case_uninstall_leaves_foreign_file(profile: Path) -> None:
     print("ok   uninstall leaves a user.js without a managed block untouched")
 
 
+def shipped_files() -> list:
+    """Paths under chrome/ that the repo ships, relative to chrome/."""
+    source = ROOT / "chrome"
+    return sorted(path.relative_to(source) for path in source.rglob("*") if path.is_file())
+
+
+def case_uninstall_keeps_user_config(profile: Path) -> None:
+    install(profile)
+    chrome = profile / "chrome"
+    config = chrome / "config.css"
+    config.write_text(SENTINEL_CONFIG)
+    own_icon = chrome / "icons" / "my-own.svg"
+    own_icon.write_text("<svg/>\n")
+
+    uninstall(profile)
+    assert config.is_file(), "uninstall removed the user's chrome/config.css"
+    assert config.read_text() == SENTINEL_CONFIG, "uninstall rewrote chrome/config.css"
+    assert own_icon.read_text() == "<svg/>\n", "uninstall removed a file the user added under icons/"
+    left = [str(rel) for rel in shipped_files() if (chrome / rel).exists()]
+    assert not left, f"uninstall left textfox's own files behind: {left[:5]}"
+    print("ok   uninstall removes textfox's files and keeps config.css and the user's own files")
+
+
+def case_uninstall_removes_emptied_chrome(profile: Path) -> None:
+    install(profile)
+    uninstall(profile)
+    assert not (profile / "chrome").exists(), (
+        "a chrome directory that held only textfox's files must not stay behind"
+    )
+    print("ok   uninstall removes a chrome directory left empty")
+
+
+def case_uninstall_restores_backup_beside_config(profile: Path) -> None:
+    chrome = profile / "chrome"
+    chrome.mkdir()
+    mine = "/* the user's own userChrome.css */\n"
+    (chrome / "userChrome.css").write_text(mine)
+    (chrome / "config.css").write_text(SENTINEL_CONFIG)
+    install(profile)
+    assert sorted(profile.glob("chrome-*.bak")), "install must back up the replaced userChrome.css"
+
+    run(UNINSTALL, profile, "y\n")
+    assert (chrome / "userChrome.css").read_text() == mine, (
+        "restoring the backup did not bring back the user's userChrome.css"
+    )
+    assert (chrome / "config.css").read_text() == SENTINEL_CONFIG, (
+        "restoring the backup touched chrome/config.css"
+    )
+    assert not list(chrome.glob("chrome-*.bak")), "the backup was nested inside chrome/"
+    assert not sorted(profile.glob("chrome-*.bak")), "a fully restored backup must not stay behind"
+    print("ok   uninstall restores a backup beside the kept config.css")
+
+
 def main() -> int:
     cases = [
         case_fresh_install,
@@ -215,6 +268,9 @@ def main() -> int:
         case_uninstall_keeps_user_prefs,
         case_uninstall_removes_own_file,
         case_uninstall_leaves_foreign_file,
+        case_uninstall_keeps_user_config,
+        case_uninstall_removes_emptied_chrome,
+        case_uninstall_restores_backup_beside_config,
     ]
     failures = 0
     for case in cases:

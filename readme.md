@@ -232,21 +232,28 @@ All configuration options are optional and can be set as this example shows (rea
 > [!NOTE]
 > The uninstall script will offer to restore the most recent backup created by
 > the install script (e.g. `chrome-YYYYMMDD_HHMMSS.bak`) if one is found in
-> your Firefox profile directory. It removes only the `textfox managed prefs`
-> block from `user.js`, and deletes that file only when nothing else was in it.
+> your Firefox profile directory, and puts its files back beside anything you
+> kept in `chrome/`. It removes only the files textfox ships from `chrome/`, so
+> your `chrome/config.css` and any files of your own stay, and it removes the
+> `chrome` directory only when nothing else is left in it. It removes only the
+> `textfox managed prefs` block from `user.js`, and deletes that file only when
+> nothing else was in it.
 
 ### Manual
 
 1. Go to `about:profiles`
 2. Open the root directory of the profile textfox was installed to
-3. Delete the `chrome` directory
-4. Delete `user.js` (only if it was placed there by textfox)
+3. Delete the `chrome` directory (keep a copy of `chrome/config.css` first if
+   you want your configuration back later)
+4. Remove the `textfox managed prefs` block from `user.js`, or delete the file
+   if it holds nothing else
 5. Restart Firefox
 
 > [!NOTE]
 > If you had a previous `chrome` directory before installing textfox, the
-> install script backed it up as `chrome-YYYYMMDD_HHMMSS.bak`. You can restore
-> it by renaming it back to `chrome`.
+> install script moved the files textfox replaced into
+> `chrome-YYYYMMDD_HHMMSS.bak`. You can restore them by moving them back into
+> `chrome`.
 
 ## Customization
 

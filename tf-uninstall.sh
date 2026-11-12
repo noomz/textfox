@@ -26,15 +26,37 @@ clean_path() {
   echo "$fp"
 }
 
+# The files textfox ships, as listed in this checkout's chrome/ directory.
+SOURCE_CHROME="$(cd "$(dirname "$0")" && pwd)/chrome"
+
+# Only the files textfox ships are removed. Removing the whole chrome directory
+# would take chrome/config.css and anything else the user put there with it.
+# Directories are removed only once they are empty.
 remove_chrome() {
   local fp="$1"
   fp="$(clean_path "${fp}")"
-  if [[ -d "${fp}/chrome" ]]; then
-    echo "Removing ${fp}/chrome/"
-    rm -rf "${fp}/chrome"
-    echo "✓ chrome directory removed"
+  local chrome="${fp}/chrome" rel
+  if [[ ! -d "${chrome}" ]]; then
+    echo "No chrome directory found at ${chrome}, skipping."
+    return 0
+  fi
+  if [[ ! -d "${SOURCE_CHROME}" ]]; then
+    echo "[!!] ${SOURCE_CHROME} not found; cannot tell textfox's files from yours" >&2
+    return 1
+  fi
+
+  echo "Removing textfox's files from ${chrome}/"
+  while IFS= read -r rel; do
+    rm -f "${chrome}/${rel}"
+  done < <(cd "${SOURCE_CHROME}" && find . -type f | sed 's#^\./##')
+  while IFS= read -r rel; do
+    rmdir "${chrome}/${rel}" 2>/dev/null || true
+  done < <(cd "${SOURCE_CHROME}" && find . -mindepth 1 -type d | sed 's#^\./##' | sort -r)
+
+  if rmdir "${chrome}" 2>/dev/null; then
+    echo "✓ chrome directory removed; it held only textfox's files"
   else
-    echo "No chrome directory found at ${fp}/chrome, skipping."
+    echo "✓ textfox's files removed; your own files in ${chrome}/ were kept"
   fi
 }
 
@@ -104,8 +126,26 @@ restore_backup() {
     read -rp "Backup found: ${latest_backup}. Restore it? (Y/N): " do_restore
     case "$do_restore" in
     [Yy]*)
-      mv -v "${latest_backup}" "${fp}/chrome"
-      echo "✓ Backup restored to ${fp}/chrome"
+      # The backup holds the files an install replaced. Put each back beside
+      # whatever the user kept in chrome/, never over it.
+      local entry name kept=0
+      mkdir -p "${fp}/chrome"
+      for entry in "${latest_backup}"/* "${latest_backup}"/.[!.]*; do
+        [[ -e "${entry}" ]] || continue
+        name="$(basename "${entry}")"
+        if [[ -e "${fp}/chrome/${name}" ]]; then
+          echo "[!!] ${fp}/chrome/${name} exists; leaving the backup copy in ${latest_backup}"
+          kept=1
+        else
+          mv -v "${entry}" "${fp}/chrome/${name}"
+        fi
+      done
+      if [[ "${kept}" -eq 0 ]]; then
+        rmdir "${latest_backup}"
+        echo "✓ Backup restored to ${fp}/chrome"
+      else
+        echo "[!!] Backup partly restored; the rest stays in ${latest_backup}"
+      fi
       ;;
     *)
       echo "Skipping backup restore."
