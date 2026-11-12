@@ -15,7 +15,7 @@ from ff_inspect import connect
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def run(nova, config_css):
+def run(nova, config_css, vertical=True):
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0))
         port = sock.getsockname()[1]
@@ -25,7 +25,7 @@ def run(nova, config_css):
         if config_css is not None:
             (profile / 'chrome' / 'config.css').write_text(config_css)
         prefs = {'marionette.port': port, 'browser.nova.enabled': nova,
-                 'sidebar.revamp': True, 'sidebar.verticalTabs': True,
+                 'sidebar.revamp': True, 'sidebar.verticalTabs': vertical,
                  'sidebar.visibility': 'always-show',
                  'toolkit.legacyUserProfileCustomizations.stylesheets': True,
                  'browser.shell.checkDefaultBrowser': False}
@@ -56,8 +56,11 @@ def run(nova, config_css):
             if ready is not True:
                 raise RuntimeError(f'sidebar initialization failed: {ready}')
             deadline = time.monotonic() + 20
+            # With horizontal tabs the strip lives in the tab toolbar, and Firefox
+            # hides box#vertical-tabs by leaving out its [visible] attribute.
+            where = 'box#vertical-tabs' if vertical else '#TabsToolbar'
             while not m.execute_script(
-                    "return !!document.querySelector('box#vertical-tabs')?.querySelector('#tabbrowser-tabs')",
+                    f"return !!document.querySelector('{where}')?.querySelector('#tabbrowser-tabs')",
                     sandbox='system'):
                 if time.monotonic() >= deadline:
                     raise RuntimeError('vertical tab strip did not initialize')
@@ -88,32 +91,37 @@ def run(nova, config_css):
 
 def main():
     failures = []
-    cases = [(nova, None, 'flex') for nova in (False, True)]
-    cases += [(nova, css, expected)
+    cases = [(nova, None, True, 'flex') for nova in (False, True)]
+    cases += [(nova, css, True, expected)
               for nova in (False, True)
               for css, expected in (
                   (':root { --tf-display-vertical-tabs: none; }\n', 'none'),
                   (':root { --tf-display-vertical-tabs: flex; }\n', 'flex'))]
-    for nova, css, expected in cases:
+    # Horizontal tabs under sidebar.revamp: the option must not force the
+    # hidden vertical strip back into view.
+    cases += [(nova, css, False, 'none')
+              for nova in (False, True)
+              for css in (None, ':root { --tf-display-vertical-tabs: flex; }\n')]
+    for nova, css, vertical, expected in cases:
         try:
-            metadata, result = run(nova, css)
+            metadata, result = run(nova, css, vertical)
         except Exception as error:
             failures.append(f'nova={nova} config={css!r}: {error}')
             print(json.dumps({'nova': nova, 'config': css, 'error': str(error)}), flush=True)
             continue
         print(json.dumps({'firefox': metadata, 'nova': nova, 'config': css, 'result': result}), flush=True)
-        if result['option'] != expected:
-            failures.append(f'nova={nova}: option reads {result["option"]!r}, expected {expected!r}')
+        if vertical and result['option'] != expected:
+            failures.append(f'nova={nova} vertical={vertical}: option reads {result["option"]!r}, expected {expected!r}')
         if result['display'] != expected:
-            failures.append(f'nova={nova}: strip display {result["display"]!r}, expected {expected!r}')
+            failures.append(f'nova={nova} vertical={vertical}: strip display {result["display"]!r}, expected {expected!r}')
         if not result['tabsPresent'] or result['tabCount'] < 1:
-            failures.append(f'nova={nova}: tab strip disappeared')
+            failures.append(f'nova={nova} vertical={vertical}: tab strip disappeared')
         if expected == 'flex' and (result['width'] <= 0 or result['height'] <= 0):
-            failures.append(f'nova={nova}: shown strip has no box')
+            failures.append(f'nova={nova} vertical={vertical}: shown strip has no box')
         if expected == 'none' and (result['width'] != 0 or result['height'] != 0):
-            failures.append(f'nova={nova}: hidden strip still occupies space')
+            failures.append(f'nova={nova} vertical={vertical}: hidden strip still occupies space')
         if result['horizontalOption'] != 'none':
-            failures.append(f'nova={nova}: horizontal tab default drifted')
+            failures.append(f'nova={nova} vertical={vertical}: horizontal tab default drifted')
     if failures:
         for failure in failures:
             print(f'FAIL {failure}', file=sys.stderr)
