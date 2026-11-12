@@ -39,7 +39,9 @@ _a firefox theme for the tui enthusiast_
 > [!NOTE]
 > The installation script copies to contents of the repos `chrome` directory to
 > the path specified, this way your `config.css` or any other `css`-files not
-> part of the repo will be kept.
+> part of the repo will be kept. It merges textfox's settings into `user.js`
+> between the `textfox managed prefs` markers, so your own preferences in that
+> file keep working; keep them outside the markers.
 
 ### Manual
 
@@ -230,7 +232,8 @@ All configuration options are optional and can be set as this example shows (rea
 > [!NOTE]
 > The uninstall script will offer to restore the most recent backup created by
 > the install script (e.g. `chrome-YYYYMMDD_HHMMSS.bak`) if one is found in
-> your Firefox profile directory.
+> your Firefox profile directory. It removes only the `textfox managed prefs`
+> block from `user.js`, and deletes that file only when nothing else was in it.
 
 ### Manual
 

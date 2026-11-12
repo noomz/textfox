@@ -11,6 +11,12 @@ print_logo() {
 EOF
 }
 
+# The shipped user.js carries textfox's preferences inside these markers. An
+# install merges that block into the profile's user.js instead of replacing the
+# file, so preferences the user wrote there keep applying.
+PREF_BEGIN='// >>> textfox managed prefs >>>'
+PREF_END='// <<< textfox managed prefs <<<'
+
 clean_path() {
   local fp="$1"
   fp="${fp/#\~/$HOME}" # Expand ~ to $HOME
@@ -55,26 +61,78 @@ copy_chrome() {
   fi
 }
 
-install_user_js() {
+extract_pref_block() {
+  awk -v b="$PREF_BEGIN" -v e="$PREF_END" '
+    $0 == b { inside = 1 }
+    inside { print }
+    inside && $0 == e { exit }
+  ' user.js
+}
+
+strip_pref_block() {
+  awk -v b="$PREF_BEGIN" -v e="$PREF_END" '
+    $0 == b { inside = 1; next }
+    $0 == e { inside = 0; next }
+    !inside { print }
+  ' "$1"
+}
+
+# Trailing blank lines are dropped so a reinstall composes the same bytes and
+# writes nothing; blank lines inside the user's own text are kept.
+drop_trailing_blanks() {
+  awk '
+    /^[[:space:]]*$/ { held++; next }
+    { while (held > 0) { print ""; held-- } print }
+  ' "$1"
+}
+
+marker_count() {
+  grep -cFx -- "$2" "$1" 2>/dev/null || true
+}
+
+# Merge the shipped preference block into the profile's user.js. Bytes outside
+# the markers are preserved, a previous textfox block is replaced, and the old
+# file is backed up only when the content actually changes.
+merge_user_js() {
   local fp="$1"
   fp="$(clean_path "${fp}")"
+  local target="${fp}/user.js" block tmp begins ends
 
-  # Optionally install user.js
-  read -rp "Do you want to install the user.js file? (Y/N): " install_js
+  block="$(extract_pref_block)"
+  if [[ -z "${block}" ]]; then
+    echo "[!!] shipped user.js has no preference block; nothing merged" >&2
+    return 1
+  fi
 
-  case "$install_js" in
-  [Yy]*)
-    if [[ -f "$fp/user.js" ]]; then
-      local bak="$fp/user.js-$(date +%Y%m%d_%H%M%S).bak"
-      cp -v "$fp/user.js" "$bak"
-      echo "[!!] Existing user.js kept at ${bak}"
+  tmp="$(mktemp "${target}.textfox-XXXXXX")" || return 1
+  if [[ -f "${target}" ]]; then
+    begins="$(marker_count "${target}" "$PREF_BEGIN")"
+    ends="$(marker_count "${target}" "$PREF_END")"
+    if [[ "${begins}" != "${ends}" ]] || [[ "${begins}" -gt 1 ]]; then
+      rm -f "${tmp}"
+      echo "[!!] ${target} has unbalanced or repeated textfox markers; leaving it untouched" >&2
+      return 1
     fi
-    cp -v "user.js" "$fp/user.js"
-    ;;
-  *)
-    echo "Skipping user.js installation."
-    ;;
-  esac
+    strip_pref_block "${target}" | drop_trailing_blanks > "${tmp}"
+  fi
+
+  # One blank line between the user's text and the managed block.
+  if [[ -s "${tmp}" ]]; then printf '\n' >> "${tmp}"; fi
+  printf '%s\n' "${block}" >> "${tmp}"
+
+  if [[ -f "${target}" ]] && cmp -s "${tmp}" "${target}"; then
+    rm -f "${tmp}"
+    echo "textfox preferences already current in ${target}"
+    return 0
+  fi
+
+  if [[ -f "${target}" ]]; then
+    local bak="${target}-$(date +%Y%m%d_%H%M%S).bak"
+    cp -v "${target}" "${bak}"
+    echo "[!!] Previous user.js kept at ${bak}"
+  fi
+  mv -f "${tmp}" "${target}"
+  echo "Merged textfox preferences into ${target}"
 }
 
 tf_install() {
@@ -99,7 +157,10 @@ tf_install() {
   echo "Using Firefox Profile @ ${ffpp}"
   backup_existing_profile "${ffpp}"
   copy_chrome "${ffpp}"
-  install_user_js "${ffpp}"
+  if ! merge_user_js "${ffpp}"; then
+    echo "[!!] Installation aborted: the preference block was not merged" >&2
+    return 1
+  fi
   printf "✓ Installation completed\n"
 }
 
