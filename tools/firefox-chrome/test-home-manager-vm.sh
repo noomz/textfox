@@ -17,6 +17,7 @@ done
 root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 work=$(mktemp -d "${TMPDIR:-/tmp}/textfox-home-manager-vm.XXXXXX")
 mkdir "$work/shared"
+cp "$root/chrome/defaults.css" "$work/shared/defaults.css"
 echo "VM artifacts: $work"
 vm=$(NP_RUNTIME=bwrap nix-portable nix build --no-link --print-out-paths --impure --expr "import $root/tools/firefox-chrome/check-home-manager-vm.nix { nixpkgsPath = $1; homeManagerPath = $2; }")
 set +e

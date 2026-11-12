@@ -28,6 +28,10 @@ let
             textfox.enable = true;
             textfox.profiles = [ "test" ];
             textfox.config.border.width = "7px";
+            textfox.config.font.size = "17px";
+            textfox.config.displayTitles = false;
+            textfox.config.tabs.vertical.enable = false;
+            textfox.config.icons.context.firefox.enable = true;
           };
           systemd.services.firefox-probe = {
             wantedBy = [ "multi-user.target" ];
@@ -51,7 +55,10 @@ let
             path = [ pkgs.systemd ];
             serviceConfig.Type = "oneshot";
             script = ''
-              if ${pkgs.python3}/bin/python3 ${./probe-vm-preferences.py} --profile /home/probe/.config/mozilla/firefox/test --border 7px; then
+              if ${pkgs.python3}/bin/python3 ${./probe-vm-preferences.py} \
+                --profile /home/probe/.config/mozilla/firefox/test --border 7px \
+                --expect-vars '{"--tf-font-size":"17px","--tf-border-width":"7px","--tf-display-vertical-tabs":"none","--tf-display-titles":"none"}' \
+                --expect-prefs '{"shyfox.enable.context.menu.icons":true,"shyfox.enable.ext.mono.toolbar.icons":false}'; then
                 echo PASS > /tmp/shared/result
               else
                 echo FAIL > /tmp/shared/result
