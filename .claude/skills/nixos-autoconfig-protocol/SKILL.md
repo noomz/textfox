@@ -49,16 +49,16 @@ Properties, each checked after every event:
 ```sh
 node tools/firefox-chrome/check-nixos-update-exhaustive.js            # depth 4: ~15k profiles, ~60 s
 node tools/firefox-chrome/check-nixos-update-exhaustive.js --depth 3  # ~2.2k profiles, ~8 s; use while iterating
-node tools/firefox-chrome/test-nixos-update.js                        # the 21 hand-written scenarios; run too
+node tools/firefox-chrome/test-nixos-update.js                        # the 22 hand-written scenarios; run too
 ```
 
 Requirements: Node.js only. The repo was checked with Node 26.8.2. No Nix build is needed: the script is read from the `.nix` source. Run depth 4 before you call a change done. Depth 3 already reaches every known finding.
 
-Exit 0 means there are no new violations. `test-nixos-update.js` exits 0 when all 21 scenarios pass, and a failing scenario there is a regression too. For the exhaustive check, exit 1 means a counterexample appeared that is not a known finding. The output prints it as numbered steps in the script's own words, for example `killed before step 5 (copy profile/chrome/.textfox-staging-userContent.css)`. Step numbers count mutating calls (`mkdir`, `copy`, `move`, `write`, `remove`, `create`) within that one run.
+Exit 0 means there are no new violations. `test-nixos-update.js` exits 0 when all 22 scenarios pass, and a failing scenario there is a regression too. For the exhaustive check, exit 1 means a counterexample appeared that is not a known finding. The output prints it as numbered steps in the script's own words, for example `killed before step 5 (copy profile/chrome/.textfox-staging-userContent.css)`. Step numbers count mutating calls (`mkdir`, `copy`, `move`, `write`, `remove`, `create`) within that one run.
 
 ## Does my change touch the verified code?
 
-Covered code, confirmed at commit **`c445159`**:
+Covered code, confirmed at commit **`5b4edf7`**:
 
 - `nix/pkgs/wrapTextfox.nix`: all of `configScript`, plus the `textfoxChrome` builder's `manifest.sha256` format and the `textfox-assets-<digest>` naming.
 - `tools/firefox-chrome/test-nixos-update.js`: the shim (`Sandbox`, `makeContext`, `codeFor`, `writeStore`, fixtures). If the shim's file semantics change, the check changes with them.
@@ -66,7 +66,7 @@ Covered code, confirmed at commit **`c445159`**:
 Check for drift:
 
 ```sh
-git diff --stat c445159 -- nix/pkgs/wrapTextfox.nix tools/firefox-chrome/test-nixos-update.js tools/firefox-chrome/check-nixos-update-exhaustive.js
+git diff --stat 5b4edf7 -- nix/pkgs/wrapTextfox.nix tools/firefox-chrome/test-nixos-update.js tools/firefox-chrome/check-nixos-update-exhaustive.js
 ```
 
 Any change to those files means rerun the check. Then reread the events and properties above against the new code. If the script gained a new mutating operation, owned name, pref, or start-up branch, the check must model it. Move the sync commit in this file forward only after you confirm that the check still describes the code at the new commit.
