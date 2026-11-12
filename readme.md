@@ -272,6 +272,7 @@ The theme ships with a `defaults.css`, this file can be overridden by creating a
   --tf-rounding: 0px; /* Border radius used through out the config */
   --tf-text-transform: none; /* Text transform to use */
   --tf-display-horizontal-tabs: none; /* If horizontal tabs should be shown, none = hidden, block = shown */
+  --tf-display-vertical-tabs: flex; /* If vertical tabs should be shown, none = hidden, flex = shown */
   --tf-display-window-controls: none; /* If the window controls should be shown (won't work with sidebery and hidden horizontal tabs), none = hidden, flex = shown */ 
   --tf-display-nav-buttons: none; /* If the navigation buttons (back, forward) should be shown, none = hidden, flex = shown */
   --tf-display-urlbar-icons: none; /* If the icons inside the url bar should be shown, none = hidden, flex = shown */

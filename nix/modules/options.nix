@@ -159,6 +159,7 @@ in
           --tf-rounding: ${cfg.border.radius};
           --tf-text-transform: ${cfg.textTransform};
           --tf-display-horizontal-tabs: ${if cfg.tabs.horizontal.enable then "block" else "none"};
+          --tf-display-vertical-tabs: ${if cfg.tabs.vertical.enable then "flex" else "none"};
           --tf-display-window-controls: ${if cfg.displayWindowControls then "flex" else "none"};
           --tf-display-nav-buttons: ${if cfg.displayNavButtons then "flex" else "none"};
           --tf-display-urlbar-icons: ${if cfg.displayUrlbarIcons then "flex" else "none"};
