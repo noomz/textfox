@@ -58,7 +58,7 @@ Exit 0 means there are no new violations. `test-nixos-update.js` exits 0 when al
 
 ## Does my change touch the verified code?
 
-Covered code, confirmed at commit **`2e0208b`**:
+Covered code, confirmed at commit **`f6cd26f`**:
 
 - `nix/pkgs/wrapTextfox.nix`: all of `configScript`, plus the `textfoxChrome` builder's `manifest.sha256` format and the `textfox-assets-<digest>` naming.
 - `tools/firefox-chrome/test-nixos-update.js`: the shim (`Sandbox`, `makeContext`, `codeFor`, `writeStore`, fixtures). If the shim's file semantics change, the check changes with them.
@@ -66,7 +66,7 @@ Covered code, confirmed at commit **`2e0208b`**:
 Check for drift:
 
 ```sh
-git diff --stat 2e0208b -- nix/pkgs/wrapTextfox.nix tools/firefox-chrome/test-nixos-update.js tools/firefox-chrome/check-nixos-update-exhaustive.js
+git diff --stat f6cd26f -- nix/pkgs/wrapTextfox.nix tools/firefox-chrome/test-nixos-update.js tools/firefox-chrome/check-nixos-update-exhaustive.js
 ```
 
 Any change to those files means rerun the check. Then reread the events and properties above against the new code. If the script gained a new mutating operation, owned name, pref, or start-up branch, the check must model it. Move the sync commit in this file forward only after you confirm that the check still describes the code at the new commit.
@@ -83,7 +83,7 @@ For each `NEW VIOLATION`:
 
 Do not weaken a property, lower the depth, or drop an event to get a pass. Report the counterexample instead.
 
-## Known findings (unfixed at `2e0208b`)
+## Known findings (unfixed at `f6cd26f`)
 
 These print as `known Fn` on every run and do not fail the exit code. When a fix lands, the run prints `Fn no longer reproduces`. Then delete its entry from `KNOWN` in the checker and from this list. Do this only when the run has no `NEW VIOLATION`: a new defect can hide a known one, and then the run says so instead.
 
@@ -95,7 +95,7 @@ These print as `known Fn` on every run and do not fail the exit code. When a fix
 
 ## Proven able to fail
 
-At `2e0208b`, each of these one-line breaks in `wrapTextfox.nix` turned into a `NEW VIOLATION` at depth 3:
+At `f6cd26f`, each of these one-line breaks in `wrapTextfox.nix` turned into a `NEW VIOLATION` at depth 3:
 
 | break | caught by |
 |---|---|
