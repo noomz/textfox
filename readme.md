@@ -219,6 +219,22 @@ All configuration options are optional and can be set as this example shows (rea
 ```
 </details>
 
+<details><summary>NixOS module (`nixosModules.default`): when textfox refuses to install</summary>
+
+The NixOS module wraps Firefox and copies textfox into the profile's `chrome/`
+directory on every start. It only replaces files it can prove it wrote. If
+`chrome/userChrome.css` or `chrome/userContent.css` holds anything else (your
+own files, files you edited after installation, or an older textfox install
+whose Nix store path was garbage-collected), it changes nothing and shows no
+message on screen. Your old styles stay in place.
+
+To let textfox take over, either move those two files out of `chrome/`, or set
+`textfox.force-adopt` to `true` in `about:config` and restart Firefox. With
+`textfox.force-adopt` on, textfox copies the files into a
+`chrome/textfox-backup-*` directory before replacing them. Set it back to
+`false` afterwards, so later edits of your own are refused instead of replaced.
+</details>
+
 ## Uninstallation
 
 ### Uninstall script
@@ -258,8 +274,10 @@ All configuration options are optional and can be set as this example shows (rea
 ## Customization
 
 The icon configuration utilizes code that is originally from ShyFox, therefore
-the same settings are used (these can be set in about:config, or through
-`textfox.config.icons` with either Nix module, which writes the same preferences).
+the same settings are used. With a manual install, set them in about:config.
+With either Nix module, set them through `textfox.config.icons` instead: the
+module writes all three preferences on every Firefox start, so a value changed
+in about:config is reset at the next start.
 | Setting | true | false (default) |
 | -------------------------------------- | --------------------------------------------------------------------- | ------------------------- |
 | `shyfox.enable.ext.mono.toolbar.icons` | Supported extensions get monochrome icons as toolbar buttons | Standard icons used |
