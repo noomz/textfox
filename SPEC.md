@@ -14,6 +14,8 @@ Port textfox to Firefox Nova without losing TUI appearance, existing configurati
 - Disposable new-tab probes may make network requests. Automation feed and widget overrides are probe-only.
 - Do not delete profile files to unblock NixOS updates. Preserve old store generation and back up profile before any manual recovery; no recovery procedure is verified.
 - Rootless nix-portable with proot cannot prove NixOS VM or activation behavior requiring mount namespaces or a real Nix daemon.
+- A local `stdenv` build of `packages.default` fails in this sandbox: `cp -r` cannot set permissions on a directory it creates itself. The home-manager path can be checked against its inputs (repo `chrome/`, `user.js`, module) but not built or activated here, and no home-manager source is available offline.
+- `Cu.reportError` output does not reach a Firefox process log, so a headless run can only assert what a refusal leaves behind, not what it says.
 - `NOVA-PORT.md` contains observations, limitations, and resume commands. Temporary `/tmp` artifacts may disappear.
 
 ## §I
@@ -55,5 +57,7 @@ Port textfox to Firefox Nova without losing TUI appearance, existing configurati
 
 | id | date | cause | fix |
 |---|---|---|---|
-| B1 | 2026-11-05 | NixOS autoconfig imports removed `FileUtils.jsm` on Firefox 159. | V2,V7; fix pending. |
+| B1 | 2026-11-05 | NixOS autoconfig imports removed `FileUtils.jsm` on Firefox 159. | V2,V7; fixed: import moved to `FileUtils.sys.mjs`; live NixOS VM installs on Firefox 159.0.1 (`test-nixos-update-vm.sh`, phases A–C). |
 | B2 | 2026-11-09 | Firefox 159 legacy `-moz-bool-pref` queries did not match in sampled profiles, disabling conditional theme rules. | V4,V5,V6; fixed: all four gates converted to `@media -moz-pref(...)`; regression `test-pref-icons-live.py` (8 cases, both Nova states). |
+| B3 | 2026-11-12 | Manual `tf-install.sh` moved the whole `chrome` directory into a backup on reinstall, taking the user's `config.css` out of the live profile, and replaced an existing `user.js` without keeping the old bytes. | V2,V9; fixed: only textfox's own files are moved aside, `chrome/` is merged instead of copied as a directory, an existing `user.js` is copied to `user.js-<stamp>.bak`; regression `test-manual-install-files.py` (3 cases), live `test-manual-install-live.py` still passes. |
+| B4 | 2026-11-12 | NixOS autoconfig: pre-marker adoption assigned names the install flow also declares, so adoption never took effect; `refuse()` did not stop the flow, so a foreign profile was refused twice and a force-adopted one reported a refusal it did not perform; cleanup ran only on the committing run, so a crash between the marker commit and cleanup leaked the old asset set; two backups in one second collided. | V2,V7,V9; fixed: adoption returns its marker, `refuse()` unwinds, leftovers under textfox's own names are swept on every start, backups take a suffix; regression `test-nixos-update.js` (19 scenarios, including a crash before every mutating step) plus `test-nixos-update-vm.sh` (5 phases). |
