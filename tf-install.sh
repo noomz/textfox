@@ -21,13 +21,23 @@ clean_path() {
   echo "$fp"
 }
 
+# Only the files textfox ships are moved aside. Moving the whole chrome directory
+# would take chrome/config.css with it, and that file belongs to the user: a
+# reinstall must leave the customization in place.
 backup_existing_profile() {
   local fp="$1"
   fp="$(clean_path "${fp}")"
-  if [[ -d "${fp}/chrome" ]]; then
-    echo "[!!] Backing up existing chrome directory..."
-    mv -v "${fp}/chrome" "${fp}/chrome-$(date +%Y%m%d_%H%M%S).bak"
-  fi
+  local backup="" entry name
+  for entry in chrome/*; do
+    name="$(basename "${entry}")"
+    [[ -e "${fp}/chrome/${name}" ]] || continue
+    if [[ -z "${backup}" ]]; then
+      backup="${fp}/chrome-$(date +%Y%m%d_%H%M%S).bak"
+      mkdir -p "${backup}"
+      echo "[!!] Backing up the textfox files this install replaces to ${backup}"
+    fi
+    mv -v "${fp}/chrome/${name}" "${backup}/${name}"
+  done
 }
 
 copy_chrome() {
@@ -35,7 +45,10 @@ copy_chrome() {
   fp="$(clean_path "${fp}")"
   if [[ -d "${fp}" ]]; then
     echo "Copying textfox/chrome/ -> ${fp}/chrome/"
-    cp -r "chrome" "${fp}/chrome"
+    # Merge into the existing directory rather than copying the directory itself,
+    # which would create chrome/chrome on a reinstall.
+    mkdir -p "${fp}/chrome"
+    cp -R "chrome/." "${fp}/chrome/"
   else
     echo "The specified Firefox profile path does not exist: ${fp}"
     return 1
@@ -51,6 +64,11 @@ install_user_js() {
 
   case "$install_js" in
   [Yy]*)
+    if [[ -f "$fp/user.js" ]]; then
+      local bak="$fp/user.js-$(date +%Y%m%d_%H%M%S).bak"
+      cp -v "$fp/user.js" "$bak"
+      echo "[!!] Existing user.js kept at ${bak}"
+    fi
     cp -v "user.js" "$fp/user.js"
     ;;
   *)
