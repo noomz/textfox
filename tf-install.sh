@@ -86,6 +86,16 @@ drop_trailing_blanks() {
   ' "$1"
 }
 
+# A managed block must open before it closes. With the markers reversed the
+# strip would drop every line after the opening marker, so refuse instead.
+markers_ordered() {
+  awk -v b="$PREF_BEGIN" -v e="$PREF_END" '
+    $0 == b { if (seen_end) bad = 1; seen_begin = 1 }
+    $0 == e { if (!seen_begin) bad = 1; seen_end = 1 }
+    END { exit bad }
+  ' "$1"
+}
+
 marker_count() {
   grep -cFx -- "$2" "$1" 2>/dev/null || true
 }
@@ -108,9 +118,10 @@ merge_user_js() {
   if [[ -f "${target}" ]]; then
     begins="$(marker_count "${target}" "$PREF_BEGIN")"
     ends="$(marker_count "${target}" "$PREF_END")"
-    if [[ "${begins}" != "${ends}" ]] || [[ "${begins}" -gt 1 ]]; then
+    if [[ "${begins}" != "${ends}" ]] || [[ "${begins}" -gt 1 ]] ||
+      ! markers_ordered "${target}"; then
       rm -f "${tmp}"
-      echo "[!!] ${target} has unbalanced or repeated textfox markers; leaving it untouched" >&2
+      echo "[!!] ${target} has unbalanced, repeated, or reversed textfox markers; leaving it untouched" >&2
       return 1
     fi
     strip_pref_block "${target}" | drop_trailing_blanks > "${tmp}"

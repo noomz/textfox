@@ -45,13 +45,17 @@ remove_chrome() {
     return 1
   fi
 
+  # config.css is never textfox's, even when a copy sits in this checkout.
+  # Pipes, not process substitution: macOS runs `sh` as bash 3.2 in POSIX mode.
   echo "Removing textfox's files from ${chrome}/"
-  while IFS= read -r rel; do
-    rm -f "${chrome}/${rel}"
-  done < <(cd "${SOURCE_CHROME}" && find . -type f | sed 's#^\./##')
-  while IFS= read -r rel; do
-    rmdir "${chrome}/${rel}" 2>/dev/null || true
-  done < <(cd "${SOURCE_CHROME}" && find . -mindepth 1 -type d | sed 's#^\./##' | sort -r)
+  (cd "${SOURCE_CHROME}" && find . -type f) | sed 's#^\./##' | grep -vx 'config.css' |
+    while IFS= read -r rel; do
+      rm -f "${chrome}/${rel}"
+    done
+  (cd "${SOURCE_CHROME}" && find . -mindepth 1 -type d) | sed 's#^\./##' | sort -r |
+    while IFS= read -r rel; do
+      rmdir "${chrome}/${rel}" 2>/dev/null || true
+    done
 
   if rmdir "${chrome}" 2>/dev/null; then
     echo "✓ chrome directory removed; it held only textfox's files"
@@ -72,6 +76,16 @@ drop_trailing_blanks() {
   awk '
     /^[[:space:]]*$/ { held++; next }
     { while (held > 0) { print ""; held-- } print }
+  ' "$1"
+}
+
+# A managed block must open before it closes. With the markers reversed the
+# strip would drop every line after the opening marker, so refuse instead.
+markers_ordered() {
+  awk -v b="$PREF_BEGIN" -v e="$PREF_END" '
+    $0 == b { if (seen_end) bad = 1; seen_begin = 1 }
+    $0 == e { if (!seen_begin) bad = 1; seen_end = 1 }
+    END { exit bad }
   ' "$1"
 }
 
@@ -97,8 +111,9 @@ remove_textfox_prefs() {
     echo "No textfox preferences in ${target}; leaving it untouched."
     return 0
   fi
-  if [[ "${begins}" != "${ends}" ]] || [[ "${begins}" -gt 1 ]]; then
-    echo "[!!] ${target} has unbalanced or repeated textfox markers; leaving it untouched" >&2
+  if [[ "${begins}" != "${ends}" ]] || [[ "${begins}" -gt 1 ]] ||
+    ! markers_ordered "${target}"; then
+    echo "[!!] ${target} has unbalanced, repeated, or reversed textfox markers; leaving it untouched" >&2
     return 1
   fi
 

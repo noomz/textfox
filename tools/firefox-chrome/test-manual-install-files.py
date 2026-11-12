@@ -257,6 +257,40 @@ def case_uninstall_restores_backup_beside_config(profile: Path) -> None:
     print("ok   uninstall restores a backup beside the kept config.css")
 
 
+def case_reversed_markers_refused(profile: Path) -> None:
+    user_js = profile / "user.js"
+    broken = END + "\n" + SENTINEL_USER_JS + BEGIN + "\n" + 'user_pref("tf.test.after", 1);\n'
+    for script in (INSTALL, UNINSTALL):
+        user_js.write_text(broken)
+        result = subprocess.run(
+            ["bash", str(script), str(profile)],
+            cwd=ROOT, input="n\n", text=True, capture_output=True, timeout=120,
+        )
+        assert user_js.read_text() == broken, f"{script.name} changed a user.js with reversed markers"
+        assert result.returncode != 0 or script == UNINSTALL, f"{script.name} accepted reversed markers"
+    print("ok   reversed markers are refused by install and uninstall")
+
+
+def case_uninstall_keeps_config_shipped_in_checkout(profile: Path) -> None:
+    # A user may keep their config.css in the checkout's chrome/ (it is
+    # gitignored there). Uninstall must still not treat it as textfox's.
+    checkout = Path(tempfile.mkdtemp(prefix="tf-checkout-"))
+    try:
+        shutil.copytree(ROOT / "chrome", checkout / "chrome")
+        shutil.copy2(UNINSTALL, checkout / UNINSTALL.name)
+        (checkout / "chrome" / "config.css").write_text(":root {}\n")
+        install(profile)
+        config = profile / "chrome" / "config.css"
+        config.write_text(SENTINEL_CONFIG)
+        run(checkout / UNINSTALL.name, profile, "n\n")
+        assert config.read_text() == SENTINEL_CONFIG, (
+            "uninstall removed config.css because the checkout held one"
+        )
+    finally:
+        shutil.rmtree(checkout)
+    print("ok   uninstall keeps config.css even when the checkout holds one")
+
+
 def main() -> int:
     cases = [
         case_fresh_install,
@@ -271,6 +305,8 @@ def main() -> int:
         case_uninstall_keeps_user_config,
         case_uninstall_removes_emptied_chrome,
         case_uninstall_restores_backup_beside_config,
+        case_reversed_markers_refused,
+        case_uninstall_keeps_config_shipped_in_checkout,
     ]
     failures = 0
     for case in cases:
