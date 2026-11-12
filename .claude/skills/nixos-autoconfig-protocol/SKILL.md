@@ -58,7 +58,7 @@ Exit 0 means there are no new violations. `test-nixos-update.js` exits 0 when al
 
 ## Does my change touch the verified code?
 
-Covered code, confirmed at commit **`0fb84c8`**:
+Covered code, confirmed at commit **`c445159`**:
 
 - `nix/pkgs/wrapTextfox.nix`: all of `configScript`, plus the `textfoxChrome` builder's `manifest.sha256` format and the `textfox-assets-<digest>` naming.
 - `tools/firefox-chrome/test-nixos-update.js`: the shim (`Sandbox`, `makeContext`, `codeFor`, `writeStore`, fixtures). If the shim's file semantics change, the check changes with them.
@@ -66,7 +66,7 @@ Covered code, confirmed at commit **`0fb84c8`**:
 Check for drift:
 
 ```sh
-git diff --stat 0fb84c8 -- nix/pkgs/wrapTextfox.nix tools/firefox-chrome/test-nixos-update.js tools/firefox-chrome/check-nixos-update-exhaustive.js
+git diff --stat c445159 -- nix/pkgs/wrapTextfox.nix tools/firefox-chrome/test-nixos-update.js tools/firefox-chrome/check-nixos-update-exhaustive.js
 ```
 
 Any change to those files means rerun the check. Then reread the events and properties above against the new code. If the script gained a new mutating operation, owned name, pref, or start-up branch, the check must model it. Move the sync commit in this file forward only after you confirm that the check still describes the code at the new commit.
