@@ -978,6 +978,33 @@ test('a partly removed asset directory is rebuilt, not reused by name', (sandbox
   }
 });
 
+test('a damaged icon in the current asset directory is repaired on the next start', (sandbox) => {
+  // The directory name is current and every icon is present, but one holds other
+  // bytes. The manifest hashes, not names or presence, decide whether the set is
+  // whole. (A missing icon is the partly-removed case above.)
+  const genB = writeStore(sandbox, GENERATION_B);
+  install(sandbox, { storeAbs: genB.abs });
+  const icons = Object.keys(GENERATION_B.icons).sort();
+  // Icons arrive read-only from the store; damage needs the mode changed first.
+  fs.chmodSync(path.join(sandbox.profileDir, 'chrome', genB.assetsDir, icons[0]), 0o644);
+  profileFile(sandbox, `chrome/${genB.assetsDir}/${icons[0]}`, '<svg>damaged</svg>');
+
+  const run = install(sandbox, { storeAbs: genB.abs });
+  assert.deepEqual(run.errors, []);
+  assert.equal(run.restarts, 0, 'unchanged stylesheets must not restart Firefox');
+  const listing = chromeListing(sandbox);
+  assert.deepEqual(listing.assetsDirs, [genB.assetsDir]);
+  assert.deepEqual(listing.staging, []);
+  const dir = path.join(sandbox.profileDir, 'chrome', genB.assetsDir);
+  assert.deepEqual(fs.readdirSync(dir).sort(), icons, 'every icon must be back');
+  for (const [name, body] of Object.entries(GENERATION_B.icons)) {
+    assert.equal(fs.readFileSync(path.join(dir, name), 'utf8'), body, `${name} must hold the store bytes`);
+  }
+  const again = install(sandbox, { storeAbs: genB.abs });
+  assert.deepEqual(again.errors, []);
+  assert.equal(again.restarts, 0);
+});
+
 test('a real nix-built store layout is understood as-is', (sandbox) => {
   // Guards the harness itself: the fixture generator above must model the real
   // build exactly, or a green run here proves nothing about the build. Pass the

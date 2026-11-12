@@ -27,22 +27,78 @@ clean_path() {
   echo "$fp"
 }
 
+LOGO_LINE='\__/\___/_/|_|\__/_/  \____/_/|_|'
+
+# Is textfox already installed here? Since the preference block exists, its
+# markers say so; installs from before it left only the logo at the top of
+# userChrome.css.
+textfox_installed() {
+  local fp="$1"
+  grep -qFx -e "$PREF_BEGIN" -e "$PREF_END" "${fp}/user.js" 2>/dev/null && return 0
+  grep -qF -- "$LOGO_LINE" "${fp}/chrome/userChrome.css" 2>/dev/null
+}
+
+# Whose is the profile's copy of a name textfox ships? Each file is judged on
+# its own, so a userChrome.css the user wrote over a textfox install still counts
+# as the user's. A copy identical to this checkout's is textfox's. The two
+# entry sheets carry the textfox logo in every textfox version. Any other name
+# follows the profile: textfox's when textfox is installed.
+owned_by_textfox() {
+  local fp="$1" name="$2" profile_installed="$3"
+  local target="${fp}/chrome/${name}"
+  if [[ -f "${target}" ]] && cmp -s "chrome/${name}" "${target}"; then return 0; fi
+  if [[ -d "${target}" ]] && diff -rq "chrome/${name}" "${target}" >/dev/null 2>&1; then return 0; fi
+  case "${name}" in
+  userChrome.css | userContent.css)
+    grep -qF -- "$LOGO_LINE" "${target}" 2>/dev/null
+    ;;
+  *)
+    [[ "${profile_installed}" == "yes" ]]
+    ;;
+  esac
+}
+
+# A fresh backup directory for one kind. Two installs in one second must not
+# merge into one backup.
+new_backup_dir() {
+  local fp="$1" kind="$2" stamp n=0 dir
+  stamp="$(date +%Y%m%d_%H%M%S)"
+  dir="${fp}/chrome-${kind}-${stamp}.bak"
+  while [[ -e "${dir}" ]]; do
+    n=$((n + 1))
+    dir="${fp}/chrome-${kind}-${stamp}_${n}.bak"
+  done
+  mkdir -p "${dir}"
+  echo "${dir}"
+}
+
 # Only the files textfox ships are moved aside. Moving the whole chrome directory
 # would take chrome/config.css with it, and that file belongs to the user: a
 # reinstall must leave the customization in place.
+# The backup's name says whose files it holds: chrome-pre-textfox-* holds the
+# user's files, chrome-textfox-* the previous textfox files. Uninstall offers
+# only the first kind.
 backup_existing_profile() {
   local fp="$1"
   fp="$(clean_path "${fp}")"
-  local backup="" entry name
+  local mine="" theirs="" entry name installed=no
+  if textfox_installed "${fp}"; then installed=yes; fi
   for entry in chrome/*; do
     name="$(basename "${entry}")"
     [[ -e "${fp}/chrome/${name}" ]] || continue
-    if [[ -z "${backup}" ]]; then
-      backup="${fp}/chrome-$(date +%Y%m%d_%H%M%S).bak"
-      mkdir -p "${backup}"
-      echo "[!!] Backing up the textfox files this install replaces to ${backup}"
+    if owned_by_textfox "${fp}" "${name}" "${installed}"; then
+      if [[ -z "${theirs}" ]]; then
+        theirs="$(new_backup_dir "${fp}" textfox)" || return 1
+        echo "[!!] Backing up the previous textfox files this install replaces to ${theirs}"
+      fi
+      mv -v "${fp}/chrome/${name}" "${theirs}/${name}"
+    else
+      if [[ -z "${mine}" ]]; then
+        mine="$(new_backup_dir "${fp}" pre-textfox)" || return 1
+        echo "[!!] Backing up your files this install replaces to ${mine}"
+      fi
+      mv -v "${fp}/chrome/${name}" "${mine}/${name}"
     fi
-    mv -v "${fp}/chrome/${name}" "${backup}/${name}"
   done
 }
 

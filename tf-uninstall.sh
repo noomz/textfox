@@ -135,8 +135,22 @@ remove_textfox_prefs() {
 restore_backup() {
   local fp="$1"
   fp="$(clean_path "${fp}")"
+  # Offer the user's files from before textfox, never a backup of textfox's own
+  # previous files (chrome-textfox-*), which would put textfox back. The newest
+  # pre-textfox backup belongs to the current install; C collation keeps a
+  # same-second _N suffix after its unsuffixed sibling. Older installers named
+  # every backup chrome-<stamp>.bak; the oldest of those is the best guess.
   local latest_backup
-  latest_backup="$(find "${fp}" -maxdepth 1 -name 'chrome-*.bak' -type d 2>/dev/null | sort -r | head -n 1)"
+  latest_backup="$(find "${fp}" -maxdepth 1 -name 'chrome-pre-textfox-*.bak' -type d 2>/dev/null | LC_ALL=C sort -r | head -n 1)"
+  if [[ -z "${latest_backup}" ]]; then
+    latest_backup="$(find "${fp}" -maxdepth 1 -name 'chrome-[0-9]*.bak' -type d 2>/dev/null | LC_ALL=C sort | head -n 1)"
+    if [[ -n "${latest_backup}" ]]; then
+      echo "[!!] ${latest_backup} is from an older installer; it may hold textfox's own files rather than yours."
+    fi
+  fi
+  if find "${fp}" -maxdepth 1 -name 'chrome-textfox-*.bak' -type d 2>/dev/null | grep -q .; then
+    echo "Backups of textfox's previous files (chrome-textfox-*.bak) are left in ${fp}."
+  fi
   if [[ -n "${latest_backup}" ]]; then
     read -rp "Backup found: ${latest_backup}. Restore it? (Y/N): " do_restore
     case "$do_restore" in
@@ -167,7 +181,7 @@ restore_backup() {
       ;;
     esac
   else
-    echo "No textfox backup found in ${fp}."
+    echo "No backup of your pre-textfox files found in ${fp}."
   fi
 }
 

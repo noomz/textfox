@@ -291,6 +291,102 @@ def case_uninstall_keeps_config_shipped_in_checkout(profile: Path) -> None:
     print("ok   uninstall keeps config.css even when the checkout holds one")
 
 
+def restore_answer_output(profile: Path) -> str:
+    """Uninstall, accepting whatever backup the uninstaller offers."""
+    return run(UNINSTALL, profile, "y\n")
+
+
+def case_uninstall_offers_pre_textfox_backup(profile: Path) -> None:
+    # A reinstall backs up the previous textfox files. The backup to offer is
+    # still the one holding the user's files from before textfox.
+    chrome = profile / "chrome"
+    chrome.mkdir()
+    mine = "/* the user's own userChrome.css */\n"
+    (chrome / "userChrome.css").write_text(mine)
+    install(profile)
+    install(profile)
+    backups = sorted(profile.glob("chrome-*.bak"))
+    assert len(backups) == 2, f"two installs must leave two backups, got {backups}"
+
+    restore_answer_output(profile)
+    assert (chrome / "userChrome.css").read_text() == mine, (
+        "uninstall restored textfox's previous files instead of the user's pre-textfox backup"
+    )
+    left = sorted(profile.glob("chrome-*.bak"))
+    assert len(left) == 1 and (left[0] / "userChrome.css").is_file(), (
+        "the backup of textfox's previous files must stay, unrestored"
+    )
+    print("ok   uninstall offers the pre-textfox backup, not the newest one")
+
+
+def case_uninstall_never_restores_textfox_backup(profile: Path) -> None:
+    install(profile)
+    install(profile)
+    assert sorted(profile.glob("chrome-*.bak")), "a reinstall must back up textfox's previous files"
+    restore_answer_output(profile)
+    assert not (profile / "chrome").exists(), (
+        "uninstall put textfox's previous files back after removing textfox"
+    )
+    print("ok   uninstall never offers a backup of textfox's own files")
+
+
+def case_install_recognises_unmarked_textfox(profile: Path) -> None:
+    # Installs from before the user.js markers left no marker. Their sheets are
+    # still textfox's, so a reinstall must not label them as the user's.
+    shutil.copytree(ROOT / "chrome", profile / "chrome")
+    legacy_old = profile / "chrome-20250101_000000.bak"
+    legacy_new = profile / "chrome-20250102_000000.bak"
+    for directory, body in ((legacy_old, "/* oldest */\n"), (legacy_new, "/* newer */\n")):
+        directory.mkdir()
+        (directory / "userChrome.css").write_text(body)
+    install(profile)
+    restore_answer_output(profile)
+    assert (profile / "chrome" / "userChrome.css").read_text() == "/* oldest */\n", (
+        "with only legacy backups, uninstall must offer the oldest one"
+    )
+    assert legacy_new.is_dir(), "the newer legacy backup must stay"
+    print("ok   unmarked textfox installs are recognised; the oldest legacy backup is offered")
+
+
+def case_user_sheet_over_textfox_is_offered(profile: Path) -> None:
+    # The user replaced textfox's userChrome.css with their own after
+    # installing. The profile still says textfox is installed, but that one file
+    # is the user's, and uninstall must be able to offer it back.
+    install(profile)
+    mine = "/* written over textfox */\n"
+    (profile / "chrome" / "userChrome.css").write_text(mine)
+    install(profile)
+    pre = sorted(profile.glob("chrome-pre-textfox-*.bak"))
+    assert len(pre) == 1 and (pre[0] / "userChrome.css").read_text() == mine, (
+        "the user's own userChrome.css was not backed up as theirs"
+    )
+    assert not (pre[0] / "icons.css").exists(), "textfox's files landed in the user's backup"
+    restore_answer_output(profile)
+    assert (profile / "chrome" / "userChrome.css").read_text() == mine
+    print("ok   a sheet the user wrote over textfox is backed up as theirs and offered")
+
+
+def case_same_second_backups_stay_apart(profile: Path) -> None:
+    import datetime
+    install(profile)
+    now = datetime.datetime.now()
+    taken = []
+    for offset in range(0, 6):
+        stamp = (now + datetime.timedelta(seconds=offset)).strftime("%Y%m%d_%H%M%S")
+        taken.append(profile / f"chrome-textfox-{stamp}.bak")
+    for directory in taken:
+        directory.mkdir()
+        (directory / "sentinel").write_text(directory.name)
+    install(profile)
+    for directory in taken:
+        assert sorted(p.name for p in directory.iterdir()) == ["sentinel"], (
+            f"a reinstall merged into the existing backup {directory.name}"
+        )
+    suffixed = [p for p in profile.glob("chrome-textfox-*_*.bak") if p.name.count("_") == 2]
+    assert len(suffixed) == 1, f"expected one suffixed backup, got {suffixed}"
+    print("ok   two backups in one second stay apart")
+
+
 def main() -> int:
     cases = [
         case_fresh_install,
@@ -307,6 +403,11 @@ def main() -> int:
         case_uninstall_restores_backup_beside_config,
         case_reversed_markers_refused,
         case_uninstall_keeps_config_shipped_in_checkout,
+        case_uninstall_offers_pre_textfox_backup,
+        case_uninstall_never_restores_textfox_backup,
+        case_install_recognises_unmarked_textfox,
+        case_user_sheet_over_textfox_is_offered,
+        case_same_second_backups_stay_apart,
     ]
     failures = 0
     for case in cases:

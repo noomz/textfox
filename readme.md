@@ -246,10 +246,13 @@ To let textfox take over, either move those two files out of `chrome/`, or set
 > This script automates file removal, use with caution.
 
 > [!NOTE]
-> The uninstall script will offer to restore the most recent backup created by
-> the install script (e.g. `chrome-YYYYMMDD_HHMMSS.bak`) if one is found in
-> your Firefox profile directory, and puts its files back beside anything you
-> kept in `chrome/`. It removes only the files textfox ships from `chrome/`, so
+> The install script names each backup after whose files it holds:
+> `chrome-pre-textfox-YYYYMMDD_HHMMSS.bak` holds your files from before textfox,
+> `chrome-textfox-YYYYMMDD_HHMMSS.bak` the previous textfox files a reinstall
+> replaced. The uninstall script offers to restore the newest pre-textfox backup
+> (or, for profiles installed by older scripts, the oldest
+> `chrome-YYYYMMDD_HHMMSS.bak`), never a backup of textfox's own files, and puts
+> its files back beside anything you kept in `chrome/`. It removes only the files textfox ships from `chrome/`, so
 > your `chrome/config.css` and any files of your own stay, and it removes the
 > `chrome` directory only when nothing else is left in it. It removes only the
 > `textfox managed prefs` block from `user.js`, and deletes that file only when
@@ -268,7 +271,8 @@ To let textfox take over, either move those two files out of `chrome/`, or set
 > [!NOTE]
 > If you had a previous `chrome` directory before installing textfox, the
 > install script moved the files textfox replaced into
-> `chrome-YYYYMMDD_HHMMSS.bak`. You can restore them by moving them back into
+> `chrome-pre-textfox-YYYYMMDD_HHMMSS.bak` (`chrome-YYYYMMDD_HHMMSS.bak` with
+> older scripts). You can restore them by moving them back into
 > `chrome`.
 
 ## Customization
