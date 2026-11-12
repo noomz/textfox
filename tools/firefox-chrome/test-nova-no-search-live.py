@@ -28,8 +28,14 @@ def check(browser_nova, themed):
         prefs = {'marionette.port': port, 'browser.nova.enabled': browser_nova,
                  'browser.newtabpage.activity-stream.nova.enabled': True,
                  'browser.newtabpage.activity-stream.testing.shouldInitializeFeeds': True,
-                 'browser.newtabpage.activity-stream.widgets.enabled': True,
+                 # A content-area widget also moves the logo to the sidebar, and the
+                 # weather widget's size and region gate come from the network.
+                 'browser.newtabpage.activity-stream.widgets.enabled': False,
                  'browser.newtabpage.activity-stream.showSearch': False,
+                 # Firefox centers the logo only without a stories feed, and turns
+                 # feeds.system.topstories on at runtime by region. Pin the section
+                 # off so the centered-logo layout does not depend on the network.
+                 'browser.newtabpage.activity-stream.feeds.section.topstories': False,
                  'toolkit.legacyUserProfileCustomizations.stylesheets': True,
                  'browser.shell.checkDefaultBrowser': False}
         (profile / 'user.js').write_text(''.join(
@@ -55,12 +61,20 @@ def check(browser_nova, themed):
                 if time.monotonic() >= deadline:
                     raise RuntimeError('Nova shortcuts did not initialize')
                 time.sleep(.25)
+            # Firefox adds logo-in-content after the first shortcuts render, in
+            # vanilla profiles too. Give it time; the assertion below still
+            # fails if it never arrives.
+            deadline = time.monotonic() + 10
+            while (not m.execute_script("return !!document.querySelector('.container.nova-enabled.logo-in-content')")
+                   and time.monotonic() < deadline):
+                time.sleep(.25)
             result = m.execute_script("""
                 const container = document.querySelector('.container.nova-enabled');
                 const shortcut = document.querySelector('.nova-enabled .top-site-outer');
                 const logo = document.querySelector('.nova-enabled .wordmark');
                 const rect = e => {const r=e.getBoundingClientRect(); return {x:r.x,y:r.y,width:r.width,height:r.height};};
-                return {search:!!container.querySelector('.search-wrapper'), centered:container.classList.contains('logo-in-content'),
+                return {search:!!container.querySelector('.search-wrapper'), centered:container.classList.contains('logo-in-content'), containerClass:container.className,
+                        bodyClass:document.querySelector('.outer-wrapper')?.className ?? null,
                         shortcut:rect(shortcut), logo:logo ? rect(logo) : null,
                         logoDisplay:logo ? getComputedStyle(logo).display : null,
                         shortcutVisible:getComputedStyle(shortcut).visibility, viewport:[innerWidth, innerHeight]};
