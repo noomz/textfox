@@ -10,6 +10,10 @@ for path in "$@"; do
     *) echo 'Expected source paths in /nix/store' >&2; exit 2 ;;
   esac
 done
+# The Home Manager source must come from the branch that pairs with the nixpkgs
+# source: the fixtures ask for `home.stateVersion = "26.05"`, and a release
+# branch whose enum stops earlier refuses to evaluate. With nixpkgs-unstable use
+# home-manager `master`.
 root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 work=$(mktemp -d "${TMPDIR:-/tmp}/textfox-home-manager-vm.XXXXXX")
 mkdir "$work/shared"

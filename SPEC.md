@@ -14,7 +14,7 @@ Port textfox to Firefox Nova without losing TUI appearance, existing configurati
 - Disposable new-tab probes may make network requests. Automation feed and widget overrides are probe-only.
 - Do not delete profile files to unblock NixOS updates. Preserve old store generation and back up profile before any manual recovery; no recovery procedure is verified.
 - Rootless nix-portable with proot cannot prove NixOS VM or activation behavior requiring mount namespaces or a real Nix daemon.
-- A local `stdenv` build of `packages.default` fails in this sandbox: `cp -r` cannot set permissions on a directory it creates itself. The home-manager path can be checked against its inputs (repo `chrome/`, `user.js`, module) but not built or activated here, and no home-manager source is available offline.
+- `packages.default` builds locally, and home-manager activation is proven only in a disposable VM against a fetched home-manager source from the branch that pairs with the nixpkgs source (unstable `master`, not a release branch). Standalone home-manager hosts and other source pairings remain unverified.
 - `Cu.reportError` output does not reach a Firefox process log, so a headless run can only assert what a refusal leaves behind, not what it says.
 - `NOVA-PORT.md` contains observations, limitations, and resume commands. Temporary `/tmp` artifacts may disappear.
 
@@ -48,7 +48,7 @@ Port textfox to Firefox Nova without losing TUI appearance, existing configurati
 | T2 | x | Inventory selectors and Firefox-owned variables against release source and live DOM for all listed components. Record verified gaps. | V5,V6,I.chrome |
 | T3 | x | Build reliable failing layout checks. Trace Nova logo grid and shortcut width constraints; fix verified defects without replacing configured font. Verify responsive, RTL, clipping, and focus behavior. | V4,V5,V6,V8,I.config,I.chrome,I.probes |
 | T4 | x | Port remaining verified component gaps. Test interactions, menu activation, accessibility, and Nova preference matrix in real Firefox. | V4,V5,V6,I.config,I.chrome,I.prefs |
-| T5 | ~ | Compare manual imports and NixOS concatenation order. Design and verify safe ownership, migration, failure, and retry protocol; test manual, home-manager, and real NixOS delivery separately. | V2,V7,V9,I.manual,I.home,I.nixos |
+| T5 | x | Compare manual imports and NixOS concatenation order. Design and verify safe ownership, migration, failure, and retry protocol; test manual, home-manager, and real NixOS delivery separately. | V2,V7,V9,I.manual,I.home,I.nixos; proofs: `test-nixos-update.js` (19 scenarios), `test-nixos-update-vm.sh` (real NixOS), `test-home-manager-vm.sh` (real home-manager activation) |
 | T6 | . | Test existing configuration options against computed styles across delivery paths. Sync defaults, Nix options, and generated CSS for any changed variables. | V2,V4,V9,I.config,I.manual,I.home,I.nixos |
 | T7 | . | Design and verify fresh-profile and existing-profile preference migration across delivery paths. Keep Nova disabled until other support gates pass. | V1,V3,V6,I.prefs,I.manual,I.home,I.nixos |
 | T8 | . | Run full live regression, accessibility and platform matrix, relevant Nix checks, `git diff --check`, and independent review. Update support and migration guidance only after gates pass. | V1,V2,V3,V4,V5,V6,V7,V8,V9,I.manual,I.home,I.nixos,I.chrome,I.probes |
