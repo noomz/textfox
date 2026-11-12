@@ -43,6 +43,7 @@ in
         map (profile: {
           "${profile}" = {
             extraConfig = builtins.readFile "${package}/user.js";
+            settings = cfg.configPrefs;
             containersForce = true;
             userChrome = lib.mkBefore (builtins.readFile "${package}/chrome/userChrome.css");
           };

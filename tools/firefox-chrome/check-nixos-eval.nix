@@ -26,6 +26,7 @@ let
         textfox.enable = true;
         textfox.config.border.width = "7px";
         textfox.config.newtabLogo = "say \"hi\"\\path\n1next\rtest\n";
+        textfox.config.icons.context.firefox.enable = true;
         system.stateVersion = "26.05";
       }
     ];
@@ -40,7 +41,10 @@ assert lib.hasInfix ''--tf-newtab-logo: "say \"hi\"\\path\A 1next\D test\A ";''
   evaluated.config.textfox.configCss;
 assert lib.hasInfix ''pref("browser.nova.enabled", false);''
   (builtins.head matches).passthru.capturedPrefs;
-assert lib.hasInfix "refusing to replace an existing profile chrome directory"
+assert lib.hasInfix "textfox: refusing to install" (builtins.head matches).passthru.capturedPrefs;
+assert lib.hasInfix ''pref("shyfox.enable.context.menu.icons", true);''
+  (builtins.head matches).passthru.capturedPrefs;
+assert lib.hasInfix ''pref("shyfox.enable.ext.mono.toolbar.icons", false);''
   (builtins.head matches).passthru.capturedPrefs;
 {
   inherit (pkgs.firefox-unwrapped) version;

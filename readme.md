@@ -248,7 +248,8 @@ All configuration options are optional and can be set as this example shows (rea
 ## Customization
 
 The icon configuration utilizes code that is originally from ShyFox, therefore
-the same settings are used (these can be set in about:config).
+the same settings are used (these can be set in about:config, or through
+`textfox.config.icons` with either Nix module, which writes the same preferences).
 | Setting | true | false (default) |
 | -------------------------------------- | --------------------------------------------------------------------- | ------------------------- |
 | `shyfox.enable.ext.mono.toolbar.icons` | Supported extensions get monochrome icons as toolbar buttons | Standard icons used |

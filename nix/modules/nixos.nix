@@ -9,6 +9,7 @@ let
   inherit (lib.options) mkOption mkPackageOption;
   inherit (lib.modules) mkIf;
   inherit (lib.attrsets) optionalAttrs;
+  inherit (lib.strings) concatMapStringsSep;
   inherit (lib.types) listOf path str;
   inherit (lib.trivial) boolToString;
 
@@ -51,15 +52,9 @@ in
   config = mkIf cfg.enable {
     environment.systemPackages =
       let
-        preferences =
-          let
-            icons = config.textfox.config.icons;
-          in
-          ''
-            pref("shyfox.enable.ext.mono.toolbar.icons", ${boolToString icons.toolbar.extensions.enable});
-            pref("shyfox.enable.ext.mono.context.icons", ${boolToString icons.context.extensions.enable});
-            pref("shyfox.enable.context.menu.icons", ${boolToString icons.context.firefox.enable});
-          '';
+        preferences = concatMapStringsSep "\n" (
+          name: ''pref("${name}", ${boolToString cfg.configPrefs.${name}});''
+        ) (builtins.attrNames cfg.configPrefs);
 
       in
       [

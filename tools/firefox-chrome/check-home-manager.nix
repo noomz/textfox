@@ -17,6 +17,10 @@ let
       textfox.profiles = [ "test" ];
       textfox.config.border.width = "7px";
       textfox.config.font.family = "monospace";
+      textfox.config.icons.toolbar.extensions.enable = true;
+      textfox.config.icons.context.extensions.enable = true;
+      textfox.config.icons.context.firefox.enable = true;
+      textfox.config.tabs.vertical.enable = false;
     };
   };
 in

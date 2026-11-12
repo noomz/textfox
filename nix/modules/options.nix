@@ -8,7 +8,7 @@ let
   inherit (lib.modules) mkRenamedOptionModule;
   inherit (lib.modules) mkRemovedOptionModule;
   inherit (lib.strings) replaceStrings;
-  inherit (lib.types) bool str;
+  inherit (lib.types) attrsOf bool str;
 
   cfg = config.textfox.config;
 in
@@ -140,6 +140,18 @@ in
         type = str;
         default = "center";
         description = "Alignment of bookmarks in the bookmarks toolbar (if you have many bookmarks, left is recommended)";
+      };
+    };
+
+    configPrefs = mkOption {
+      readOnly = true;
+      visible = false;
+      type = attrsOf bool;
+      description = "Firefox preferences the icon options set; both Nix modules consume this.";
+      default = {
+        "shyfox.enable.ext.mono.toolbar.icons" = cfg.icons.toolbar.extensions.enable;
+        "shyfox.enable.ext.mono.context.icons" = cfg.icons.context.extensions.enable;
+        "shyfox.enable.context.menu.icons" = cfg.icons.context.firefox.enable;
       };
     };
 
