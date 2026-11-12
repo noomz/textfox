@@ -19,6 +19,7 @@ let
         textfox.enable = true;
         textfox.config.border.width = "7px";
         textfox.config.font.family = "monospace";
+        textfox.config.tabs.vertical.enable = false;
         textfox.config.extraConfig = ''
           :root { --tf-border-width: 9px; }
         '';

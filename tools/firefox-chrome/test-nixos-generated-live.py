@@ -35,12 +35,25 @@ def main():
     expression = f'import ./tools/firefox-chrome/check-nixos-build.nix {{ nixpkgsPath = {args.nixpkgs_path}; }}'
     output = subprocess.check_output([str(Path.home() / '.local/bin/nix-portable'), 'nix', 'build',
         '--offline', '--impure', '--no-link', '--expr', expression, '--print-out-paths'],
-        cwd=ROOT, env=env, text=True, timeout=180).strip()
-    config = subprocess.check_output(['nix', 'store', 'cat', output], text=True, timeout=30)
-    match = re.search(r'var textfoxChrome = new FileUtils.File\("(/nix/store/[^"\n]+)"\)', config)
+        cwd=ROOT, env=env, text=True, timeout=300).strip()
+    nix_portable = str(Path.home() / '.local/bin/nix-portable')
+
+    def store_cat(path):
+        return subprocess.check_output(['nix', 'store', 'cat', path], timeout=30)
+
+    config = store_cat(output).decode()
+    match = re.search(r'var storeDir = new FileUtils.File\("(/nix/store/[^"\n]+)"\)', config)
     if not match:
         raise RuntimeError('generated autoconfig does not identify CSS store directory')
     store_dir = match.group(1)
+    subprocess.check_call([nix_portable, 'nix-store', '--realise', store_dir],
+                          cwd=ROOT, env=env, stdout=subprocess.DEVNULL, timeout=300)
+    manifest = store_cat(f'{store_dir}/manifest.sha256').decode()
+    assets = re.search(r'^assetsDir (\S+)$', manifest, re.MULTILINE)
+    if not assets:
+        raise RuntimeError('generated manifest does not name its asset directory')
+    asset_name = assets.group(1)
+    asset_dir = f'{store_dir}/{asset_name}'
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0))
         port = sock.getsockname()[1]
@@ -49,7 +62,7 @@ def main():
         chrome = profile / 'chrome'
         chrome.mkdir()
         for name in ('userChrome.css', 'userContent.css'):
-            (chrome / name).write_bytes(subprocess.check_output(['nix', 'store', 'cat', f'{store_dir}/{name}'], timeout=30))
+            (chrome / name).write_bytes(store_cat(f'{store_dir}/{name}'))
         generated_chrome = (chrome / 'userChrome.css').read_text()
         imports = re.findall(r'^@import\s+url\(["\']?([^"\')]+)', (ROOT / 'chrome' / 'userChrome.css').read_text(), re.MULTILINE)
         if not imports:
@@ -73,11 +86,14 @@ def main():
         firefox_urls = set(re.findall(r'chrome://[^\s\"\')]+', source_icons))
         if not firefox_urls or any(url not in generated_chrome for url in firefox_urls):
             raise RuntimeError('generated CSS changed Firefox chrome URLs')
-        icon_names = set(re.findall(re.escape(store_dir) + r'/icons/([^\s\"\')]+)', generated_chrome))
+        if 'nix/store' in generated_chrome:
+            raise RuntimeError('generated CSS still points at store paths')
+        asset_refs = set(re.findall(re.escape(asset_name) + r'/([\w.-]+)', generated_chrome))
+        icon_names = {name for name in asset_refs if name.endswith('.svg')}
         if not icon_names:
             raise RuntimeError('generated CSS does not reference store icons')
         for name in sorted(icon_names):
-            icon = subprocess.check_output(['nix', 'store', 'cat', f'{store_dir}/icons/{name}'], timeout=30)
+            icon = store_cat(f'{asset_dir}/{name}')
             if b'<svg' not in icon:
                 raise RuntimeError(f'generated icon store path is invalid: {name}')
         print(json.dumps({'generatedIconFiles':len(icon_names)}), flush=True)
@@ -86,6 +102,7 @@ def main():
         (chrome / 'userChrome.css').write_text('@import url("control.css");\n' + (chrome / 'userChrome.css').read_text())
         (chrome / 'control.css').write_text(':root { --tf-import-control-sentinel: imported; }\n')
         prefs = {'marionette.port': port, 'browser.nova.enabled': args.browser_nova,
+                 'sidebar.revamp': True, 'sidebar.verticalTabs': True,
                  'browser.newtabpage.activity-stream.nova.enabled': not args.newtab_classic,
                  'browser.newtabpage.activity-stream.testing.shouldInitializeFeeds': True,
                  'browser.newtabpage.activity-stream.widgets.enabled': True,
@@ -125,7 +142,14 @@ def main():
                         extraSentinel:s.getPropertyValue('--tf-extra-chrome-sentinel').trim(),
                         controlSentinel:root.getPropertyValue('--tf-import-control-sentinel').trim(),
                         configSentinel:root.getPropertyValue('--tf-import-config-sentinel').trim(),
-                        browserSentinel:root.getPropertyValue('--tf-import-browser-sentinel').trim()};
+                        browserSentinel:root.getPropertyValue('--tf-import-browser-sentinel').trim(),
+                        verticalOption:root.getPropertyValue('--tf-display-vertical-tabs').trim(),
+                        verticalStrip:(() => {
+                          const strip = document.querySelector('box#vertical-tabs');
+                          if (!strip) return null;
+                          const style = getComputedStyle(strip), rect = strip.getBoundingClientRect();
+                          return {display:style.display, width:rect.width, height:rect.height};
+                        })()};
                 """, sandbox='system')
             print(json.dumps({'firefox':meta, 'autoconfig':output, 'storeCss':store_dir, 'result':result}), flush=True)
             if result['extraSentinel'] != 'applied':
@@ -136,6 +160,10 @@ def main():
                 raise RuntimeError('valid import control did not load')
             if result['configSentinel'] or result['browserSentinel']:
                 raise RuntimeError('late generated imports unexpectedly loaded profile files')
+            if result['verticalOption'] != 'none' or not result['verticalStrip']:
+                raise RuntimeError(f'generated CSS lost the vertical-tabs option: {result}')
+            if result['verticalStrip']['display'] != 'none' or result['verticalStrip']['width'] != 0:
+                raise RuntimeError(f'generated CSS did not hide the vertical strip: {result["verticalStrip"]}')
             m.execute_script('gBrowser.selectedTab = gBrowser.addTrustedTab("about:newtab")', sandbox='system')
             m.set_context('content')
             m.switch_to_window(m.window_handles[-1])
