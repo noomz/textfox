@@ -377,62 +377,6 @@ let
       return adoptedMarker;
     }
 
-    function sweepOwnLeftovers(currentAssetsDir) {
-      // Whatever a crash can strand under our own names is swept on every run,
-      // instead of only on the run that stranded it. Cleanup is thus idempotent:
-      // it converges even when the interrupted run never got to do its own.
-      //   - an asset set becomes unreferenced the moment the marker stops naming it
-      //   - a staging name only ever exists between our copy and our rename
-      // One Firefox at a time is assumed, as the profile lock already requires.
-      entries(chromeDir).forEach(function (file) {
-        var name = file.leafName;
-        if (name === currentAssetsDir) {
-          return;
-        }
-        if (file.isDirectory() && ASSETS_DIR_RE.test(name)) {
-          removeIfOurs(file);
-        } else if (name.indexOf(STAGING_PREFIX) === 0) {
-          removeIfOurs(file);
-        }
-      });
-    }
-
-    function isLegacyMarker(file) {
-      // The pre-marker protocol wrote an empty file named after the store path
-      // it installed from, e.g. <32hex>-textfox-chrome.
-      return /^([0-9a-f]{32})-[\w-]+$/.test(file.leafName) && file.isFile();
-    }
-
-    function refuse(reason, detail) {
-      Cu.reportError(
-        "textfox: refusing to install " + storeDir.leafName + " (" + reason + "). " +
-        "The profile chrome directory was left completely untouched and Firefox was not restarted. " +
-        detail
-      );
-      // Unwinds the install flow. Without this, a refusal falls through to the
-      // next gate and either reports twice or writes after claiming it wrote
-      // nothing.
-      throw { textfoxRefused: true };
-    }
-
-    function backupOwned(names) {
-      var name = BACKUP_PREFIX + Math.floor(Date.now() / 1000);
-      var backup = child(chromeDir, name);
-      // Two runs inside one second must not collide: this directory holds the only
-      // copy of the bytes that are about to be replaced.
-      for (var suffix = 2; backup.exists(); suffix++) {
-        backup = child(chromeDir, name + "-" + suffix);
-      }
-      backup.create(Ci.nsIFile.DIRECTORY_TYPE, 0o755);
-      names.forEach(function (name) {
-        var file = child(chromeDir, name);
-        if (file.exists()) {
-          file.copyTo(backup, name);
-        }
-      });
-      return backup;
-    }
-
     function installGeneration(store) {
       var marker = readMarker();
       var legacyMarker = null;
