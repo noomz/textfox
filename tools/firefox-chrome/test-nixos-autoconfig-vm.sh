@@ -12,11 +12,13 @@ esac
 root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 work=$(mktemp -d "${TMPDIR:-/tmp}/textfox-autoconfig-vm.XXXXXX")
 mkdir "$work/shared"
+cp "$root/chrome/defaults.css" "$work/shared/defaults.css"
+run="$root/tools/firefox-chrome/nix-portable-run.sh"
 echo "VM artifacts: $work"
-vm=$(NP_RUNTIME=bwrap nix-portable nix build --no-link --print-out-paths --impure --expr "import $root/tools/firefox-chrome/check-nixos-autoconfig-vm.nix { nixpkgsPath = $nixpkgs; }")
+vm=$(sh "$run" nix build --offline --no-link --print-out-paths --impure --expr "import $root/tools/firefox-chrome/check-nixos-autoconfig-vm.nix { nixpkgsPath = $nixpkgs; }")
 set +e
-NP_RUNTIME=bwrap NIX_DISK_IMAGE="$work/disk.qcow2" SHARED_DIR="$work/shared" QEMU_OPTS='-nographic' \
-  timeout 150 nix-portable nix shell --offline "$vm" --command run-nixos-vm >"$work/boot.log" 2>&1
+NIX_DISK_IMAGE="$work/disk.qcow2" SHARED_DIR="$work/shared" QEMU_OPTS='-nographic' \
+  timeout 150 sh "$run" "$vm" run-nixos-vm >"$work/boot.log" 2>&1
 status=$?
 set -e
 if [ "$status" -eq 0 ] && [ -f "$work/shared/result" ] && [ "$(cat "$work/shared/result")" = PASS ]; then

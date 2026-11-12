@@ -73,10 +73,10 @@ let
               for i in $(seq 1 90); do
                 if test -s /home/probe/profile/chrome/userChrome.css &&
                    test -s /home/probe/profile/chrome/userContent.css &&
-                   find /home/probe/profile/chrome -maxdepth 1 -name '*-textfox-chrome' -print -quit | grep -q . &&
+                   test -s /home/probe/profile/chrome/textfox-installed.json &&
                    grep -q '0100007F:0B0C .* 0A ' /proc/net/tcp; then
                   if ${pkgs.python3}/bin/python3 ${./probe-vm-preferences.py} --profile /home/probe/profile &&
-                     ${pkgs.python3}/bin/python3 ${./probe-vm-preferences.py} --profile /home/probe/vanilla --port 2829 --expect-nova on --output /tmp/shared/vanilla-preferences.json; then
+                     ${pkgs.python3}/bin/python3 ${./probe-vm-preferences.py} --profile /home/probe/vanilla --port 2829 --expect-nova on --no-textfox-css --output /tmp/shared/vanilla-preferences.json; then
                     echo PASS > /tmp/shared/result
                   else
                     echo FAIL > /tmp/shared/result

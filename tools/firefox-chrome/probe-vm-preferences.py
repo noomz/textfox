@@ -45,6 +45,8 @@ def main():
     parser.add_argument('--defaults-css', default='/tmp/shared/defaults.css')
     parser.add_argument('--expect-vars', default='{}')
     parser.add_argument('--expect-prefs', default='{}')
+    # A vanilla Firefox is the negative control: no --tf-* variable may be defined.
+    parser.add_argument('--no-textfox-css', action='store_true')
     # A used profile's own preferences and files that delivery must leave alone.
     parser.add_argument('--preserve-pref', action='append', default=[], metavar='NAME=JSONVALUE')
     parser.add_argument('--preserve-file', action='append', default=[], metavar='PATH=TEXT')
@@ -109,9 +111,14 @@ def main():
         raise RuntimeError(f'browser Nova is off without a user value or an off default: {nova}')
     if not variables:
         raise RuntimeError(f'no variables read from {args.defaults_css}')
-    empty = [name for name in variables if not result['variables'][name]]
-    if empty:
-        raise RuntimeError(f'generated CSS does not define {empty}')
+    if args.no_textfox_css:
+        defined = [name for name in variables if result['variables'][name]]
+        if defined:
+            raise RuntimeError(f'Firefox without textfox defines {defined}')
+    else:
+        empty = [name for name in variables if not result['variables'][name]]
+        if empty:
+            raise RuntimeError(f'generated CSS does not define {empty}')
     for name, value in expect_vars.items():
         if result['variables'][name] != value:
             raise RuntimeError(f'{name} is {result["variables"][name]!r}, expected {value!r}')
