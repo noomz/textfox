@@ -45,12 +45,20 @@ def main():
     parser.add_argument('--defaults-css', default='/tmp/shared/defaults.css')
     parser.add_argument('--expect-vars', default='{}')
     parser.add_argument('--expect-prefs', default='{}')
+    # A used profile's own preferences and files that delivery must leave alone.
+    parser.add_argument('--preserve-pref', action='append', default=[], metavar='NAME=JSONVALUE')
+    parser.add_argument('--preserve-file', action='append', default=[], metavar='PATH=TEXT')
     args = parser.parse_args()
     expect_vars = json.loads(args.expect_vars)
     expect_prefs = json.loads(args.expect_prefs)
+    preserve_prefs = {}
+    for item in args.preserve_pref:
+        name, _, value = item.partition('=')
+        preserve_prefs[name] = json.loads(value)
+    preserve_files = dict(item.partition('=')[::2] for item in args.preserve_file)
     variables = re.findall(r'(--tf-[\w-]+)\s*:', Path(args.defaults_css).read_text())
     names = ['browser.nova.enabled', 'browser.newtabpage.activity-stream.nova.enabled']
-    names += sorted(expect_prefs)
+    names += sorted(set(expect_prefs) | set(preserve_prefs))
     deadline = time.monotonic() + 110
     while True:
         try:
@@ -92,8 +100,13 @@ def main():
         raise RuntimeError('unexpected Firefox profile')
     if args.border is not None and result['navbarBorder'] != args.border:
         raise RuntimeError('configured navbar border not applied')
-    if result['preferences']['browser.nova.enabled']['effective'] != (args.expect_nova == 'on'):
+    nova = result['preferences']['browser.nova.enabled']
+    if nova['effective'] != (args.expect_nova == 'on'):
         raise RuntimeError('browser Nova preference did not match expectation')
+    # Off must come from a user value textfox set, or from a build whose own
+    # default is already off; anything else means the probe read the wrong pref.
+    if args.expect_nova == 'off' and not (nova['user'] or nova['default'] is False):
+        raise RuntimeError(f'browser Nova is off without a user value or an off default: {nova}')
     if not variables:
         raise RuntimeError(f'no variables read from {args.defaults_css}')
     empty = [name for name in variables if not result['variables'][name]]
@@ -106,6 +119,14 @@ def main():
         observed = result['preferences'][name]['effective']
         if observed != value:
             raise RuntimeError(f'preference {name} is {observed!r}, expected {value!r}')
+    for name, value in preserve_prefs.items():
+        observed = result['preferences'][name]['effective']
+        if observed != value:
+            raise RuntimeError(f'preserved preference {name} is {observed!r}, expected {value!r}')
+    for path, text in preserve_files.items():
+        observed = Path(path).read_text() if Path(path).is_file() else None
+        if observed != text:
+            raise RuntimeError(f'preserved file {path} holds {observed!r}, expected {text!r}')
 
 
 if __name__ == '__main__':

@@ -33,6 +33,34 @@ let
             textfox.config.tabs.vertical.enable = false;
             textfox.config.icons.context.firefox.enable = true;
           };
+          # Seed a used profile before Home Manager activates, so the run proves
+          # migration rather than a fresh install. Home Manager owns user.js
+          # wholesale (it writes the whole file from extraConfig and settings),
+          # so the user's own preferences live in prefs.js, where Firefox keeps
+          # them. The seed writes nothing Home Manager manages (profiles.ini,
+          # user.js, chrome/userChrome.css, chrome/config.css, containers.json),
+          # so activation meets no collision. It runs only once per disk.
+          systemd.services.seed-profile = {
+            wantedBy = [ "multi-user.target" ];
+            before = [ "home-manager-probe.service" ];
+            requiredBy = [ "home-manager-probe.service" ];
+            serviceConfig = {
+              Type = "oneshot";
+              RemainAfterExit = true;
+              User = "probe";
+            };
+            script = ''
+              profile=/home/probe/.config/mozilla/firefox/test
+              if [ ! -e "$profile/prefs.js" ]; then
+                mkdir -p "$profile/chrome"
+                printf '%s\n' \
+                  'user_pref("browser.nova.enabled", true);' \
+                  'user_pref("browser.shell.checkDefaultBrowser", false);' \
+                  'user_pref("tf.test.sentinel", true);' > "$profile/prefs.js"
+                printf 'kept by the user' > "$profile/chrome/user-notes.txt"
+              fi
+            '';
+          };
           systemd.services.firefox-probe = {
             wantedBy = [ "multi-user.target" ];
             after = [ "home-manager-probe.service" ];
@@ -58,8 +86,22 @@ let
               if ${pkgs.python3}/bin/python3 ${./probe-vm-preferences.py} \
                 --profile /home/probe/.config/mozilla/firefox/test --border 7px \
                 --expect-vars '{"--tf-font-size":"17px","--tf-border-width":"7px","--tf-display-vertical-tabs":"none","--tf-display-titles":"none"}' \
-                --expect-prefs '{"shyfox.enable.context.menu.icons":true,"shyfox.enable.ext.mono.toolbar.icons":false}'; then
-                echo PASS > /tmp/shared/result
+                --expect-prefs '{"shyfox.enable.context.menu.icons":true,"shyfox.enable.ext.mono.toolbar.icons":false}' \
+                --preserve-pref 'tf.test.sentinel=true' \
+                --preserve-pref 'browser.shell.checkDefaultBrowser=false' \
+                --preserve-file '/home/probe/.config/mozilla/firefox/test/chrome/user-notes.txt=kept by the user'; then
+                # Firefox rewrites prefs.js from its live user values on shutdown;
+                # the sentinel must survive that and Nova must persist as off.
+                systemctl stop firefox-probe
+                prefs=/home/probe/.config/mozilla/firefox/test/prefs.js
+                cp "$prefs" /tmp/shared/persisted-prefs.js
+                if grep -qxF 'user_pref("tf.test.sentinel", true);' "$prefs" &&
+                   grep -qxF 'user_pref("browser.nova.enabled", false);' "$prefs"; then
+                  echo PASS > /tmp/shared/result
+                else
+                  echo FAIL > /tmp/shared/result
+                  echo 'prefs.js lost the sentinel or did not persist Nova off after shutdown' > /tmp/shared/probe-error.txt
+                fi
               else
                 echo FAIL > /tmp/shared/result
                 journalctl -u home-manager-probe -u firefox-probe --no-pager -o cat > /tmp/shared/services.log
