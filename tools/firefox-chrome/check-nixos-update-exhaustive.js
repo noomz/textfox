@@ -424,30 +424,7 @@ sandbox.cleanup();
 // A known finding matches on the kind of violation and on the shape of its
 // shortest counterexample, so a regression that breaks the same property
 // without a crash still shows up as new.
-const killed = (steps) => steps.some((s) => s.includes('killed'));
-
 const KNOWN = [
-  {
-    id: 'F1',
-    summary: 'legacy adoption killed between the two CSS renames refuses every later start',
-    match: (kind, steps) => kind.startsWith('P3 ') && kind.includes('legacy bytes') && kind.includes('generation G bytes') && killed(steps),
-  },
-  {
-    id: 'F2',
-    summary: 'an install killed before its marker commit, then a different generation, refuses',
-    match: (kind, steps) => kind.startsWith('P3 ') && kind.includes('generation G bytes') && !kind.includes('legacy bytes') &&
-      !kind.includes('force-adopt is on') && !kind.includes('marker: records these bytes') && killed(steps),
-  },
-  {
-    id: 'F3',
-    summary: 'a partly removed asset directory is reused by name, so icons go missing',
-    match: (kind, steps) => kind.startsWith('P4 ') && kind.includes('points at missing icons') && steps.some((s) => s.includes('killed part-way')),
-  },
-  {
-    id: 'F4',
-    summary: 'legacy adoption killed after the CSS renames strands the legacy marker file',
-    match: (kind, steps) => kind.startsWith('P4 ') && kind.endsWith('leftovers after a complete run: #-textfox-chrome') && killed(steps),
-  },
   {
     id: 'F5',
     summary: 'a legacy install with one CSS file deleted by the user is refused',

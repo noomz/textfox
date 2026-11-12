@@ -49,12 +49,12 @@ Properties, each checked after every event:
 ```sh
 node tools/firefox-chrome/check-nixos-update-exhaustive.js            # depth 4: ~15k profiles, ~60 s
 node tools/firefox-chrome/check-nixos-update-exhaustive.js --depth 3  # ~2.2k profiles, ~8 s; use while iterating
-node tools/firefox-chrome/test-nixos-update.js                        # the 19 hand-written scenarios; run too
+node tools/firefox-chrome/test-nixos-update.js                        # the 21 hand-written scenarios; run too
 ```
 
 Requirements: Node.js only. The repo was checked with Node 26.8.2. No Nix build is needed: the script is read from the `.nix` source. Run depth 4 before you call a change done. Depth 3 already reaches every known finding.
 
-Exit 0 means there are no new violations. `test-nixos-update.js` exits 0 when all 19 scenarios pass, and a failing scenario there is a regression too. For the exhaustive check, exit 1 means a counterexample appeared that is not a known finding. The output prints it as numbered steps in the script's own words, for example `killed before step 5 (copy profile/chrome/.textfox-staging-userContent.css)`. Step numbers count mutating calls (`mkdir`, `copy`, `move`, `write`, `remove`, `create`) within that one run.
+Exit 0 means there are no new violations. `test-nixos-update.js` exits 0 when all 21 scenarios pass, and a failing scenario there is a regression too. For the exhaustive check, exit 1 means a counterexample appeared that is not a known finding. The output prints it as numbered steps in the script's own words, for example `killed before step 5 (copy profile/chrome/.textfox-staging-userContent.css)`. Step numbers count mutating calls (`mkdir`, `copy`, `move`, `write`, `remove`, `create`) within that one run.
 
 ## Does my change touch the verified code?
 
@@ -77,20 +77,18 @@ Not covered: `nixos.nix` activation, the Firefox restart itself, and real `nsIFi
 
 For each `NEW VIOLATION`:
 
-1. Replay the steps by hand against the code. Open `installGeneration` and follow the gates in order: marker read → `fresh` → `oursOrAbsent` → `adoptLegacy` → per-file `mismatched` gate → `installAssets` → `installFile` → `writeMarker` commit → `sweepOwnLeftovers`. If the code really does that, it is a real bug.
+1. Replay the steps by hand against the code. Open `installGeneration` and follow the gates in order: marker read (and its `legacy` name) → `fresh` → `oursOrAbsent` → `adoptLegacy` → per-file `mismatched` gate (marker, store, or marker `pending` bytes) → `installAssets` (manifest-verified) → intent `writeMarker` (`pending`) → `installFile` → legacy marker removal → `writeMarker` commit → `sweepOwnLeftovers`. If the code really does that, it is a real bug.
 2. It is a **checker error** if the counterexample needs something the system cannot do, for example a crash inside a single `move` (renames are atomic) or two Firefox instances on one profile (the profile lock forbids it). Fix the event or the property in `check-nixos-update-exhaustive.js`, and say why in a comment.
 3. It is an **intended behaviour change** if you meant the new behaviour, for example a new refusal reason. Update the property and its row in the table above, and the commit message must say so. Never widen `KNOWN` to absorb a new failure you did not mean.
 
 Do not weaken a property, lower the depth, or drop an event to get a pass. Report the counterexample instead.
 
-## Known findings (unfixed at `0fb84c8`)
+## Known findings
 
 These print as `known Fn` on every run and do not fail the exit code. When a fix lands, the run prints `Fn no longer reproduces`. Then delete its entry from `KNOWN` in the checker and from this list. Do this only when the run has no `NEW VIOLATION`: a new defect can hide a known one, and then the run says so instead.
 
-- **F1 (P3): legacy adoption killed between the two CSS renames wedges the install.** Legacy install → Firefox on A, killed before `copy .textfox-staging-userContent.css` → every later start on A refuses. `userChrome.css` now holds A bytes and `userContent.css` still holds legacy bytes. With no marker yet, `oursOrAbsent` is false, and `adoptLegacy` wants both files to equal the legacy store's. The user must set `textfox.force-adopt`. This breaks V2's "interrupted updates remain retryable" for the same generation.
-- **F2 (P3): an install killed before its marker commit, then a different generation, refuses.** Fresh profile → A killed before `copy .textfox-staging-userContent.css` → rebuild or roll back to B → refused. The same happens for an update A→B killed after a CSS rename, then a start on another generation: the bytes match neither the marker nor the new store. textfox writes CSS before it records that it owns those bytes.
-- **F3 (P4): a partly removed asset directory is reused, so icons go missing.** Install B → start on A, dies while `sweepOwnLeftovers` removes `textfox-assets-<B>` → start on B: `installAssets` sees the name exists, skips the copy, and B's `userChrome.css` points at icons that are gone, until a generation with a different asset digest arrives. A removal error that `removeIfOurs` swallows leaves the same state without any crash.
-- **F4 (P4): legacy adoption killed after the CSS renames strands the legacy marker.** The empty `<32hex>-textfox-chrome` file stays forever. The next run sees `oursOrAbsent`, so it never looks for, adopts, or removes the legacy marker. This is cosmetic.
+F1–F4 were fixed by T9 (intent marker with `pending` before any CSS rename, legacy marker name carried in the marker, manifest-verified asset directory). Their regressions are in `test-nixos-update.js`.
+
 - **F5 (P3): a legacy install with one CSS file deleted by the user is refused.** `adoptLegacy` requires both files. This may be intended conservatism. Confirm with the maintainer before "fixing" it.
 
 ## Proven able to fail

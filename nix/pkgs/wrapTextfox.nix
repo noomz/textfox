@@ -252,14 +252,32 @@ let
       staging.moveTo(chromeDir, name);
     }
 
-    function installAssets(assetsDirName) {
+    function assetsIntact(dir, icons) {
+      return Object.keys(icons).every(function (rel) {
+        var file = dir.clone();
+        rel.split("/").forEach(function (part) {
+          file.append(part);
+        });
+        return hashOrNull(file) === icons[rel];
+      });
+    }
+
+    function installAssets(assetsDirName, icons) {
       var target = child(chromeDir, assetsDirName);
-      if (target.exists()) {
+      // The name alone does not prove the set is whole: a removal that died
+      // part-way, or failed and was only reported, leaves a directory of the same
+      // name with icons missing. The manifest is the check.
+      if (target.exists() && target.isDirectory() && assetsIntact(target, icons)) {
         return;
       }
       var sourceDir = child(storeDir, assetsDirName);
       if (!sourceDir.exists()) {
         return;
+      }
+      if (target.exists()) {
+        // Digest-named, so ours. A crash here leaves it partial again, and the
+        // next start repeats this check.
+        target.remove(true);
       }
       // A directory rename onto a non-empty directory fails, so the asset set is
       // assembled under a staging name and committed by renaming it into an
@@ -398,6 +416,15 @@ let
         profile[name] = hashOrNull(child(chromeDir, name));
       });
 
+      if (marker && marker.legacy) {
+        // An adoption that was interrupted after its intent marker: the intent
+        // marker now holds ownership, and remembers the legacy marker to remove.
+        var named = child(chromeDir, marker.legacy);
+        if (named.exists() && isLegacyMarker(named)) {
+          legacyMarker = named;
+        }
+      }
+
       if (!marker) {
         // No current marker. That is a fresh profile, a crash before the first
         // marker commit, an adoptable pre-marker install, or somebody else's
@@ -405,8 +432,12 @@ let
         var oursOrAbsent = CSS_NAMES.every(function (name) {
           return profile[name] === null || profile[name] === store.css[name];
         });
-        if (!fresh && !oursOrAbsent) {
+        if (!fresh) {
+          // Found even when no adoption is needed (the user deleted both
+          // stylesheets): the legacy marker is still textfox's leftover.
           legacyMarker = entries(chromeDir).filter(isLegacyMarker)[0] || null;
+        }
+        if (!fresh && !oursOrAbsent) {
           if (legacyMarker) {
             marker = adoptLegacy(legacyMarker, profile);
             adopted = marker !== null;
@@ -428,11 +459,14 @@ let
       }
 
       // Per-file gate. Bytes matching the marker mean "ours, outdated"; bytes
-      // matching the store mean "already current", which is also the state after a
-      // crash between our renames. Anything else is not ours to replace.
+      // matching the store mean "already current"; bytes matching the marker's
+      // pending generation mean an earlier install died between its renames,
+      // whichever generation runs now. Anything else is not ours to replace.
+      var pending = marker.pending || null;
       var mismatched = CSS_NAMES.filter(function (name) {
         return profile[name] !== null && profile[name] !== marker.css[name] &&
-               profile[name] !== store.css[name];
+               profile[name] !== store.css[name] &&
+               !(pending && pending.css && profile[name] === pending.css[name]);
       });
       if (mismatched.length) {
         if (!forceAdopt) {
@@ -449,13 +483,40 @@ let
       });
 
       // The stylesheet references the asset directory, so assets land first.
-      installAssets(store.assetsDir);
+      installAssets(store.assetsDir, store.icons);
+
+      if (stale.length || adopted) {
+        // Intent: before any stylesheet is replaced, record that textfox owns both
+        // the bytes on disk now and the bytes about to land. A crash between the
+        // renames then leaves every file provably ours, for this generation and
+        // for any other. Ownership taken from a legacy install moves here too, so
+        // the legacy marker can go before the commit.
+        var owned = {};
+        CSS_NAMES.forEach(function (name) {
+          owned[name] = profile[name];
+        });
+        writeMarker({
+          protocol: PROTOCOL,
+          store: marker.store,
+          assetsDir: marker.assetsDir,
+          css: owned,
+          pending: { store: storeDir.leafName, assetsDir: store.assetsDir, css: store.css },
+          legacy: legacyMarker ? legacyMarker.leafName : undefined,
+        });
+      }
       stale.forEach(function (name) {
         installFile(child(storeDir, name), name);
       });
 
+      // The legacy marker goes before the commit: once the final marker lands,
+      // nothing remembers its name.
+      if (legacyMarker) {
+        removeIfOurs(legacyMarker);
+      }
+
       var commit = stale.length || marker.store !== storeDir.leafName ||
-            marker.assetsDir !== store.assetsDir || adopted;
+            marker.assetsDir !== store.assetsDir || adopted || pending ||
+            legacyMarker;
       if (commit) {
         // The marker rename is the commit point: until it happens, the profile still
         // describes itself as the previous generation, and the next start repeats
@@ -465,15 +526,15 @@ let
           store: storeDir.leafName,
           assetsDir: store.assetsDir,
           css: store.css,
+          // Kept only when the removal above failed and was reported, so the
+          // next start retries it instead of forgetting the name.
+          legacy: legacyMarker && legacyMarker.exists() ? legacyMarker.leafName : undefined,
         });
       }
 
       // Cleanup sits outside the commit on purpose: it is idempotent, and a crash
       // here must not be able to strand anything, because the next start repeats it
       // even when nothing else is stale.
-      if (legacyMarker) {
-        removeIfOurs(legacyMarker);
-      }
       sweepOwnLeftovers(store.assetsDir);
 
       if (stale.length) {

@@ -809,6 +809,19 @@ const UPDATE_SCENARIOS = [
       return genB;
     },
   },
+  {
+    // F1, F4: an adoption interrupted between or after its renames must neither
+    // wedge the same generation nor strand the legacy marker.
+    name: 'legacy adoption',
+    prepare: (sandbox) => {
+      const genA = writeStore(sandbox, GENERATION_A);
+      const legacy = writeStore(sandbox, LEGACY_GENERATION);
+      profileFile(sandbox, 'chrome/userChrome.css', LEGACY_GENERATION.userChrome);
+      profileFile(sandbox, 'chrome/userContent.css', LEGACY_GENERATION.userContent);
+      profileFile(sandbox, `chrome/${legacy.leaf}`, '');
+      return genA;
+    },
+  },
 ];
 
 // One crash window: interrupt the install immediately before the step at `index`,
@@ -886,6 +899,82 @@ test('a crash at every mutating step converges on the next start', () => {
     } finally {
       reference.cleanup();
     }
+  }
+});
+
+// F2: textfox must own the bytes it is about to write before it writes them, so a
+// crash leaves every file provably ours for any generation, not only the one that
+// crashed. Each case crashes `first` at every step, then starts on `second`.
+const CROSS_GENERATION_CASES = [
+  { name: 'fresh A, then B', prepare: () => {}, first: GENERATION_A, second: GENERATION_B },
+  {
+    name: 'update A to B, then roll back to A',
+    // Generation A (`second` here) is installed before the update under test.
+    prepare: (sandbox, first, second) => install(sandbox, { storeAbs: second.abs }),
+    first: GENERATION_B,
+    second: GENERATION_A,
+  },
+];
+
+test('a crash at every step stays retryable on a different generation', () => {
+  for (const scenario of CROSS_GENERATION_CASES) {
+    const reference = new Sandbox();
+    let steps;
+    let cleanListing;
+    try {
+      const first = writeStore(reference, scenario.first);
+      const second = writeStore(reference, scenario.second);
+      scenario.prepare(reference, first, second);
+      const stepsBefore = reference.steps.length;
+      install(reference, { storeAbs: first.abs });
+      steps = reference.steps.slice(stepsBefore);
+      install(reference, { storeAbs: second.abs });
+      cleanListing = chromeListing(reference);
+    } finally {
+      reference.cleanup();
+    }
+
+    for (let index = 0; index < steps.length; index += 1) {
+      const sandbox = new Sandbox();
+      try {
+        const first = writeStore(sandbox, scenario.first);
+        const second = writeStore(sandbox, scenario.second);
+        scenario.prepare(sandbox, first, second);
+        sandbox.failAt(sandbox.steps.length + index);
+        assert.throws(() => install(sandbox, { storeAbs: first.abs }), (error) => error.injectedFailure === true);
+        sandbox.clearFailure();
+        const retry = install(sandbox, { storeAbs: second.abs });
+        assert.equal(hasRefusal(retry), false, `refused: ${JSON.stringify(retry.errors)}`);
+        assert.deepEqual(retry.errors, []);
+        assert.deepEqual(chromeListing(sandbox), cleanListing, 'did not converge');
+      } catch (error) {
+        error.message += `\n--- ${scenario.name}, crash before step ${index}: ${steps[index]}\n${describe(sandbox)}`;
+        throw error;
+      } finally {
+        sandbox.cleanup();
+      }
+    }
+  }
+});
+
+test('a partly removed asset directory is rebuilt, not reused by name', (sandbox) => {
+  // F3: a removal of B's asset set that died part-way leaves the name behind with
+  // icons missing. Coming back to B must not take the name as proof of content.
+  const genA = writeStore(sandbox, GENERATION_A);
+  const genB = writeStore(sandbox, GENERATION_B);
+  install(sandbox, { storeAbs: genB.abs });
+  install(sandbox, { storeAbs: genA.abs });
+  profileFile(sandbox, `chrome/${genB.assetsDir}/c.svg`, GENERATION_B.icons['c.svg']);
+
+  const run = install(sandbox, { storeAbs: genB.abs });
+  const listing = chromeListing(sandbox);
+  assert.deepEqual(run.errors, []);
+  assert.deepEqual(listing.assetsDirs, [genB.assetsDir]);
+  assert.deepEqual(listing.staging, []);
+  const dir = path.join(sandbox.profileDir, 'chrome', genB.assetsDir);
+  assert.deepEqual(fs.readdirSync(dir).sort(), Object.keys(genB.icons).sort(), 'every icon must be back');
+  for (const [name, body] of Object.entries(genB.icons)) {
+    assert.equal(fs.readFileSync(path.join(dir, name), 'utf8'), body, `${name} must hold the store bytes`);
   }
 });
 
