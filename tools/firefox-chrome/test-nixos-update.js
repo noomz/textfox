@@ -976,28 +976,51 @@ function indent(text) {
     .join('\n');
 }
 
-let failures = 0;
-for (const { name, body } of tests) {
-  const sandbox = new Sandbox();
-  let failure = null;
-  try {
-    body(sandbox);
-  } catch (error) {
-    failure = error;
+// The shim and fixtures above are shared with check-nixos-update-exhaustive.js,
+// which drives the same unmodified script through every bounded event sequence.
+module.exports = {
+  Sandbox,
+  makeContext,
+  install,
+  codeFor,
+  writeStore,
+  chromeListing,
+  hasRefusal,
+  sha256Hex,
+  storeLeafName,
+  GENERATION_A,
+  GENERATION_B,
+  LEGACY_GENERATION,
+};
+
+function main() {
+  let failures = 0;
+  for (const { name, body } of tests) {
+    const sandbox = new Sandbox();
+    let failure = null;
+    try {
+      body(sandbox);
+    } catch (error) {
+      failure = error;
+    }
+    if (failure) {
+      failures += 1;
+      console.log(`not ok - ${name}`);
+      console.log(indent(failure.message));
+      console.log(indent(describe(sandbox)));
+    } else {
+      console.log(`ok - ${name}`);
+    }
+    sandbox.cleanup();
   }
-  if (failure) {
-    failures += 1;
-    console.log(`not ok - ${name}`);
-    console.log(indent(failure.message));
-    console.log(indent(describe(sandbox)));
-  } else {
-    console.log(`ok - ${name}`);
+
+  if (failures) {
+    console.log(`\n${failures} of ${tests.length} NixOS autoconfig protocol scenarios failed`);
+    process.exit(1);
   }
-  sandbox.cleanup();
+  console.log(`\nall ${tests.length} NixOS autoconfig protocol scenarios hold`);
 }
 
-if (failures) {
-  console.log(`\n${failures} of ${tests.length} NixOS autoconfig protocol scenarios failed`);
-  process.exit(1);
+if (require.main === module) {
+  main();
 }
-console.log(`\nall ${tests.length} NixOS autoconfig protocol scenarios hold`);
