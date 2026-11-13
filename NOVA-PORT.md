@@ -1312,3 +1312,48 @@ Proofs weaker than their records state:
 - Every painted proof uses one setup: 1280x800, LTR, Wayland, pixman. X11 and GPU rendering are not covered.
 
 The assertions themselves can fail: T13, T14, T15 and the Windows high-contrast check each failed on a subtraction run or a known-bad configuration. The blockers above need new §T tasks through the spec skill. T18 adds none itself.
+
+## T19 retirement clear for manual and home-manager paths
+
+Mechanism: `tools/clear-nova-pref.py PROFILE`. Nothing ships: `nix/pkgs/default.nix` installs only `chrome/` and `user.js`, the shipped block still assigns `browser.nova.enabled` false, and `check-pref-parity.py` still passes with the same five preferences.
+
+Why a separate tool: `user.js` can set a preference but cannot clear one, and assigning `true` pins Nova on. `browser.nova.enabled` is a plain `pref()` in Firefox 159's `firefox.js`, not sticky, so once the user value is gone the default applies. The tool edits `prefs.js` while it holds Firefox's own profile lock. That lock is an fcntl lock on `.parentlock` on both Linux and macOS. On Linux the `lock` symlink is not the lock: Firefox 159 took over a `lock` symlink that named a live PID, because the `+` in `addr:+pid` defers to the fcntl lock. Measured both ways: a running Firefox makes the lock busy, and a Firefox started while the lock is held refuses the profile. Linux prints `Firefox is already running`. macOS prints `A copy of Firefox is already open`.
+
+Behavior:
+
+- Exit 75 when Firefox holds the profile, with nothing touched. Only EACCES or EAGAIN count as busy. Any other lock error exits 1.
+- Exit 1 when the textfox block in `user.js` (read through a link) still assigns Nova. Run before the retired block is in place, the next start would write the value back after the marker, and Nova would stay false for good.
+- Exit 1 for a symlinked `prefs.js` (opened with `O_NOFOLLOW`), for a directory with none of `prefs.js`, `times.json`, `compatibility.ini` or `user.js`, and for a profile or `prefs.js` owned by another uid.
+- Otherwise it removes only `user_pref("browser.nova.enabled", false)` lines, since textfox only ever wrote `false`. It splits on `\n` bytes only, so other line separators inside string values stay intact. In the same atomic rewrite (temp file, fsync, rename, directory fsync) it adds the one-shot marker `textfox.nova.cleared` true. File mode is kept, and the old bytes go to `prefs.js-<stamp>.textfox.bak`. Temp files left by a killed run are swept while the lock is held.
+- A profile that already has the marker is left alone, so a `false` the user sets later stays. The marker lives in `prefs.js`. Resetting it in `about:config`, Refresh Firefox, or deleting `prefs.js` removes it, and a later run would then clear a user's `false`.
+
+Proof: `tools/firefox-chrome/test-clear-nova-live.py`.
+
+- 8 file cases: a non-profile directory is refused, a fresh profile, an existing profile, a no-op second run, kept values (a `true`, and a `false` in the user's own `user.js` lines), the unretired block refused, the helper's lock against itself, a symlinked `prefs.js`.
+- Live cases on disposable existing profiles:
+  - Manual: installed with `tf-install.sh`, then started once, so Firefox itself persisted Nova false. The clear is refused before the block is retired. Control: with the block retired and no clear, Nova stays false as a user value. The clear exits 75 while Firefox runs. Firefox refuses the profile while the helper-style lock is held. The clear then runs, is one-shot, and two later starts report Nova effective true, default true, no user value. The sentinel in `prefs.js` and the user's own `user.js` preference survive, and the marker persists.
+  - User value: after the clear, a `false` in the user's own `user.js` lines applies, and a rerun keeps it.
+  - Home-manager shape: `user.js` is a read-only symlink swapped from the old generation to the retired one, with a persisted false and a control start. The clear does not touch the link.
+  - Stale lock: after Firefox is killed with SIGKILL, the clear proceeds and Firefox starts on the profile.
+- The harness quits Firefox through `Services.startup.quit`. With SIGTERM, macOS Firefox exited before a pending `prefs.js` save, and the user-value case failed on mac_jr. That was a harness fault, not a helper fault.
+
+Results, `MOZ_HEADLESS=1`, all cases PASS:
+
+- Linux host: Firefox 159.0 build `20261022150525`.
+- Tart VM `mac_jr`: macOS 27.2 (26B123) arm64, Firefox 159.0 build `20261022150525` at `/tmp/Firefox.app`, Command Line Tools `python3` 3.9.6, `marionette_driver` in `/tmp/tf-t19/venv`. On macOS the stale case leaves only `.parentlock`; there is no `lock` symlink.
+
+Subtraction runs, each red on Linux: lock removed (`held lock: expected exit 75, got 0`), marker check removed (`second run: not a no-op`), order check removed (`unretired block: expected refusal, got 0`). An independent review found the order hazard, the removal of user values other than `false`, the non-EACCES lock errors, the owner change, the line splitting, the missing proof that Firefox refuses a held lock, and a weak home-manager case. All are fixed above.
+
+Wiring is T25, unbuilt and unproven:
+
+- Manual: `tf-install.sh` runs the tool after `merge_user_js` writes the retired block, only on a profile textfox was installed in, and refuses the install on exit 75.
+- Home-manager: a `home.activation` entry after `linkGeneration` runs the tool for each `textfox.profiles` entry, using `${pkgs.python3}`. It treats exit 75 as a warning and retries on the next activation, because the marker is written only on success. Until the retry, Nova stays at the persisted false. Proof needs `test-home-manager-vm.sh` and the Darwin `Profiles/` layout.
+
+Bounds:
+
+- The tool needs Python 3. Home-manager can supply it. On the manual path, macOS has `python3` only once Command Line Tools are installed (mac_jr has them), so T25 must decide what a manual user without Python gets, for example a message to reset `browser.nova.enabled` in `about:config`.
+- Filesystems without fcntl locks (NFS) are refused, not handled.
+- Windows is out of scope, because `fcntl` cannot be imported there.
+- Headed runs were not needed: the result is preference state, not painting.
+
+Run: `MOZ_HEADLESS=1 "$HOME/.cache/textfox-firefox-live/venv/bin/python" tools/firefox-chrome/test-clear-nova-live.py`. On macOS, set `FIREFOX=/path/Firefox.app/Contents/MacOS/firefox`.
