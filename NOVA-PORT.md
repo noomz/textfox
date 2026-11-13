@@ -1278,3 +1278,37 @@ Headless Firefox 159.0 build `20261022150525` reported a navbar border of `7px`.
 The activation log does not contain `Attempting to reload services`. Darwin does not require the Linux skip line. `/Users/admin/Library/Application Support/Firefox` is still dated 2026-10-28. `/nix/var/nix/profiles/per-user/admin` was not created. The VM was left running.
 
 Bounds. Nix inside the VM is the multi-user daemon, Nix 2.35.6. A non-login shell does not source it, so the script sources `/nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh` before `nix build` and before `activate`. The build is not `--offline`. It fetched 164 paths (470.5 MiB) and built 34 derivations, including `firefox-159.0.1`, because `programs.firefox.enable` pulls `pkgs.firefox`. The probe used the copied Firefox 159.0 app. The first launch exited with `nix: command not found` before that sourcing; that was a harness bug, and the rerun above is the pass. ProfD was compared with `pwd -P`, so the probe path is `/private/tmp/...`.
+
+## T18 support decision
+
+Decision: Nova support is not claimed. `browser.nova.enabled` stays false on every path and the README warning stays (V1). T19 stays blocked because it runs only after a claim.
+
+Evidence base: T16's full matrix at `8fc586b`, plus T17. `git diff 8fc586b HEAD -- chrome nix user.js tf-install.sh tf-uninstall.sh flake.nix` is empty, so no theme or delivery file changed after that run. An independent review (a separate agent given SPEC.md, this file and the test scripts, not this verdict) reached the same gate results.
+
+| Gate | Result | Evidence |
+|---|---|---|
+| UI (V6, V11) | Fail | Headed painted proof covers T15's 9 surfaces in both browser Nova states (`test-surface-paint-live.py`) and the Nova logo and search box (`test-nova-layout-live.py`). Sidebar, vertical tabs, split view, private windows, other panels, the page context menu and `about:` pages have computed-style checks only. V11 does not count those surfaces as styled. |
+| Delivery (V2, V7, V9) | Pass for the current artifacts | NixOS and home-manager VMs, the standalone home-manager activation on Linux and on Darwin, `test-nixos-update.js` (22), the exhaustive autoconfig check and `test-manual-install-files.py` (19) all pass. Every run proves the Nova-false state only. |
+| Migration (V3) | Fail; cannot pass before T19 | The one-shot clear of the persisted `browser.nova.enabled` user value is designed (T7) but unimplemented and unverified. |
+| Accessibility (V5) | Fail | Painted contrast covers Linux only (T11, T15, `test-high-contrast-live.py`). Focus visibility is a computed outline check only; T15 does not check focus rings. RTL is headless geometry only. Reduced motion is set as a harness override, never asserted. |
+| Platforms (V10) | Linux pass; macOS and Windows fail | macOS has one headed check, the native-menu probe on the Back item. Windows high contrast measures computed colors, not painted pixels. |
+
+Blockers, each needed before a claim:
+
+1. V11, V6: headed painted proof, in both browser Nova states, for the sidebar (revamp and classic), vertical tabs, split view, private windows, remaining panels, the page context menu and supported `about:` pages. The alternative is to narrow the claim to the surfaces already proven.
+2. V5: painted focus-ring visibility on keyboard navigation, painted RTL output, and an assertion that chrome honors reduced motion.
+3. V10: a headed painted run of the surface regression on macOS and Windows, or a claim scoped to Linux Wayland.
+4. V3 with V1: V1 needs a verified migration before a claim, and T19 builds that migration only after a claim. The spec should let T18 record a claim that depends on T19, with T19 building and verifying the clear before any README or preference change.
+5. V3 design gap: `user.js` can set a preference but cannot clear one. Setting `true` pins Nova on, which is not Firefox's default, and editing `prefs.js` while Firefox runs is unsafe. The manual and home-manager equivalent of the autoconfig clear is still undefined.
+6. V7: T19 changes the autoconfig, so it must re-run `check-nixos-update-exhaustive.js` and the VM suites, including persistence of the new marker preference.
+
+Proofs weaker than their records state:
+
+- T16's `test-nova-layout-live.py` fix hides `.sidebar-inline-end` and `.content-full-width` during capture. New-tab widgets are removed from the painted proof, not tested by it.
+- T15 runs with new-tab widgets, stories and weather off. Firefox's default Nova new tab is not proven in pixels.
+- Linux high contrast sets `ui.useAccessibilityTheme`, so OS detection is never exercised. T8 discloses this.
+- T17 Darwin: home-manager built `firefox-159.0.1`, but the probe ran a copied 159.0. The home-manager-delivered binary was never launched there.
+- The painted checks (T14, T15) ran on host Firefox 159.0 only. The VMs ship 159.0.1, which has no painted run.
+- Every painted proof uses one setup: 1280x800, LTR, Wayland, pixman. X11 and GPU rendering are not covered.
+
+The assertions themselves can fail: T13, T14, T15 and the Windows high-contrast check each failed on a subtraction run or a known-bad configuration. The blockers above need new §T tasks through the spec skill. T18 adds none itself.
