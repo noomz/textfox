@@ -31,7 +31,12 @@ OUTPUT = (1280, 800)
 MIN_LOGO_PIXELS = 100
 
 FREEZE = ('*, *::before, *::after { animation: none !important; transition: none !important; '
-          'caret-color: transparent !important; }')
+          'caret-color: transparent !important; }'
+          # Live widgets repaint between captures: the world clock ticks each minute, and
+          # weather, crossword and wallpaper arrive from the network. Hidden, layout kept.
+          '.nova-enabled :is(.sidebar-inline-end, .content-full-width), '
+          '.nova-enabled :is(.sidebar-inline-end, .content-full-width) * '
+          '{ visibility: hidden !important; }')
 HIDE_LOGO = '.nova-enabled .wordmark::before { visibility: hidden !important; }'
 HIDE_SEARCH = '.nova-enabled .search-wrapper { visibility: hidden !important; }'
 # Fixed square at content (10, 10); its painted box locates the content area on screen,
