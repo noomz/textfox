@@ -1,0 +1,472 @@
+#!/usr/bin/env python3
+"""Check textfox's remaining surfaces from headed, painted pixels; exit 0 pass, 1 fail.
+
+Extends test-surface-paint-live.py (T15) with the same harness, judge and
+known-bad rule: a disposable headless Sway compositor, Firefox headed in it,
+grim captures, and each surface hidden in turn to find what it painted.
+
+Surfaces, in both browser Nova states:
+
+- classic layout (sidebar.revamp false): bookmarks sidebar box, the content
+  box (#tabbrowser-tabbox), both split-view panels, the unified extensions
+  panel, the all-tabs panel, the page context menu, `about:` pages, and a
+  private window's navbar, tab strip and content box plus about:privatebrowsing;
+- revamp layout (sidebar.revamp and sidebar.verticalTabs true): bookmarks
+  sidebar box, vertical tab strip, and a private window's navbar, vertical tab
+  strip and content box.
+
+Chrome surfaces must paint --tf-bg as the dominant color (web content inside a
+box is skipped), a border of their variable on the left, right and bottom
+edges, and a textfox-colored text target at 4.5:1. `about:` pages carry only
+textfox's font (chrome/content/about.css), so each page gets two injected
+probe runs, ten `i` and ten `W` with an inline serif font that textfox's
+user-level `!important` rule must override: the painted runs must be about
+equally wide (monospace) and their text must reach 4.5:1 against the painted
+page.
+
+Cases: shipped defaults, a sentinel config.css (or `--config FILE`), and a
+known-bad config.css (text the color of the background, borders gone, a
+proportional font). Every surface must fail the known-bad case. Exits 0 or 1,
+never inconclusive.
+
+Requires sway, grim, ImageMagick, and the live-tool venv Python. Set
+TF_SURFACE_ARTIFACTS to a directory to keep captures and masks.
+"""
+import argparse
+import json
+import os
+from pathlib import Path
+import runpy
+import shutil
+import socket
+import subprocess
+import sys
+import tempfile
+import time
+
+from ff_inspect import connect
+
+ROOT = Path(__file__).resolve().parents[2]
+HERE = Path(__file__).resolve().parent
+_paint = runpy.run_path(str(HERE / 'test-surface-paint-live.py'))
+(Capture, Image, judge, wait, near, ratio, dominant, inflate, start_sway, stop, changed_mask, count,
+ painted_box, RESOLVE_JS, CHROME_STYLE_JS, FREEZE, MIN_RATIO, MIN_TEXT_PIXELS, OUTPUT) = (
+    _paint[k] for k in ('Capture', 'Image', 'judge', 'wait', 'near', 'ratio', 'dominant', 'inflate',
+                        'start_sway', 'stop', 'changed_mask', 'count', 'painted_box', 'RESOLVE_JS',
+                        'CHROME_STYLE_JS', 'FREEZE', 'MIN_RATIO', 'MIN_TEXT_PIXELS', 'OUTPUT'))
+
+KNOWN_BAD_SIGNS = {'border', 'text', 'proportional'}  # words in the failures the known-bad config must cause
+MONOSPACE = 0.8  # painted width of ten `i` over ten `W`; a proportional font paints about 0.3
+
+TABS = '--tf-display-horizontal-tabs: block;'
+CONFIGS = {
+    'defaults': f':root {{ {TABS} }}\n',
+    'sentinel': (f':root {{ {TABS} --tf-bg: rgb(24, 36, 64); --tf-border: rgb(200, 0, 90); '
+                 '--tf-accent: rgb(0, 140, 90); }\n'),
+    'known-bad': (f':root {{ {TABS} --tf-fg: var(--tf-bg); --tf-border-width: 0px; '
+                  '--tf-font-family: serif; }\n'),
+}
+LAYOUTS = {
+    'classic': {'sidebar.revamp': False, 'sidebar.verticalTabs': False},
+    'revamp': {'sidebar.revamp': True, 'sidebar.verticalTabs': True},
+}
+ABOUT_PAGES = ['about:preferences', 'about:addons', 'about:config', 'about:support']
+
+# name, selector hidden to find its paint, border variable, text target, web content skipped
+SIDEBAR = ('sidebar', '#sidebar-box', '--tf-border', '#sidebar-box::before', None)
+CONTENT_BOX = ('content-box', '#tabbrowser-tabbox', '--tf-border', '#tabbrowser-tabbox::before',
+               '#tabbrowser-tabbox .browserStack')
+NAVBAR = ('navbar', '#nav-bar', '--tf-border', '#nav-bar::before', None)
+HORIZONTAL_TABS = ('tabs', '#TabsToolbar', '--tf-border', '.tabbrowser-tab:not([selected]) .tab-label', None)
+VERTICAL_TABS = ('vertical-tabs', '#vertical-tabs', '--tf-border',
+                 '#vertical-tabs .tabbrowser-tab:not([selected]) .tab-label', None)
+SPLIT_PANELS = [
+    ('split-active', '.split-view-panel.deck-selected', '--tf-border', '.split-view-panel.deck-selected::before',
+     '.split-view-panel.deck-selected .browserStack'),
+    ('split-other', '.split-view-panel:not(.deck-selected)', '--tf-border',
+     '.split-view-panel:not(.deck-selected)::before', '.split-view-panel:not(.deck-selected) .browserStack'),
+]
+POPUPS = [
+    ('extensions-panel', '#unified-extensions-panel', '--tf-accent', '#unified-extensions-panel .panel-header h1',
+     "gUnifiedExtensions.togglePanel()",
+     "return document.getElementById('unified-extensions-panel')?.state == 'open'",
+     "PanelMultiView.hidePopup(document.getElementById('unified-extensions-panel'))"),
+    ('all-tabs-panel', '#customizationui-widget-panel', '--tf-accent', '#allTabsMenu-searchTabs',
+     "gTabsPanel.showAllTabsPanel()",
+     "return document.getElementById('customizationui-widget-panel')?.state == 'open'",
+     "PanelMultiView.hidePopup(document.getElementById('customizationui-widget-panel'))"),
+]
+PAGE_CONTEXT = ('page-context-menu', '#contentAreaContextMenu', '--tf-accent',
+                '#contentAreaContextMenu > menuitem:not([hidden])', None)
+
+SKIP_JS = r"""
+const e = document.querySelector(arguments[0]);
+if (!e) return null;
+const r = e.getBoundingClientRect();
+return {x:Math.floor(r.x), y:Math.floor(r.y), width:Math.ceil(r.width), height:Math.ceil(r.height)};
+"""
+
+# Two runs with an inline serif font; textfox's user-level !important font rule must win.
+PROBE_JS = r"""
+document.getElementById('tf-font-probe')?.remove();
+const box = document.createElement('div');
+box.id = 'tf-font-probe';
+box.style.cssText = 'position:fixed;top:45%;inset-inline-end:24px;z-index:2147483647;' +
+  'font-size:32px;line-height:1.4;font-family:serif;background:none;border:0;margin:0;padding:0';
+for (const [id, text] of [['tf-probe-i', 'iiiiiiiiii'], ['tf-probe-w', 'WWWWWWWWWW']]) {
+  const run = document.createElement('div');
+  run.id = id;
+  run.textContent = text;
+  run.style.cssText = 'font-family:serif;white-space:pre';
+  box.appendChild(run);
+}
+(document.body || document.documentElement).appendChild(box);
+const done = arguments[arguments.length - 1];
+requestAnimationFrame(() => requestAnimationFrame(() => done({
+  href: location.href, font: getComputedStyle(document.getElementById('tf-probe-i')).fontFamily})));
+"""
+
+
+class Shots(Capture):
+    """T15 capture, with styles loaded as an author sheet in content too: about: pages refuse inline <style>."""
+
+    def shoot(self, css, content):
+        self.m.execute_async_script(CHROME_STYLE_JS, script_args=[FREEZE + css], sandbox='system')
+        time.sleep(.5)
+        self.shots += 1
+        path = self.directory / f'shot-{self.shots}.ppm'
+        for attempt in range(3):  # grim fails now and then while a window maps or unmaps
+            if subprocess.run(['grim', '-t', 'ppm', str(path)], env=self.env, stdout=subprocess.DEVNULL,
+                              stderr=subprocess.DEVNULL).returncode == 0:
+                return path
+            time.sleep(1)
+        raise RuntimeError(f'grim could not capture {path}')
+
+
+def diff_box(a, b):
+    """Bounding box and pixel list of pixels that differ between two captures."""
+    xs, ys, pixels = [], [], []
+    for y in range(a.height):
+        row = y * a.width * 3
+        if a.data[row:row + a.width * 3] == b.data[row:row + a.width * 3]:
+            continue
+        for x in range(a.width):
+            if a.pixel(x, y) != b.pixel(x, y):
+                xs.append(x)
+                ys.append(y)
+                pixels.append((x, y))
+    if not xs:
+        return None, []
+    return {'x': min(xs), 'y': min(ys), 'width': max(xs) - min(xs) + 1, 'height': max(ys) - min(ys) + 1}, pixels
+
+
+def judge_font(name, shot):
+    """Monospace runs readable against the painted page; return (record, failures)."""
+    base, run_w = shot['image'], shot['text']
+    box_i = shot['box']
+    box_w, w_pixels = diff_box(base, run_w)
+    record = {'surface': name, 'iBox': box_i, 'wBox': box_w}
+    if not box_i or not box_w:
+        return record, [f'{name} font probe paints no pixels']
+    record['widthRatio'] = round(box_i['width'] / box_w['width'], 3)
+    failures = []
+    if record['widthRatio'] < MONOSPACE:
+        failures.append(f'{name} paints a proportional font: ten i are {box_i["width"]}px, '
+                        f'ten W are {box_w["width"]}px')
+    background = dominant(base, inflate(box_w, 8))
+    strong = sum(1 for x, y in w_pixels if ratio(base.pixel(x, y), background) >= MIN_RATIO)
+    record.update(background=background, textPixelsAtRatio=strong)
+    if strong < MIN_TEXT_PIXELS:
+        failures.append(f'{name} probe text paints {strong} pixels at {MIN_RATIO}:1, fewer than {MIN_TEXT_PIXELS}')
+    return record, failures
+
+
+class Run:
+    def __init__(self, m, capture):
+        self.m, self.capture = m, capture
+        self.records, self.failures = [], {}
+
+    def chrome(self, surface, prefix=''):
+        name, selector, border_var, text_selector, skip = surface
+        name = prefix + name
+        self.m.set_context('chrome')
+        colors = self.m.execute_script(RESOLVE_JS, script_args=[selector], sandbox='system')
+        if not colors:
+            raise RuntimeError(f'{name}: {selector} missing')
+        if skip:
+            colors['skip'] = self.m.execute_script(SKIP_JS, script_args=[skip], sandbox='system')
+            if not colors['skip']:
+                raise RuntimeError(f'{name}: {skip} missing')
+        shot = self.capture.surface(name, selector, text_selector)
+        box = shot['box']
+        # Client rects are used as compositor pixels; Wayland's mozInnerScreenX counts the CSD shadow, so
+        # check placement directly: the skipped web content must sit inside the surface's painted box.
+        # A box smaller than the content paints almost nothing (the known-bad config); judge reports that.
+        skip_rect = colors.get('skip')
+        if (skip and box and box['width'] >= skip_rect['width'] and box['height'] >= skip_rect['height']
+                and not (box['x'] <= colors['skip']['x'] and box['y'] <= colors['skip']['y']
+                                 and colors['skip']['x'] + colors['skip']['width'] <= box['x'] + box['width']
+                                 and colors['skip']['y'] + colors['skip']['height'] <= box['y'] + box['height'])):
+            raise RuntimeError(f'{name}: content rect {colors["skip"]} outside painted box {box}')
+        record, self.failures[name] = judge(name, shot, colors, border_var=border_var)
+        self.records.append(record)
+
+    def font(self, url, prefix=''):
+        name = f'{prefix}font {url}'
+        select_content(self.m)
+        if url != 'about:privatebrowsing':
+            self.m.navigate(url)
+        wait(self.m, f"return location.href.startsWith({json.dumps(url)}) && document.readyState == 'complete'",
+             f'{url} load', sandbox='default')
+        time.sleep(1)
+        probe = self.m.execute_async_script(PROBE_JS, sandbox='default')
+        shot = self.capture.surface(name, '#tf-probe-i', '#tf-probe-w', content=True)
+        record, self.failures[name] = judge_font(name, shot)
+        record['computedFont'] = probe['font']
+        if not probe['href'].startswith(url):
+            raise RuntimeError(f'{name}: probe ran on {probe["href"]}')
+        record['href'] = probe['href']
+        self.records.append(record)
+        self.m.set_context('chrome')
+
+
+def select_content(m):
+    """Point Marionette's content context at the selected tab."""
+    m.set_context('chrome')
+    selected = m.execute_script('return gBrowser.selectedBrowser.browserId', sandbox='system')
+    m.set_context('content')
+    for handle in m.window_handles:
+        m.switch_to_window(handle, focus=False)
+        if m.execute_script('return window.browsingContext.browserId', sandbox='system') == selected:
+            m.switch_to_window(handle)
+            return
+    raise RuntimeError(f'no content handle for selected browser {selected}')
+
+
+def wait_open(m, script, what):
+    wait(m, script, what)
+    time.sleep(1)
+
+
+def neutral_pointer(m):
+    """Park the pointer in the window's top-left margin so no bordered box shows its hover color."""
+    m.set_context('chrome')
+    m.actions.sequence('pointer', 'mouse', {'pointerType': 'mouse'}).pointer_move(2, 2, origin='viewport').perform()
+
+
+def open_sidebar(m):
+    m.execute_script("SidebarController.show('viewBookmarksSidebar')", sandbox='system')
+    wait_open(m, "const b = document.getElementById('sidebar-box'); return !b.hidden && "
+              "document.getElementById('sidebar').contentDocument?.readyState == 'complete'", 'bookmarks sidebar')
+    # The sidebar focuses its search field; its caret blinks in a document the freeze sheet does not reach.
+    m.execute_script("gBrowser.selectedBrowser.focus()", sandbox='system')
+    wait_open(m, "return !document.getElementById('sidebar').contentDocument.hasFocus()", 'sidebar unfocused')
+
+
+def classic(m, run):
+    open_sidebar(m)
+    run.chrome(SIDEBAR)
+    m.execute_script("SidebarController.hide()", sandbox='system')
+    wait_open(m, "return document.getElementById('sidebar-box').hidden", 'sidebar hidden')
+    run.chrome(CONTENT_BOX)
+    run.chrome(HORIZONTAL_TABS)
+
+    m.execute_script("const first = gBrowser.selectedTab; "
+                     "gBrowser.addTabSplitView([first, gBrowser.addTrustedTab('about:blank')], {insertBefore:first})",
+                     sandbox='system')
+    wait_open(m, "return gBrowser.tabpanels.splitViewPanels?.length === 2 && "
+              "document.querySelectorAll('.split-view-panel').length === 2", 'split view')
+    for surface in SPLIT_PANELS:
+        run.chrome(surface)
+    m.execute_script("const t = gBrowser.selectedTab; gBrowser.selectedTab = gBrowser.addTrustedTab('about:blank'); "
+                     "for (const s of t.splitview.tabs) gBrowser.removeTab(s)", sandbox='system')
+    wait_open(m, "return !document.querySelector('.split-view-panel')", 'split view closed')
+
+    for name, selector, border_var, text_selector, opener, is_open, closer in POPUPS:
+        m.execute_script(opener, sandbox='system')
+        wait_open(m, is_open, f'{name} open')
+        run.chrome((name, selector, border_var, text_selector, None))
+        m.execute_script(closer, sandbox='system')
+        wait_open(m, is_open.replace("== 'open'", "!= 'open'"), f'{name} closed')
+
+    select_content(m)
+    m.navigate('data:text/html,<p style="font-size:24px">textfox context probe</p>')
+    m.actions.sequence('pointer', 'mouse', {'pointerType': 'mouse'}).click(
+        m.find_element('css selector', 'p'), button=2).perform()
+    m.set_context('chrome')
+    wait_open(m, "return document.getElementById('contentAreaContextMenu').state == 'open'", 'page context menu')
+    neutral_pointer(m)  # the menu opens under the pointer; keep its first item unhovered
+    wait(m, "return document.getElementById('contentAreaContextMenu').state == 'open' && "
+         "!document.querySelector('#contentAreaContextMenu > [_moz-menuactive]')", 'context menu unhovered')
+    run.chrome(PAGE_CONTEXT)
+    m.execute_script("document.getElementById('contentAreaContextMenu').hidePopup()", sandbox='system')
+    wait_open(m, "return document.getElementById('contentAreaContextMenu').state == 'closed'", 'context menu closed')
+    neutral_pointer(m)
+    for url in ABOUT_PAGES:
+        run.font(url)
+
+
+def revamp(m, run):
+    m.execute_script("SidebarController.promiseInitialized.then(() => "
+                     "SidebarController.updateUIState({hidden:false, launcherExpanded:true}))", sandbox='system')
+    wait_open(m, "return document.getElementById('vertical-tabs')?.hasAttribute('visible')", 'vertical tabs')
+    run.chrome(VERTICAL_TABS)
+    open_sidebar(m)
+    run.chrome(SIDEBAR)
+    m.execute_script("SidebarController.hide()", sandbox='system')
+    wait_open(m, "return document.getElementById('sidebar-box').hidden", 'sidebar hidden')
+    run.chrome(CONTENT_BOX)
+
+
+def private(m, run, layout):
+    """Open a private window, close the normal one so it fills the output, and measure it."""
+    neutral_pointer(m)
+    normal = m.current_chrome_window_handle
+    m.execute_script("OpenBrowserWindow({private: true})", sandbox='system')
+    deadline = time.monotonic() + 30
+    while len(m.chrome_window_handles) < 2:
+        if time.monotonic() >= deadline:
+            raise RuntimeError('private window did not open')
+        time.sleep(.2)
+    handle = next(h for h in m.chrome_window_handles if h != normal)
+    m.close_chrome_window()
+    m.switch_to_window(handle)
+    neutral_pointer(m)  # the new window maps under the pointer; park it again
+    wait(m, "return gBrowserInit.delayedStartupFinished && PrivateBrowsingUtils.isWindowPrivate(window) && "
+         "gBrowser.currentURI.spec == 'about:privatebrowsing'", 'private window startup')
+    m.execute_script("document.documentElement.removeAttribute('remotecontrol'); "
+                     "gBrowser.selectedTab = gBrowser.addTrustedTab('about:privatebrowsing')", sandbox='system')
+    if layout == 'revamp':
+        wait_open(m, "return document.getElementById('vertical-tabs')?.hasAttribute('visible') && "
+                  "gBrowser.tabs.length == 2", 'private vertical tabs')
+    else:
+        wait_open(m, "return gBrowser.tabs.length == 2", 'private second tab')
+    for surface in (NAVBAR, VERTICAL_TABS if layout == 'revamp' else HORIZONTAL_TABS, CONTENT_BOX):
+        run.chrome(surface, prefix='private ')
+    run.font('about:privatebrowsing', prefix='private ')
+
+
+def launch(env, nova, layout, config, kind):
+    with socket.socket() as sock:
+        sock.bind(('127.0.0.1', 0))
+        port = sock.getsockname()[1]
+    with tempfile.TemporaryDirectory(prefix='tf-surface-more-') as name:
+        directory = Path(name)
+        profile = directory / 'profile'
+        profile.mkdir()
+        shutil.copytree(ROOT / 'chrome', profile / 'chrome')
+        (profile / 'chrome' / 'config.css').write_text(config)
+        prefs = {
+            'toolkit.legacyUserProfileCustomizations.stylesheets': True,
+            'browser.nova.enabled': nova,
+            'browser.shell.checkDefaultBrowser': False,
+            'browser.startup.page': 0,
+            'browser.aboutConfig.showWarning': False,
+            'browser.newtabpage.activity-stream.widgets.enabled': False,
+            'browser.newtabpage.activity-stream.showWeather': False,
+            'browser.newtabpage.activity-stream.feeds.section.topstories': False,
+            'browser.newtabpage.activity-stream.showSponsoredTopSites': False,
+            'ui.prefersReducedMotion': 1,
+            'marionette.port': port,
+            **LAYOUTS[layout],
+        }
+        (profile / 'user.js').write_text(''.join(
+            f'user_pref({json.dumps(k)}, {json.dumps(v)});\n' for k, v in prefs.items()))
+        shots = directory
+        if os.environ.get('TF_SURFACE_ARTIFACTS'):
+            shots = Path(os.environ['TF_SURFACE_ARTIFACTS']) / f'more-nova-{str(nova).lower()}-{layout}-{kind}'
+            shots.mkdir(parents=True, exist_ok=True)
+        process = subprocess.Popen(['firefox', '--marionette', '-remote-allow-system-access',
+                                    '--new-instance', '--profile', str(profile), 'about:blank'],
+                                   env={**env, 'MOZ_REMOTE_ALLOW_SYSTEM_ACCESS': '1'},
+                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        m = None
+        try:
+            m = connect(port)
+            m.set_context('chrome')
+            meta = m.execute_script(
+                "return {profile:Services.dirsvc.get('ProfD', Ci.nsIFile).path, version:Services.appinfo.version, "
+                "buildID:Services.appinfo.appBuildID, wayland:Services.env.get('WAYLAND_DISPLAY'), "
+                "headless:Cc['@mozilla.org/gfx/info;1'].getService(Ci.nsIGfxInfo).isHeadless, dpr:devicePixelRatio, "
+                "browserNova:Services.prefs.getBoolPref('browser.nova.enabled'), "
+                "revamp:Services.prefs.getBoolPref('sidebar.revamp'), "
+                "verticalTabs:Services.prefs.getBoolPref('sidebar.verticalTabs')}", sandbox='system')
+            if (process.poll() is not None or Path(meta['profile']).resolve() != profile.resolve()
+                    or meta['headless'] or not meta['wayland'] or meta['browserNova'] != nova or meta['dpr'] != 1
+                    or meta['revamp'] != LAYOUTS[layout]['sidebar.revamp']
+                    or meta['verticalTabs'] != LAYOUTS[layout]['sidebar.verticalTabs']):
+                raise RuntimeError(f'unexpected Firefox process, profile, display or preference: {meta}')
+            wait(m, 'return gBrowserInit.delayedStartupFinished', 'Firefox startup')
+            m.execute_script("document.documentElement.removeAttribute('remotecontrol'); "
+                             "gBrowser.addTrustedTab('about:blank')", sandbox='system')
+            wait_open(m, 'return gBrowser.tabs.length == 2', 'second tab')
+            neutral_pointer(m)
+            run = Run(m, Shots(m, shots, env))
+            (classic if layout == 'classic' else revamp)(m, run)
+            private(m, run, layout)
+            return meta, run.records, run.failures
+        finally:
+            try:
+                if m:
+                    m.delete_session()
+            finally:
+                stop(process, 15)
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument('--config', type=Path, help='config.css to check in place of the sentinel config')
+    parser.add_argument('--layout', choices=list(LAYOUTS), action='append', help='limit to a layout (repeatable)')
+    parser.add_argument('--nova', choices=['false', 'true'], action='append', help='limit to a browser Nova state')
+    args = parser.parse_args()
+    configs = dict(CONFIGS)
+    if args.config:
+        del configs['sentinel']
+        configs['given'] = args.config.read_text()
+    layouts = args.layout or list(LAYOUTS)
+    novas = [n == 'true' for n in args.nova] if args.nova else [False, True]
+    failures, surfaces = [], {}
+    with tempfile.TemporaryDirectory(prefix='tf-surface-sway-') as name:
+        directory = Path(name)
+        directory.chmod(0o700)
+        env = os.environ.copy()
+        sway = start_sway(directory, env)
+        try:
+            for nova in novas:
+                for layout in layouts:
+                    for kind, config in configs.items():
+                        meta, records, found = launch(env, nova, layout, config, kind)
+                        print(json.dumps({'nova': nova, 'layout': layout, 'config': kind, 'firefox': meta,
+                                          'surfaces': records}), flush=True)
+                        surfaces.setdefault(layout, list(found))
+                        if list(found) != surfaces[layout]:
+                            raise RuntimeError(f'{layout}: surfaces measured differ: {list(found)}')
+                        if kind == 'known-bad':
+                            # The known-bad config hides text, borders and the font; other failures do not count.
+                            undetected = [s for s, problems in found.items()
+                                          if not any(KNOWN_BAD_SIGNS & set(p.split()) for p in problems)]
+                            if undetected:
+                                raise RuntimeError(f'nova={nova} layout={layout}: known-bad config.css not '
+                                                   'detected on ' + ', '.join(undetected))
+                            continue
+                        failures += [f'nova={nova} layout={layout} config={kind}: {p}'
+                                     for problems in found.values() for p in problems]
+        finally:
+            stop(sway, 10)
+    if failures:
+        for failure in failures:
+            print(f'FAIL {failure}', file=sys.stderr)
+        return 1
+    total = sum(len(v) for v in surfaces.values())
+    good = ', '.join(k for k in configs if k != 'known-bad')
+    print(f'PASS: {total} surfaces across {", ".join(layouts)} paint textfox styling in browser Nova '
+          f'{"/".join(str(n).lower() for n in novas)} ({good}); the known-bad config.css fails every one')
+    return 0
+
+
+if __name__ == '__main__':
+    try:
+        sys.exit(main())
+    except Exception as error:  # an untrustworthy run is a failure, never inconclusive
+        print(f'FAIL: {error}', file=sys.stderr)
+        sys.exit(1)

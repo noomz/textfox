@@ -1357,3 +1357,42 @@ Bounds:
 - Headed runs were not needed: the result is preference state, not painting.
 
 Run: `MOZ_HEADLESS=1 "$HOME/.cache/textfox-firefox-live/venv/bin/python" tools/firefox-chrome/test-clear-nova-live.py`. On macOS, set `FIREFOX=/path/Firefox.app/Contents/MacOS/firefox`.
+
+## T20 painted regression for remaining surfaces
+
+`test-surface-paint-more-live.py` extends T15's painted check to the surfaces T18 listed as computed-style only. It reuses T15's harness: a disposable 1280x800 headless Sway compositor, Firefox headed inside it, `grim` captures, each surface hidden in turn, and the same judge. It exits 0 or 1, never inconclusive.
+
+- Classic layout (`sidebar.revamp` false): the bookmarks sidebar box, the content box (`#tabbrowser-tabbox`, title "main"), the horizontal tab strip, both split-view panels, the unified extensions panel, the all-tabs panel, the page context menu (opened with a real right-click on a `data:` page), four `about:` pages, and a private window's navbar, tab strip, content box and `about:privatebrowsing`.
+- Revamp layout (`sidebar.revamp` and `sidebar.verticalTabs` true): the vertical tab strip, the bookmarks sidebar box, the content box, and a private window's navbar, vertical tab strip, content box and `about:privatebrowsing`.
+- Each layout runs in both browser Nova states, with the defaults, a sentinel config and a known-bad config: 12 Firefox launches, about 13 minutes.
+- Boxes that frame web content (content box, split panels) skip the browser's rectangle when finding the dominant color. The painted ring around it must be `--tf-bg`. That color comes from `#browser`, which textfox now paints. Element rectangles are used as compositor pixels. Wayland's `mozInnerScreenX` reports 20, the CSD shadow margin, so the test instead checks that the skipped rectangle lies inside the surface's painted box.
+- `about:` pages carry only textfox's font (`chrome/content/about.css`), so V11 now counts them as styled when painted text uses the configured font at 4.5:1. Each page gets two injected runs, ten `i` and ten `W`, with an inline serif font. textfox's user-level `!important` rule must override that font. The painted widths must match within 0.8, and the text must reach 4.5:1 against the painted page. Pages: `about:preferences`, `about:addons`, `about:config`, `about:support`, `about:privatebrowsing`.
+- Known-bad config: `--tf-fg: var(--tf-bg); --tf-border-width: 0px; --tf-font-family: serif`. Every surface must fail it on a border, text or font check. Other failures, such as "paints no pixels", do not count.
+- Controls kept from T15: repeated and restored captures must match the base, and animations, transitions and the caret are frozen. Also: the pointer is parked at (2, 2), outside every bordered box, again after the private window maps and after the context menu opens. The sidebar's own document gets no freeze sheet, so focus moves out of its search field. Content-tab lookup matches on `browserId`.
+
+First runs, Firefox 159.0 build `20261022150525`, found two unpainted surfaces (§B B11):
+
+- No Firefox theme, both Nova states: the content box and split panels sat on Firefox's `--toolbar-background-color` (84,84,88), not `--tf-bg` (54,54,58). With the defaults, the border was composited over the wrong color. The sentinel `--tf-bg` never reached that ring. `#browser` paints that variable in `tabbrowser/content-area.css`, and textfox's override applied only under `:root[lwtheme]`.
+- Browser Nova on, both layouts: `skin/sidebar.css` has `@-moz-pref("browser.nova.enabled") { #sidebar-box { border: … } }` as author styles, so `#sidebar-box` computed a 0px border. With `sidebar.revamp`, Nova also paints `#sidebar` with `--sidebar-background-color` (46,46,50). `test-sidebar-live.py` and `test-sidebar-theme-live.py` never saw either.
+
+Fixes:
+
+- `chrome/browser.css`: `#browser` background is `--tf-bg !important` with no theme condition, and `background-image: none !important`. Under a theme this paints what it did before, because the old rule's `background-image: var(--lwt-accent-color)` was an invalid image and computed to `none`.
+- `chrome/sidebar.css`: the `#sidebar-box` border is `!important`, and `#sidebar-box` sets `--sidebar-background-color: var(--tf-bg) !important`.
+
+After the fixes, `test-surface-paint-more-live.py` exits 0. In each browser Nova state, 23 surfaces pass (16 classic, 7 revamp) with the defaults and the sentinel config, and the known-bad config fails every surface on a border, text or font check. Before the fixes, the same test failed the content box, the split panels and the private content box in both Nova states, and the sidebar with Nova on in both layouts.
+
+Regression at the same tree: `test-surface-paint-live.py` (T15, exit 0, 9 surfaces), `test-readable-colors-live.py` (17), `test-nova-layout-live.py`, `test-high-contrast-live.py` (8), `git diff --check`. Under `MOZ_HEADLESS=1`, these also exit 0: `test-sidebar-live.py`, `test-sidebar-theme-live.py`, `test-sidebar-tools-live.py`, `test-split-view-live.py`, `test-split-fullscreen-live.py`, `test-vertical-tabs-option-live.py` (10) and `test-private-window-live.py`. Without a display or `MOZ_HEADLESS`, those seven could not connect to Marionette. That comes from the shell environment, not from the tests.
+
+An independent review (a separate agent given the diff and the spec, not this verdict) found no blocker. Changes from it: the known-bad check now requires a border, text or font failure; the pointer is parked after the private window maps and after the context menu opens; content-tab lookup uses `browserId`; and screen placement is asserted. Its other findings are listed under the bounds below.
+
+Run `"$HOME/.cache/textfox-firefox-live/venv/bin/python" tools/firefox-chrome/test-surface-paint-more-live.py`. `--layout classic|revamp` and `--nova false|true` narrow the run, and `--config FILE` replaces the sentinel. It needs `sway`, `grim` and ImageMagick. Set `TF_SURFACE_ARTIFACTS=<dir>` to keep captures. A full run writes about 3 GB of PPM files, so leave it unset unless you are debugging.
+
+Bounds:
+
+- Panels: only the unified extensions and all-tabs panels. With the default config the URL bar icons are hidden (`--tf-display-urlbar-icons: none`), so the identity, protections and permission popups have no anchor and do not open. The downloads panel needs a downloads button, which appears only after a download. The bookmark-edit and library panels are not measured. The panels share the `menupopup, panel` variable rule that the measured ones prove.
+- Split view, popups, the context menu and `about:` pages run in the classic layout only.
+- The revamp launcher (`sidebar-main`) and the "tools" box live in a shadow root that a test sheet cannot hide, so they are not separate surfaces. Only the bookmarks sidebar panel is opened.
+- The font probe is in the light DOM. Whether shadow-DOM text on `about:` pages inherits the font is T2's computed record (`T2-ABOUT-INDEX.md`), not a painted one.
+- No image theme or fullscreen case. The setup is the same as T15: one 1280x800 output, LTR, Linux Wayland, pixman.
+- Layout observation, not a paint failure: in the revamp launcher, the "tools" title paints over the customize (gear) button. Focus and RTL painting belong to T21.

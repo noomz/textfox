@@ -223,9 +223,16 @@ def inflate(box, by):
     return {'x': x, 'y': y, 'width': right - x, 'height': bottom - y}
 
 
-def dominant(image, box):
+def inside(x, y, box):
+    return box['x'] <= x < box['x'] + box['width'] and box['y'] <= y < box['y'] + box['height']
+
+
+def dominant(image, box, skip=None):
+    """Most frequent color in box, ignoring pixels inside skip (web content a surface frames)."""
     tally = {}
     for x, y in image.coordinates(box):
+        if skip and inside(x, y, skip):
+            continue
         p = image.pixel(x, y)
         tally[p] = tally.get(p, 0) + 1
     return max(tally, key=tally.get)
@@ -288,7 +295,7 @@ def judge(name, shot, colors, border_var=None, border_color=None):
     failures = []
     background = None
     if shot['text']:
-        background = dominant(image, inflate(box, 4))
+        background = dominant(image, inflate(box, 4), colors.get('skip'))
         record['background'] = background
         if not near(background, colors['--tf-bg']):
             failures.append(f'{name} paints background {background}, not --tf-bg {colors["--tf-bg"]}')

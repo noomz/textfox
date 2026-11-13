@@ -49,11 +49,10 @@ browser {
   }
 }
 
+/* Firefox paints #browser with --toolbar-background-color, not only under a theme. */
 #browser:not(.browser-toolbox-background) {
-  :root[lwtheme] & {
-    background-color: var(--lwt-accent-color) !important;
-    background-image: var(--lwt-accent-color) !important;
-  }
+  background-color: var(--tf-bg) !important;
+  background-image: none !important;
 }
 
 .split-view-panel {

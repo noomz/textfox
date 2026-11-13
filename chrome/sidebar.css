@@ -20,10 +20,13 @@ sidebar-main {
   font-size: unset !important;
   margin: 8px;
   padding: 8px !important;
-  border: var(--border-width) solid var(--tf-border);
+  /* Firefox's Nova rules for #sidebar-box are author styles; a normal user rule loses to them. */
+  border: var(--border-width) solid var(--tf-border) !important;
   border-radius: var(--tf-rounding) !important;
   transition: border-color var(--tf-border-transition);
   background: var(--tf-bg) !important;
+  /* Nova paints the panel browser (#sidebar) with this variable. */
+  --sidebar-background-color: var(--tf-bg) !important;
   &:hover {
     border-color: var(--tf-accent) !important;
   }
