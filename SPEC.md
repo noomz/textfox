@@ -24,7 +24,7 @@ Port textfox to Firefox Nova without losing TUI appearance, existing configurati
 - I.home: `nix/modules/home-manager.nix`, Firefox profiles, generated `config.css`, and `extraConfig`.
 - I.nixos: `nix/modules/nixos.nix`, `nix/pkgs/wrapTextfox.nix`, generated CSS, autoconfig, store paths, and profile restart behavior.
 - I.config: `chrome/defaults.css`, `nix/modules/options.nix`, generated `configCss`, and existing `--tf-*` options.
-- I.prefs: `browser.nova.enabled` and `browser.newtabpage.activity-stream.nova.enabled`, including persisted profile preferences.
+- I.prefs: `browser.nova.enabled` and `browser.newtabpage.activity-stream.nova.enabled`, including persisted profile preferences. Managed by `user.js` block and NixOS autoconfig: `toolkit.legacyUserProfileCustomizations.stylesheets`, `svg.context-properties.content.enabled`, `layout.css.has-selector.enabled`, `widget.macos.native-context-menus`. Icon prefs `shyfox.enable.ext.mono.toolbar.icons`, `shyfox.enable.ext.mono.context.icons`, `shyfox.enable.context.menu.icons`: user-set on manual path, owned by Nix modules via `configPrefs`. `textfox.force-adopt`: NixOS opt-in, read only, never set by textfox.
 - I.chrome: tabs, sidebar, toolbar, URL bar, menus, panels, findbar, split view, private windows, new-tab, and supported `about:` pages.
 - I.probes: `tools/firefox-chrome/firefox-live.sh`, `ff_inspect.py`, `ff_newtab.py`, and live regression scripts.
 
@@ -58,6 +58,12 @@ Port textfox to Firefox Nova without losing TUI appearance, existing configurati
 | T11 | x | Keep text readable for arbitrary `--tf-*` colors, including the app-menu foreground pairing (`--panel-text-color` against a configured background). | V4,V5,I.config,I.chrome |
 | T12 | x | Run the Windows and macOS matrix: Windows high contrast (`browser.display.document_color_use` 0), macOS flat context menu, manual scripts under macOS `sh`. Needs a Windows image and a Mac host. | V5,V6,V9,I.manual,I.chrome |
 | T13 | x | Set `widget.macos.native-context-menus` false in textfox's managed prefs on every delivery path (manual `user.js`, home-manager `extraConfig`, NixOS autoconfig). Pref parity check; headed macOS regression for menu geometry and icons. | V2,V3,V5,V10,I.prefs,I.manual,I.home,I.nixos |
+| T14 | . | Resolve `test-nova-layout-live.py` inconclusive: prove Nova logo and search-box visibility and no overlap from headed painted pixels. Test exits 0 or 1, never 2. | V5,V6,V8,I.chrome,I.probes |
+| T15 | . | Painted-pixel regression for key surfaces (navbar, URL bar and results, tabs, app menu, context menu, findbar, new-tab), both browser Nova states, headed. Must fail on a known-bad `config.css`. | V5,V6,V8,I.chrome,I.probes |
+| T16 | . | Re-run full Nova on/off live matrix and real NixOS and home-manager VM tests at HEAD. Record results. | V2,V3,V6,V7,V9,I.manual,I.home,I.nixos |
+| T17 | . | Verify home-manager activation on a standalone home-manager host and on Darwin (macOS host). | V2,V3,V9,I.home |
+| T18 | . | Support decision review: each V1 gate pass or fail with evidence, plus independent review. Claim Nova support only if all pass; else record blockers and stop. | V1,V5,V6,V9 |
+| T19 | . | Only after T18 claims support: retire `browser.nova.enabled` false on every path with T7 one-shot clear (autoconfig marker pref; manual and home-manager equivalent). Existing-profile regression shows Nova returns to Firefox default. Update `check-pref-parity.py`, README support and migration guidance. Full regression. | V1,V3,V9,I.prefs,I.manual,I.home,I.nixos |
 
 ## §B
 
