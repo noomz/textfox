@@ -55,6 +55,17 @@ browser {
   background-image: none !important;
 }
 
+/* Browser Nova paints a half-transparent gradient (--toolbox-background-gradient) over the
+   window background on macOS and Windows; Linux's native theme sets it transparent. It sits on
+   body's background-image, above --tf-bg. Set on body, these beat the values inherited from
+   :root; a theme's own images (lwtheme) stay. */
+body {
+  --toolbox-background-gradient: none;
+}
+:root:not([lwtheme]) body {
+  --toolbox-background-image: none;
+}
+
 .split-view-panel {
   --splitborder: var(--tf-border);
   border-color: var(--splitborder);

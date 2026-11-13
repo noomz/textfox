@@ -1456,3 +1456,38 @@ Regression at this tree:
 - After that harness change, `test-surface-paint-more-live.py` exits 0: 23 surfaces in both browser Nova states, and the known-bad config fails every one.
 
 Final run at this tree: `test-a11y-paint-live.py` exits 0 over 20 Firefox launches. In each browser Nova state there are 6 focus surfaces and 2 motion surfaces in each locale, plus 9 RTL surfaces in `he`. The defaults and the sentinel pass, and every known-bad config fails each surface it applies to, with its own kind of failure.
+
+## T22 painted surface regression on macOS and Windows
+
+`test-surface-paint-live.py` (T15) now runs headed on Linux, macOS and Windows. Capture moved into `tools/firefox-chrome/paint_display.py`:
+
+- Linux: the headless Sway compositor and `grim`, as before. The capture is the whole 1280x800 output.
+- macOS: the logged-in desktop. Firefox is maximized and brought to the front with `nsIMacDockSupport.activateApplication`, and the test waits until the chrome document has focus. The capture is `screencapture -R` over the window, decoded from BMP. The capturing process needs Screen Recording permission.
+- Windows: the interactive desktop, run as a scheduled task in that session. The capture is a GDI `BitBlt` with `CAPTUREBLT` over the maximized window, clamped to the screen. Firefox is ended with `taskkill /T /F`.
+- Captures are compared in pure Python, so macOS and Windows need no ImageMagick. Element boxes, slack and edge search scale with `devicePixelRatio`, and the text-pixel floor scales with its square, so the Retina run meets the same bar.
+- The probe profile starts from the shipped `user.js`, then adds probe-only prefs. New probe-only prefs: `ui.useOverlayScrollbars` 0, because a tall app menu scrolls on a 768-pixel screen and overlay scrollbars fade between captures. All four ASRouter providers are off and `cfr.features` is false.
+- Stability controls ignore channel differences up to 2/255. macOS antialiases a native popup's rounded corners one unit differently between frames: 20 pixels at the corners differed by 1. The judge's colour tolerance is 4. T21's `StableCapture` makes the same allowance.
+- On Windows the test sets OS high contrast on or off itself and restores the previous state afterwards. `prefers-contrast: more` must match. Each launch failure now names its cause.
+- `--high-contrast` (Windows only) runs the regression under real OS High Contrast Black. `browser.display.document_color_use` must be the default 0 and unset, and `ui.useAccessibilityTheme` unset. Firefox's system colours then replace textfox's background and chrome borders in places, as high contrast intends. So chrome surfaces must paint text at 4.5:1 against what actually painted, and new-tab surfaces must show their border. The known-bad config must still fail at least one surface, and the run lists the surfaces that high contrast kept readable.
+
+Hosts, Firefox 159.0 build `20261022150525` on both:
+
+- macOS: Tart VM `mac_jr` on the physical Mac. macOS 27.2 (26B123) arm64, Firefox at `/tmp/Firefox.app`, Command Line Tools `python3` 3.9.6, `marionette_driver` in `/tmp/tf-t19/venv`. In the guest, `sshd-keygen-wrapper` already had Screen Recording, so a run over ssh can capture. On the physical Mac, `screencapture` over ssh fails with `could not create image from display`. The window captured at 2048x1476 device pixels with `devicePixelRatio` 2.
+- Windows: the T12 KVM guest, Windows 11 Enterprise Evaluation (NT 10.0.26200), 1024x768, maximized window captured at 1024x728 with `devicePixelRatio` 1. The guest's Firefox had updated itself to 160.0 (build `20261104181552`). It was reinstalled from the SHA-verified 159.0 installer, and `distribution/policies.json` now sets `DisableAppUpdate`. The guest was found with OS high contrast left on.
+
+Results:
+
+- Linux Wayland: exit 0. 9 surfaces pass in both browser Nova states (defaults, sentinel), and the known-bad config fails every one.
+- macOS: exit 0, with the same result.
+- Windows: exit 0, with the same result.
+- Windows with OS high contrast: exit 0. With the defaults and the sentinel config, all 9 surfaces paint readable text in both browser Nova states. The known-bad config fails navbar, URL bar text, findbar, URL bar results, context menu and new-tab search. High contrast kept tabs, the app menu and the new-tab tile readable or bordered anyway. With the sentinel config, the app menu painted the system background (32,32,32) instead of `--tf-bg`.
+
+Found and fixed on the way:
+
+- §B B16 (theme): with browser Nova on, macOS and Windows painted the navbar, URL bar and tab strip with a lavender tint. Defaults painted (244,238,255) for white; the sentinel painted (129,129,160) for (24,36,64), and its text fell to 0 pixels at 4.5:1. Nova sets `--toolbox-background-image` to `--toolbox-background-gradient`, a 50%-transparent violet-to-orange gradient from toolkit `tokens-shared.css`, and `browser-shared.css` paints it as `body`'s `background-image` above `--tf-bg`. Linux's native GTK tokens set the gradient to `image(transparent)`, so no Linux painted check could see it. Fix: `chrome/browser.css` sets `--toolbox-background-gradient: none` on `body` and, outside `lwtheme`, `--toolbox-background-image: none`. Subtraction: with that block removed, macOS exits 1 with exactly these failures. With it, macOS exits 0.
+- §B B15 (harness): the test opened `#toolbar-context-menu` anchored to the navbar. On macOS `widget.macos.native-anchored-menus` defaults to true, so that menu was OS-drawn (XUL box 0x0, no textfox CSS). A right-click opens a context menu at a screen point, which is a XUL popup under T13's `native-context-menus` false; the probe measured 176x64. A real anchored toolbar-button dropdown, the `#bookmarks-menu-button` popup, stayed a XUL popup (213x269) with the pref true or false, so no product gap was found. The test now opens the menu with `openPopupAtScreen(..., true)`.
+- Harness faults that each failed safe, as unstable or failing captures: Firefox opening behind another app on macOS; `inflate` clamping to Linux's 1280x800 output; a Windows "pin Firefox to your taskbar?" prompt covering the findbar and app menu. Turning off every ASRouter provider did not stop that prompt; its trigger was not found. The prompt was answered Yes once in the disposable guest, so Firefox is pinned there and the prompt no longer appears. A guard that treated a painted box smaller than its element as covered was wrong and was removed: with the sentinel config, hiding the navbar reveals the same `--tf-bg` underneath.
+
+Run on macOS or Windows with `FIREFOX` set to the Firefox binary, for example `FIREFOX=/tmp/Firefox.app/Contents/MacOS/firefox python test-surface-paint-live.py` from `tools/firefox-chrome`. On Windows, run it from a scheduled task in the desktop session (`/IT`). New-tab feeds are on, so the profile may make network requests.
+
+Bounds: one VM display per platform (macOS 1024x768 points at DPR 2; Windows 1024x768 at 100%) and LTR only. Only T15's 9 surfaces run on macOS and Windows; the T20 surfaces and the T21 focus, RTL and motion checks remain Linux-only. One contrast theme (High Contrast Black). The macOS run is in a VM, not on physical display hardware or a physical GPU. Nova support stays unclaimed.

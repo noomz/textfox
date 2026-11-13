@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 """Check textfox's key surfaces from headed, painted pixels; exit 0 pass, 1 fail.
 
-Starts a disposable 1280x800 headless Sway compositor, runs Firefox headed in
-it, and captures the compositor output with grim (see test-nova-layout-live.py).
+On Linux, starts a disposable 1280x800 headless Sway compositor, runs Firefox
+headed in it, and captures the compositor output with grim (see
+test-nova-layout-live.py). On macOS and Windows, runs Firefox headed on the
+logged-in desktop, maximized, and captures what the OS composited over its
+window (paint_display.py); set FIREFOX to the Firefox binary there.
 Each surface is hidden in turn with `visibility: hidden` (layout kept); the
 pixels that change are the pixels it painted, and their bounding box is the
 surface on screen. Inside that box the capture must show:
@@ -28,9 +31,23 @@ that hides text and borders. Every surface must pass the good cases and fail the
 known-bad case; a check that misses the known-bad config, or unstable captures,
 fail the run. Exits 0 or 1, never inconclusive.
 
-Requires sway, grim, ImageMagick, and the live-tool venv Python. New-tab feeds
-are on, so the disposable profile may make network requests. Set
-TF_SURFACE_ARTIFACTS to a directory to keep captures and masks.
+Sizes in device pixels (size slack, border search depth, least text pixels)
+scale with devicePixelRatio, so a Retina capture is held to the same bar.
+
+`--high-contrast` (Windows only) turns real OS high contrast on for the run,
+as test-high-contrast-windows.py does, and requires the effective
+browser.display.document_color_use to be Windows' default 0 with no stand-in
+preference set. Firefox's system colors then replace textfox's background and
+chrome borders in places, as high contrast intends, so chrome surfaces must
+paint readable text (4.5:1 on what painted) and new-tab surfaces their border;
+the known-bad config.css must still fail at least one surface, and the run
+names the surfaces high contrast kept readable.
+
+Linux requires sway, grim, ImageMagick, and the live-tool venv Python; macOS
+and Windows need Python with marionette_driver, and macOS needs Screen
+Recording permission for the capturing process. New-tab feeds are on, so the
+disposable profile may make network requests. Set TF_SURFACE_ARTIFACTS to a
+directory to keep captures and masks.
 """
 import argparse
 import json
@@ -45,6 +62,7 @@ import tempfile
 import time
 
 from ff_inspect import connect
+from paint_display import diff, open_display
 
 ROOT = Path(__file__).resolve().parents[2]
 HERE = Path(__file__).resolve().parent
@@ -59,6 +77,12 @@ DISTINCT = 12      # a border must differ from the background by more than this 
 EDGE_SEARCH = 24   # px inward from the painted edge to look for the border line (past shadows)
 EDGE_MATCH = 0.9   # share of the middle of an edge line that must be border color
 SLACK = 48         # px a surface may paint beyond its element box (section titles, popup shadows)
+# Stability controls ignore channel differences up to this (of 255): macOS antialiases a native
+# popup's rounded corners one unit differently between frames. Below TOLERANCE, so such noise
+# cannot make a surface pass or fail (test-a11y-paint-live.py's StableCapture does the same).
+CONTROL_NOISE = 2
+# Windows: a file Firefox's last child still holds must not fail the run (Python 3.10+ only; macOS ships 3.9).
+KEEP_LOCKED = {'ignore_cleanup_errors': True} if sys.platform == 'win32' else {}
 
 # Horizontal tabs are hidden by default; every case shows them so the tab strip is measured.
 TABS = '--tf-display-horizontal-tabs: block;'
@@ -75,8 +99,11 @@ OPEN_URLBAR = ("gURLBar.focus(); gURLBar.search('about:')",
                "return gURLBar.view.isOpen && !!document.querySelector('.urlbarView-row .urlbarView-title')")
 OPEN_APP_MENU = ("gURLBar.view.close(); gURLBar.blur(); PanelUI.show()",
                  "return document.getElementById('appMenu-popup').state == 'open'")
-OPEN_CONTEXT = ("PanelUI.hide(); document.getElementById('toolbar-context-menu')"
-                ".openPopup(document.getElementById('nav-bar'), 'after_start')",
+# Opened at a screen point as a context menu, as a right-click opens it. Anchored, macOS draws
+# it natively (widget.macos.native-anchored-menus) and no userChrome.css applies.
+OPEN_CONTEXT = ("PanelUI.hide(); const nav = document.getElementById('nav-bar'); "
+                "document.getElementById('toolbar-context-menu').openPopupAtScreen("
+                "nav.screenX + 40, nav.screenY + nav.getBoundingClientRect().height, true)",
                 "return document.getElementById('appMenu-popup').state == 'closed' && "
                 "document.getElementById('toolbar-context-menu').state == 'open'")
 # name, selector hidden to find its paint, border variable (None: no border), text target, opener
@@ -184,9 +211,9 @@ def load_ppm(path):
 
 
 class Image:
-    def __init__(self, path):
+    def __init__(self, path, size=OUTPUT):
         self.width, self.height, self.data = load_ppm(path)
-        if (self.width, self.height) != OUTPUT:
+        if (self.width, self.height) != tuple(size):
             raise RuntimeError(f'unexpected compositor capture size {(self.width, self.height)}')
 
     def pixel(self, x, y):
@@ -216,10 +243,10 @@ def ratio(a, b):
     return (high + .05) / (low + .05)
 
 
-def inflate(box, by):
+def inflate(box, by, size=OUTPUT):
     x, y = max(0, box['x'] - by), max(0, box['y'] - by)
-    right = min(OUTPUT[0], box['x'] + box['width'] + by)
-    bottom = min(OUTPUT[1], box['y'] + box['height'] + by)
+    right = min(size[0], box['x'] + box['width'] + by)
+    bottom = min(size[1], box['y'] + box['height'] + by)
     return {'x': x, 'y': y, 'width': right - x, 'height': bottom - y}
 
 
@@ -238,15 +265,15 @@ def dominant(image, box, skip=None):
     return max(tally, key=tally.get)
 
 
-def border_sides(image, box, color):
-    """Sides (left, right, bottom) whose outermost EDGE_SEARCH lines hold a border of color."""
+def border_sides(image, box, color, search=EDGE_SEARCH):
+    """Sides (left, right, bottom) whose outermost `search` lines hold a border of color."""
     x0, y0, w, h = box['x'], box['y'], box['width'], box['height']
     rows = range(y0 + h // 4, y0 + h - h // 4)
     columns = range(x0 + w // 4, x0 + w - w // 4)
     lines = {
-        'left': [[(x0 + d, y) for y in rows] for d in range(min(EDGE_SEARCH, w))],
-        'right': [[(x0 + w - 1 - d, y) for y in rows] for d in range(min(EDGE_SEARCH, w))],
-        'bottom': [[(x, y0 + h - 1 - d) for x in columns] for d in range(min(EDGE_SEARCH, h))],
+        'left': [[(x0 + d, y) for y in rows] for d in range(min(search, w))],
+        'right': [[(x0 + w - 1 - d, y) for y in rows] for d in range(min(search, w))],
+        'bottom': [[(x, y0 + h - 1 - d) for x in columns] for d in range(min(search, h))],
     }
     return {side: any(line and sum(near(image.pixel(x, y), color) for x, y in line) >= EDGE_MATCH * len(line)
                       for line in candidates)
@@ -254,8 +281,10 @@ def border_sides(image, box, color):
 
 
 class Capture:
-    def __init__(self, m, directory, env):
+    def __init__(self, m, directory, env, display=None):
         self.m, self.directory, self.env, self.shots = m, directory, env, 0
+        self.display = display
+        self.size = display.size if display else OUTPUT
 
     def shoot(self, css, content):
         self.m.execute_async_script(CONTENT_STYLE_JS if content else CHROME_STYLE_JS,
@@ -263,6 +292,8 @@ class Capture:
         time.sleep(.5)  # let the compositor commit the frame grim reads
         self.shots += 1
         path = self.directory / f'shot-{self.shots}.ppm'
+        if self.display:
+            return self.display.capture(path)
         subprocess.run(['grim', '-t', 'ppm', str(path)], env=self.env, check=True, stdout=subprocess.DEVNULL)
         return path
 
@@ -275,34 +306,39 @@ class Capture:
         text = self.shoot(f'{text_selector} {hide}', content) if text_selector else None
         restored = self.shoot('', content)
         stem = self.directory / f'mask-{self.shots}'
-        controls = {'control': count(changed_mask(base, control, f'{stem}-control.png')),
-                    'restored': count(changed_mask(base, restored, f'{stem}-restored.png'))}
+        controls = {'control': diff(base, control, f'{stem}-control.pgm', CONTROL_NOISE)[0],
+                    'restored': diff(base, restored, f'{stem}-restored.pgm', CONTROL_NOISE)[0]}
         if any(controls.values()):
             raise RuntimeError(f'{name}: captures unstable {controls}')
-        mask = changed_mask(base, hidden, f'{stem}-{name}.png')
-        return {'image': Image(base), 'box': painted_box(mask), 'changed': count(mask),
-                'text': Image(text) if text else None}
+        changed, box = diff(base, hidden, f'{stem}-{name}.pgm')
+        return {'image': Image(base, self.size), 'box': box, 'changed': changed,
+                'text': Image(text, self.size) if text else None}
 
 
-def judge(name, shot, colors, border_var=None, border_color=None):
-    """Return (record, failures) for one surface; raise when the measurement is not of that surface."""
+def judge(name, shot, colors, border_var=None, border_color=None, dpr=1, readable_only=False):
+    """Return (record, failures) for one surface; raise when the measurement is not of that surface.
+
+    Device-pixel sizes scale with dpr: the element box and slack by dpr, the text floor by its square.
+    readable_only (OS high contrast): Firefox's system colors may replace textfox's background and
+    chrome borders, as high contrast intends; only the text must reach MIN_RATIO on what painted."""
     image, box, dom = shot['image'], shot['box'], colors['dom']
     record = {'surface': name, 'paintedBox': box, 'changedPixels': shot['changed'], 'colors': colors}
     if not box:
         return record, [f'{name} paints no pixels']
-    if box['width'] > dom['width'] + SLACK or box['height'] > dom['height'] + SLACK:
+    if box['width'] > (dom['width'] + SLACK) * dpr or box['height'] > (dom['height'] + SLACK) * dpr:
         raise RuntimeError(f'{name}: painted box {box} larger than its element {dom}; wrong surface measured')
     failures = []
     background = None
+    size = (image.width, image.height)
     if shot['text']:
-        background = dominant(image, inflate(box, 4), colors.get('skip'))
+        background = dominant(image, inflate(box, 4, size), colors.get('skip'))
         record['background'] = background
-        if not near(background, colors['--tf-bg']):
+        if not readable_only and not near(background, colors['--tf-bg']):
             failures.append(f'{name} paints background {background}, not --tf-bg {colors["--tf-bg"]}')
-    if border_var or border_color:
+    if border_color or (border_var and not readable_only):
         color = border_color or colors[border_var]
         label = border_var or '--newtab-border-color'
-        sides = border_sides(image, box, color)
+        sides = border_sides(image, box, color, round(EDGE_SEARCH * dpr))
         record['border'] = {'color': color, 'sides': sides}
         missing = [side for side, ok in sides.items() if not ok]
         if background and near(color, background, DISTINCT):
@@ -311,12 +347,13 @@ def judge(name, shot, colors, border_var=None, border_color=None):
             failures.append(f'{name} has no {label} border {color} on {", ".join(missing)}')
     if shot['text']:
         exclude = [colors['--tf-border'], colors['--tf-accent']]
-        text = [image.pixel(x, y) for x, y in image.coordinates(inflate(box, 4))
+        text = [image.pixel(x, y) for x, y in image.coordinates(inflate(box, 4, size))
                 if image.pixel(x, y) != shot['text'].pixel(x, y)]
         strong = sum(1 for p in text if ratio(p, background) >= MIN_RATIO and not any(near(p, c, 16) for c in exclude))
         record['textPixels'] = {'changed': len(text), 'atRatio': strong}
-        if strong < MIN_TEXT_PIXELS:
-            failures.append(f'{name} text paints {strong} pixels at {MIN_RATIO}:1, fewer than {MIN_TEXT_PIXELS}')
+        least = round(MIN_TEXT_PIXELS * dpr * dpr)
+        if strong < least:
+            failures.append(f'{name} text paints {strong} pixels at {MIN_RATIO}:1, fewer than {least}')
     return record, failures
 
 
@@ -328,12 +365,14 @@ def wait(m, script, what, timeout=30, sandbox='system'):
         time.sleep(.2)
 
 
-def run(env, nova, config, kind):
-    """Launch Firefox with config and return (metadata, records, failures by surface)."""
+def run(display, nova, config, kind, high_contrast=None):
+    """Launch Firefox with config on display and return (metadata, records, failures by surface).
+
+    high_contrast: the OS high-contrast state the run set (Windows), or None where not set."""
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0))
         port = sock.getsockname()[1]
-    with tempfile.TemporaryDirectory(prefix='tf-surface-') as name:
+    with tempfile.TemporaryDirectory(prefix='tf-surface-', **KEEP_LOCKED) as name:
         directory = Path(name)
         profile = directory / 'profile'
         profile.mkdir()
@@ -351,17 +390,30 @@ def run(env, nova, config, kind):
             'browser.newtabpage.activity-stream.feeds.section.topstories': False,
             'browser.newtabpage.activity-stream.showSponsoredTopSites': False,
             'ui.prefersReducedMotion': 1,  # no popup open animations
+            # Windows: ASRouter messages (app menu, startup, remote) ask the OS to pin Firefox
+            # to the taskbar, and the OS prompt covers the surfaces. Every provider off.
+            'browser.newtabpage.activity-stream.asrouter.userprefs.cfr.features': False,
+            **{f'browser.newtabpage.activity-stream.asrouter.providers.{p}': json.dumps(
+                {'id': p, 'enabled': False, 'type': t, **extra}) for p, t, extra in (
+                ('onboarding', 'local', {'localProvider': 'OnboardingMessageProvider', 'exclude': []}),
+                ('cfr', 'remote-settings', {'collection': 'cfr', 'updateCycleInMs': 3600000}),
+                ('message-groups', 'remote-settings', {'collection': 'message-groups', 'updateCycleInMs': 3600000}),
+                ('messaging-experiments', 'remote-experiments', {'updateCycleInMs': 3600000}))},
+            # A menu taller than a small screen scrolls; overlay scrollbars fade between captures.
+            'ui.useOverlayScrollbars': 0,
             'marionette.port': port,
         }
-        (profile / 'user.js').write_text(''.join(
+        # textfox's shipped prefs first, as installed (macOS: no native context menus);
+        # the probe's own prefs follow and win where both set one.
+        (profile / 'user.js').write_text((ROOT / 'user.js').read_text() + ''.join(
             f'user_pref({json.dumps(k)}, {json.dumps(v)});\n' for k, v in prefs.items()))
         shots = directory
         if os.environ.get('TF_SURFACE_ARTIFACTS'):
             shots = Path(os.environ['TF_SURFACE_ARTIFACTS']) / f'nova-{str(nova).lower()}-{kind}'
             shots.mkdir(parents=True, exist_ok=True)
-        process = subprocess.Popen(['firefox', '--marionette', '-remote-allow-system-access',
+        process = subprocess.Popen([display.firefox, '--marionette', '-remote-allow-system-access',
                                     '--new-instance', '--profile', str(profile), 'about:blank'],
-                                   env={**env, 'MOZ_REMOTE_ALLOW_SYSTEM_ACCESS': '1'},
+                                   env={**display.env, 'MOZ_REMOTE_ALLOW_SYSTEM_ACCESS': '1'},
                                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         m = None
         try:
@@ -371,15 +423,31 @@ def run(env, nova, config, kind):
                 "return {profile:Services.dirsvc.get('ProfD', Ci.nsIFile).path, version:Services.appinfo.version, "
                 "buildID:Services.appinfo.appBuildID, wayland:Services.env.get('WAYLAND_DISPLAY'), "
                 "headless:Cc['@mozilla.org/gfx/info;1'].getService(Ci.nsIGfxInfo).isHeadless, dpr:devicePixelRatio, "
-                "browserNova:Services.prefs.getBoolPref('browser.nova.enabled'), "
-                "newtabNova:Services.prefs.getBoolPref('browser.newtabpage.activity-stream.nova.enabled', false)}",
+                "browserNova:Services.prefs.getBoolPref('browser.nova.enabled'), os:Services.appinfo.OS, "
+                "newtabNova:Services.prefs.getBoolPref('browser.newtabpage.activity-stream.nova.enabled', false), "
+                "colorUse:Services.prefs.getIntPref('browser.display.document_color_use'), "
+                "colorUseSet:Services.prefs.prefHasUserValue('browser.display.document_color_use'), "
+                "a11yThemeSet:Services.prefs.prefHasUserValue('ui.useAccessibilityTheme'), "
+                "contrastMore:matchMedia('(prefers-contrast: more)').matches}",
                 sandbox='system')
-            if (process.poll() is not None or Path(meta['profile']).resolve() != profile.resolve()
-                    or meta['headless'] or not meta['wayland'] or meta['browserNova'] != nova or meta['dpr'] != 1):
-                raise RuntimeError(f'unexpected Firefox process, profile, display or preference: {meta}')
+            problems = display.check(meta)
+            if high_contrast is not None and meta['contrastMore'] != high_contrast:
+                problems.append(f'prefers-contrast: more is {meta["contrastMore"]}, OS high contrast {high_contrast}')
+            if high_contrast and (meta['colorUse'] != 0 or meta['colorUseSet'] or meta['a11yThemeSet']):
+                problems.append('high contrast not in effect from the OS alone')
+            if process.poll() is not None:
+                problems.append(f'launched process exited ({process.returncode})')
+            if Path(meta['profile']).resolve() != profile.resolve():
+                problems.append(f'profile {meta["profile"]}, expected {profile}')
+            if meta['headless'] or meta['browserNova'] != nova:
+                problems.append('headless, or browser Nova not as set')
+            if problems:
+                raise RuntimeError(f'unexpected Firefox process, profile, display or preference {problems}: {meta}')
+            meta['window'] = display.bind(m)
+            meta['platform'] = display.platform
             # Marionette stripes the URL bar while under remote control; that is not textfox's paint.
             m.execute_script("document.documentElement.removeAttribute('remotecontrol')", sandbox='system')
-            capture = Capture(m, shots, env)
+            capture = Capture(m, shots, display.env, display)
             records, failures = [], {}
 
             # Two tabs (selected and not), URL bar text, findbar with text.
@@ -398,7 +466,8 @@ def run(env, nova, config, kind):
                 if not colors:
                     raise RuntimeError(f'{name}: {selector} missing')
                 shot = capture.surface(name, selector, text_selector)
-                record, failures[name] = judge(name, shot, colors, border_var=border_var)
+                record, failures[name] = judge(name, shot, colors, border_var=border_var, dpr=display.dpr,
+                                               readable_only=bool(high_contrast))
                 records.append(record)
 
             m.execute_script("document.getElementById('toolbar-context-menu').hidePopup(); "
@@ -414,7 +483,7 @@ def run(env, nova, config, kind):
                 if 'missing' in target:
                     raise RuntimeError(f'{name}: none of {selectors} visible; found {target["missing"]}')
                 shot = capture.surface(name, '[data-tf-paint-probe]', content=True)
-                record, failures[name] = judge(name, shot, target, border_color=target['border'])
+                record, failures[name] = judge(name, shot, target, border_color=target['border'], dpr=display.dpr)
                 records.append(record)
             return meta, records, failures
         finally:
@@ -422,27 +491,37 @@ def run(env, nova, config, kind):
                 if m:
                     m.delete_session()
             finally:
-                stop(process, 15)
+                display.stop_firefox(process)
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument('--config', type=Path, help='config.css to check in place of the sentinel config')
+    parser.add_argument('--high-contrast', action='store_true',
+                        help='Windows only: run with real OS high contrast on (High Contrast Black)')
     args = parser.parse_args()
+    hc = None
+    if args.high_contrast and sys.platform != 'win32':
+        raise RuntimeError('--high-contrast needs Windows')
+    if sys.platform == 'win32':  # set OS high contrast either way: a state left on would skew a plain run
+        hc = runpy.run_path(str(HERE / 'test-high-contrast-windows.py'))
     configs = dict(CONFIGS)
     if args.config:
         del configs['sentinel']
         configs['given'] = args.config.read_text()
-    failures, surfaces = [], None
-    with tempfile.TemporaryDirectory(prefix='tf-surface-sway-') as name:
+    failures, surfaces, hc_kept = [], None, {}
+    with tempfile.TemporaryDirectory(prefix='tf-surface-display-', **KEEP_LOCKED) as name:
         directory = Path(name)
         directory.chmod(0o700)
-        env = os.environ.copy()
-        sway = start_sway(directory, env)
+        display = open_display(directory, os.environ.copy())
+        initial = hc['high_contrast']()[0] if hc else None
         try:
+            if hc:
+                hc['set_high_contrast'](args.high_contrast)
             for nova in (False, True):
                 for kind, config in configs.items():
-                    meta, records, found = run(env, nova, config, kind)
+                    meta, records, found = run(display, nova, config, kind,
+                                                high_contrast=args.high_contrast if hc else None)
                     print(json.dumps({'nova': nova, 'config': kind, 'firefox': meta, 'surfaces': records}),
                           flush=True)
                     surfaces = surfaces or list(found)
@@ -450,19 +529,35 @@ def main():
                         raise RuntimeError(f'surfaces measured differ: {list(found)}')
                     if kind == 'known-bad':
                         undetected = [s for s, problems in found.items() if not problems]
-                        if undetected:
+                        if args.high_contrast:
+                            # High contrast keeps some surfaces readable whatever config.css says;
+                            # the check must still fail where textfox's colors reach the screen.
+                            if len(undetected) == len(found):
+                                raise RuntimeError(f'nova={nova}: known-bad config.css not detected anywhere')
+                            hc_kept[nova] = undetected
+                        elif undetected:
                             raise RuntimeError(f'nova={nova}: known-bad config.css not detected on '
                                                + ', '.join(undetected))
                         continue
                     failures += [f'nova={nova} config={kind}: {p}' for problems in found.values() for p in problems]
         finally:
-            stop(sway, 10)
+            try:
+                if hc:
+                    hc['set_high_contrast'](initial)
+            finally:
+                display.close()
     if failures:
         for failure in failures:
             print(f'FAIL {failure}', file=sys.stderr)
         return 1
     good = ', '.join(k for k in configs if k != 'known-bad')
-    print(f'PASS: {len(surfaces)} surfaces paint textfox styling in both browser Nova states ({good}); '
+    where = display.platform + (' with OS high contrast' if args.high_contrast else '')
+    if args.high_contrast:
+        print(f'PASS: {len(surfaces)} surfaces paint readable text and new-tab borders on {where} in both browser '
+              f'Nova states ({good}); the known-bad config.css fails the rest, high contrast kept readable: '
+              + '; '.join(f'nova={n}: {", ".join(k) or "none"}' for n, k in hc_kept.items()))
+        return 0
+    print(f'PASS: {len(surfaces)} surfaces paint textfox styling on {where} in both browser Nova states ({good}); '
           'the known-bad config.css fails every one')
     return 0
 
