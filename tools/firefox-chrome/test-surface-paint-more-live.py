@@ -341,6 +341,9 @@ def private(m, run, layout):
                   "gBrowser.tabs.length == 2", 'private vertical tabs')
     else:
         wait_open(m, "return gBrowser.tabs.length == 2", 'private second tab')
+    # The new window focuses its URL bar, whose focus ring (B12) would come and go between captures.
+    m.execute_script("gBrowser.selectedBrowser.focus()", sandbox='system')
+    time.sleep(.5)
     for surface in (NAVBAR, VERTICAL_TABS if layout == 'revamp' else HORIZONTAL_TABS, CONTENT_BOX):
         run.chrome(surface, prefix='private ')
     run.font('about:privatebrowsing', prefix='private ')

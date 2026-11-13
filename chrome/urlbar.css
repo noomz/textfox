@@ -7,6 +7,12 @@
   border: unset !important;
   box-shadow: unset !important;
 }
+/* Browser Nova draws the focused URL bar as a border, which the rule above
+   removes; keep the focus ring (keyboard or pointer, as Firefox does) as an
+   outline in both Nova states. */
+#urlbar[focused] > .urlbar-background {
+  outline: var(--focus-outline-width, 2px) solid var(--toolbar-field-border-color-focus) !important;
+}
 /* Firefox 159 paints the open results on a joint .urlbarView-background (own
    color, rounded, shadowed) that covers the view's border; textfox paints the
    view itself as a flat box. */

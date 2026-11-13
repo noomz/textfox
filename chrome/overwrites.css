@@ -16,6 +16,11 @@
   --toolbox-non-lwt-bgcolor: var(--tf-bg) !important;
   --toolbar-field-background-color: var(--tf-bg) !important;
 
+  /* Keyboard focus rings sit on --tf-bg and its tints. Firefox's AccentColor
+     (and the URL bar's half-transparent mix of it) can fall below 3:1 there. */
+  --focus-outline-color: var(--tf-accent) !important;
+  --toolbar-field-border-color-focus: var(--tf-accent) !important;
+
   /* borders */
   --border-width: var(--tf-border-width) !important;
   --border-radius-small: var(--tf-rounding) !important;

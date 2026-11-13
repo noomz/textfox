@@ -1396,3 +1396,63 @@ Bounds:
 - The font probe is in the light DOM. Whether shadow-DOM text on `about:` pages inherits the font is T2's computed record (`T2-ABOUT-INDEX.md`), not a painted one.
 - No image theme or fullscreen case. The setup is the same as T15: one 1280x800 output, LTR, Linux Wayland, pixman.
 - Layout observation, not a paint failure: in the revamp launcher, the "tools" title paints over the customize (gear) button. Focus and RTL painting belong to T21.
+
+## T21 painted accessibility: keyboard focus, RTL, reduced motion
+
+`test-a11y-paint-live.py` reuses T15's harness: a disposable 1280x800 headless Sway compositor, Firefox headed inside it, and `grim` captures. It exits 0 or 1, never inconclusive. It runs both browser Nova states in `en` and in `he` (the signed Hebrew language pack from `test-rtl-locale-live.py`), with `ui.prefersReducedMotion` 1.
+
+- Focus (`en` and `he`): trusted key presses from `nsITextInputProcessor` move keyboard focus. F6 reaches the URL bar. Shift+Tab then reaches a navbar button and the selected tab. ArrowDown reaches the app menu's New Tab item and activates the first toolbar context menu item. The findbar field takes `FLAG_BYKEY` focus. Each focused capture is diffed against an unfocused one. The change must lie near the target. It must surround the target's center and span at least 60% of its width and height. Across the middle half of every side, at least 80% of rows or columns must hold a pixel within 8px of the edge that changed at 3:1 or more (WCAG 2.4.13). A text selection inside the URL bar therefore does not count. The check accepts a ring or a filled indicator, as long as its pixels change at 3:1 across every side. It measures a focus indicator, not ring shape. Firefox rings a toolbar button's 32x32 icon, which is inset in the button. The Nova URL bar is pill-shaped, so its ring curves through the band. The context menu row must instead change a distinct active background over at least half the row.
+- RTL (`he`): the T15 chrome surfaces (navbar, URL bar text and results, tab strip, findbar, app menu, toolbar context menu) must pass T15's judge: `--tf-bg`, a border and 4.5:1 text. Mirroring is checked from painted boxes: the app menu button must paint left of the URL bar, and the second tab left of the first.
+- Motion (`en` and `he`): nothing in the chrome document may be animating at rest. `:hover` is locked through `InspectorUtils` on the navbar and the tab strip, without T15's freeze sheet. No new transition or animation may start. The first frame captured 0.25s later must already paint the hovered `--tf-accent` border on the left, right and bottom. The findbar is not a motion surface: Firefox's own findbar rule overrides textfox's transition there, so it never transitions, even with the known-bad config.
+- Configs: the shipped defaults, a sentinel (`--tf-bg` rgb(24,36,64), `--tf-border` rgb(200,0,90), `--tf-accent` rgb(250,200,0)), and one known-bad config per check. Focus: `--tf-accent: var(--tf-bg)` with menu backgrounds transparent. Motion: `--tf-border-transition: 4s linear !important`. RTL has two known-bad configs. A paint config (text the color of the background, no borders) must fail the paint surfaces. A direction-only config (`#nav-bar, #tabbrowser-tabs { direction: ltr !important }`) must fail the mirror surfaces. The sentinel accent is yellow, not T15's green: green on the magenta border changes luminance by only about 1.2:1, so a green-sentinel focus failure would measure the palette, not textfox. Every surface of a check must fail that check's known-bad config, with a failure of the kind the check exists for. Focus counts a missing indicator, contrast below 3:1 or a missing active background. Motion counts a started transition or an unsettled first frame. RTL paint counts background, border or text. RTL mirroring counts only a failed mirror. That makes 20 Firefox launches, about 22 minutes.
+
+Findings, Firefox 159.0 build `20261022150525` (§B B12–B14):
+
+- B12: keyboard focus rings painted Firefox's `AccentColor` on `--tf-bg`. With browser Nova off, the URL bar ring (`--toolbar-field-border-color-focus`, `AccentColor` at 50%) painted (54,93,143) on (54,54,58), about 1.8:1. The tab ring (53,132,228) painted on the selected tab's (70,70,74), about 2.4:1. The findbar field ring was also below 3:1.
+- B13: with reduced motion on, the navbar and tab strip started 200ms `border-*-color` `CSSTransition`s. T15's freeze sheet turns transitions off, so no painted test saw this.
+- B14: with browser Nova on, the focused URL bar painted only the text selection, no ring. Nova draws focus as a `.urlbar-background` border (`--urlbar-background-outline-focused: none`), and textfox's `border: unset !important` removes it.
+
+Fixes:
+
+- `chrome/overwrites.css`: `--focus-outline-color` and `--toolbar-field-border-color-focus` take `--tf-accent`.
+- `chrome/defaults.css`: `@media (prefers-reduced-motion: reduce) { :root { --tf-border-transition: 0s !important; } }`. A configured transition, including the Nix `border.transition` option (written without `!important`), yields to reduced motion. A user `!important` transition still wins. That is the motion known-bad config.
+- `chrome/urlbar.css`: `#urlbar[focused] > .urlbar-background` gets a `--focus-outline-width` (2px fallback) outline in `--toolbar-field-border-color-focus`, in both Nova states.
+
+Red before, green after. A copy of the tree with the three CSS files restored to `HEAD` failed `--only motion` in every good case: navbar and tabs, both Nova states, both locales. It failed `--only focus` with the defaults and browser Nova off, on the URL bar, tab and findbar field (no side at 3:1). The pre-fix run on the tree with only B12 fixed failed the Nova-on URL bar (B14). After all three fixes, the full test exits 0. In each browser Nova state there are 6 focus surfaces and 2 motion surfaces per locale and 9 RTL surfaces in `he`, and every known-bad config fails every surface of its check.
+
+Instrument notes: an early version accepted the URL bar's text selection as a ring, which the span rule now rejects. The RTL paint surfaces use T15's capture with one change: its stability controls ignore gray differences of 2/255 or less. With the known-bad paint config and browser Nova on in `he`, text the color of the background still rendered antialiasing that differed by one unit between identical captures. In two reruns this was 3 pixels at the URL bar results' start edge, and T15's exact comparison aborted the run as unstable. The judge's own color tolerance is 4, so this noise cannot decide a verdict. Artifacts (`TF_SURFACE_ARTIFACTS`) for a full run exceed 4 GB of PPM files. One run filled `/tmp`.
+
+Run `"$HOME/.cache/textfox-firefox-live/venv/bin/python" tools/firefox-chrome/test-a11y-paint-live.py`. `--only focus|motion|rtl`, `--nova false|true` and `--locale en|he` narrow the run, and `--config FILE` replaces the sentinel. It needs `sway`, `grim`, ImageMagick and the Hebrew language pack for the running Firefox version.
+
+Bounds:
+
+- Focus covers six surfaces: URL bar, one navbar button, the selected tab, the findbar field, one app menu item and one context menu row. The sidebar, vertical tabs, split view, private windows and the new tab page were not measured.
+- WCAG 2.4.13 change contrast is measured pixel against pixel. Ring thickness and area are not measured. Contrast against neighbouring colors (1.4.11) is not measured separately.
+- Motion covers the two textfox transitions that apply (navbar, tab strip). Other textfox transitions (sidebar, split view, bookmarks toolbar, vertical tabs) use the same variable and were not measured. Firefox's own animations are checked only at rest, where none may run.
+- RTL is one locale (`he`), horizontal tabs, classic layout. `test-rtl-locale-live.py` keeps the vertical-tab and new-tab RTL geometry.
+- Linux Wayland, pixman, 1280x800, dpr 1. macOS and Windows belong to T22.
+- No Firefox theme (lwtheme) and no light theme were run. `--focus-outline-color` now follows `--tf-accent` under a theme too.
+- Focus was measured only with reduced motion on. With motion allowed, the focus change passes through textfox's 0.2s border and outline transitions.
+- The URL bar outline (B14) shows on pointer focus as well as keyboard focus, as Firefox's own ring does.
+- Observation: with browser Nova on, the URL bar is pill-shaped regardless of `--tf-rounding`.
+- `inventory-variables.py --non-textfox --check-ledger` already failed before T21: the T2 ledger misses about 20 Firefox variables added in T4–T20. T21 adds `--focus-outline-color` and `--toolbar-field-border-color-focus`. The ledger was not updated. `check-rule-ledger.py`, `test-rule-ledger.py` and `test-inventory-css.py` exit 0.
+
+An independent review (a separate agent given the diff and the spec, not this verdict) found no CSS defect. Changes from it:
+- RTL now checks tab-strip mirroring. The direction fault has its own known-bad config. A first run with the stricter accounting showed why: under the combined config the navbar mirror check failed only because the menu icon painted nothing (`--tf-fg` = background), not on direction.
+- A known-bad config counts only through its check's own kind of failure.
+- Animations at rest now fail the run.
+- The docs say "focus indicator".
+- The bounds now list themes, motion-on focus and pointer focus.
+
+Its remaining findings are listed under the bounds above: motion covers only two surfaces, and the T2 ledger is not updated.
+
+Regression at this tree:
+- `test-surface-paint-live.py` (T15, 9 surfaces) exits 0.
+- `test-readable-colors-live.py` (17) exits 0.
+- `test-high-contrast-live.py` (8) exits 0.
+- `test-nova-layout-live.py` exits 0.
+- Under `MOZ_HEADLESS=1`, these exit 0: `test-rtl-locale-live.py` (8), `test-vertical-tabs-option-live.py` (10) and `test-navbar-options-live.py`.
+- `test-surface-paint-more-live.py` (T20) first failed with `private navbar: captures unstable {'control': 0, 'restored': 3528}`. The failure came from browser Nova off, classic layout, defaults. A new private window focuses its URL bar at an unpredictable moment, and that ring now paints at `--tf-accent`. The T20 harness now moves focus to the content browser before measuring the private window, as it already does in the main window.
+- After that harness change, `test-surface-paint-more-live.py` exits 0: 23 surfaces in both browser Nova states, and the known-bad config fails every one.
+
+Final run at this tree: `test-a11y-paint-live.py` exits 0 over 20 Firefox launches. In each browser Nova state there are 6 focus surfaces and 2 motion surfaces in each locale, plus 9 RTL surfaces in `he`. The defaults and the sentinel pass, and every known-bad config fails each surface it applies to, with its own kind of failure.

@@ -21,3 +21,11 @@
   --tf-navbar-padding: 4px; /* navbar padding */
   --tf-bookmarks-alignment: center; /* alignment of bookmarks in the bookmarks toolbar (if you have many bookmarks, left is recommended) */
 }
+
+/* Reduced motion (OS setting or ui.prefersReducedMotion): no border transitions.
+   !important so a configured --tf-border-transition yields to it. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --tf-border-transition: 0s !important;
+  }
+}
