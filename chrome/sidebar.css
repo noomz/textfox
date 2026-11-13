@@ -32,7 +32,7 @@ sidebar-main {
     z-index: 1;
     font-size: var(--tf-font-size);
     content: "tool";
-    color: var(--lwt-text-color);
+    color: var(--tf-fg);
     background-color: var(--tf-bg);
     position: absolute;
     margin: -1.75rem 0rem;
@@ -60,7 +60,7 @@ sidebar-main {
     display: var(--tf-display-titles);
     position: absolute;
     content: "tools";
-    color: var(--lwt-text-color);
+    color: var(--tf-fg);
     background-color: var(--tf-bg);
     margin: 3.25rem .4rem;
     padding: 0 4px;

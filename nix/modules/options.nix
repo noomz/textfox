@@ -73,6 +73,11 @@ in
           default = "var(--toolbarbutton-icon-fill)";
           description = "The accent color to use";
         };
+        color = mkOption {
+          type = str;
+          default = "contrast-color(var(--tf-bg))";
+          description = "Text color on the background color. The default picks black or white, whichever reads better; \"var(--lwt-text-color)\" keeps the theme's text color.";
+        };
       };
 
       border = {
@@ -165,6 +170,7 @@ in
           --tf-font-size: ${cfg.font.size};
           --tf-accent: ${cfg.font.accent};
           --tf-bg: ${cfg.background.color};
+          --tf-fg: ${cfg.font.color};
           --tf-border: ${cfg.border.color};
           --tf-border-transition: ${cfg.border.transition};
           --tf-border-width: ${cfg.border.width};

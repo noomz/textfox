@@ -195,6 +195,7 @@ All configuration options are optional and can be set as this example shows (rea
           family = "Fira Code";
           size = "15px";
           accent = "#654321";
+          color = "var(--lwt-text-color)";
         };
         tabs = {
           horizontal.enable = true;
@@ -299,6 +300,7 @@ The theme ships with a `defaults.css`, this file can be overridden by creating a
   --tf-font-size: 14px; /* Font size of config */
   --tf-accent: var(--toolbarbutton-icon-fill); /* Accent color used, eg: color when hovering a container  */
   --tf-bg: var(--lwt-accent-color, -moz-dialog); /* Background color of all elements, tab colors derive from this */
+  --tf-fg: contrast-color(var(--tf-bg)); /* Text color on --tf-bg; black or white, whichever reads better. var(--lwt-text-color) keeps the theme's text color */
   --tf-border: var(--panel-border-color, var(--toolbar-field-background-color)); /* Border color when not hovered */
   --tf-border-transition: 0.2s ease; /* Smooth color transitions for borders */
   --tf-border-width: 2px; /* Width of borders */

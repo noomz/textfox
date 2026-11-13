@@ -68,7 +68,7 @@ browser {
   }
   &::before {
     content: "split" !important;
-    color: var(--lwt-text-color);
+    color: var(--tf-fg);
   }
   &.deck-selected {
     outline: var(--border-width) solid var(--splitborder) !important;

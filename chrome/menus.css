@@ -3,6 +3,8 @@
   panel
 ):not(.autoscroller) {
   --panel-background: var(--tf-bg) !important;
+  --panel-background-color: var(--tf-bg) !important;
+  --panel-text-color: var(--tf-fg) !important;
   --panel-border-radius: var(--tf-rounding) !important;
   --panel-border-color: var(--tf-accent) !important;
   --panel-separator-color: var(--tf-border) !important;
