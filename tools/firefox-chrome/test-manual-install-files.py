@@ -11,6 +11,7 @@ textfox block from an older install.
 Exit 0 means every case below holds.
 """
 from pathlib import Path
+import os
 import shutil
 import subprocess
 import sys
@@ -19,6 +20,9 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[2]
 INSTALL = ROOT / "tf-install.sh"
 UNINSTALL = ROOT / "tf-uninstall.sh"
+# The shell that runs the scripts. Set TF_TEST_SHELL=sh to run them the way the
+# README does, for example under macOS /bin/sh (bash 3.2 in POSIX mode).
+SHELL = os.environ.get("TF_TEST_SHELL", "bash")
 SENTINEL_CONFIG = ":root { --tf-border-width: 9px; }\n"
 SENTINEL_USER_JS = 'user_pref("tf.test.sentinel", true);\n'
 BEGIN = "// >>> textfox managed prefs >>>"
@@ -27,7 +31,7 @@ END = "// <<< textfox managed prefs <<<"
 
 def run(script: Path, profile: Path, answer: str = "") -> str:
     result = subprocess.run(
-        ["bash", str(script), str(profile)],
+        [SHELL, str(script), str(profile)],
         cwd=ROOT,
         input=answer,
         text=True,
@@ -160,7 +164,7 @@ def case_unbalanced_markers_refused(profile: Path) -> None:
     broken = SENTINEL_USER_JS + BEGIN + "\n"
     user_js.write_text(broken)
     result = subprocess.run(
-        ["bash", str(INSTALL), str(profile)],
+        [SHELL, str(INSTALL), str(profile)],
         cwd=ROOT,
         text=True,
         capture_output=True,
@@ -263,7 +267,7 @@ def case_reversed_markers_refused(profile: Path) -> None:
     for script in (INSTALL, UNINSTALL):
         user_js.write_text(broken)
         result = subprocess.run(
-            ["bash", str(script), str(profile)],
+            [SHELL, str(script), str(profile)],
             cwd=ROOT, input="n\n", text=True, capture_output=True, timeout=120,
         )
         assert user_js.read_text() == broken, f"{script.name} changed a user.js with reversed markers"

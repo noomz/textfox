@@ -56,7 +56,7 @@ Port textfox to Firefox Nova without losing TUI appearance, existing configurati
 | T9 | x | Make interrupted NixOS installs retryable without `textfox.force-adopt`: fix autoconfig findings F1/F2 (same- and cross-generation retry after a kill before the marker commit), F3 (partly removed asset directory reused) and F4 (stranded legacy marker). | V2,V7,V9,I.nixos; proofs: `check-nixos-update-exhaustive.js` (findings no longer reproduce, no new violations), `test-nixos-update-vm.sh` |
 | T10 | x | Manual uninstall offers the user's pre-textfox backup instead of the newest one (previous textfox files). NixOS repairs a damaged file inside the current `textfox-assets-<hash>` directory. | V2,V9,I.manual,I.nixos |
 | T11 | x | Keep text readable for arbitrary `--tf-*` colors, including the app-menu foreground pairing (`--panel-text-color` against a configured background). | V4,V5,I.config,I.chrome |
-| T12 | ~ | Run the Windows and macOS matrix: Windows high contrast (`browser.display.document_color_use` 0), macOS flat context menu, manual scripts under macOS `sh`. Needs a Windows image and a Mac host. | V5,V6,V9,I.manual,I.chrome |
+| T12 | x | Run the Windows and macOS matrix: Windows high contrast (`browser.display.document_color_use` 0), macOS flat context menu, manual scripts under macOS `sh`. Needs a Windows image and a Mac host. | V5,V6,V9,I.manual,I.chrome |
 | T13 | . | Set `widget.macos.native-context-menus` false in textfox's managed prefs on every delivery path (manual `user.js`, home-manager `extraConfig`, NixOS autoconfig). Pref parity check; headed macOS regression for menu geometry and icons. | V2,V3,V5,V10,I.prefs,I.manual,I.home,I.nixos |
 
 ## §B

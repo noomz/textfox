@@ -265,7 +265,7 @@ def check(nova, enabled, pdf, media, keyboard_media):
             f'user_pref({json.dumps(k)}, {json.dumps(v)});\n' for k, v in prefs.items()))
         env = os.environ.copy()
         env['MOZ_REMOTE_ALLOW_SYSTEM_ACCESS'] = '1'
-        process = subprocess.Popen(['firefox', '--marionette', '-remote-allow-system-access',
+        process = subprocess.Popen([os.environ.get('FIREFOX', 'firefox'), '--marionette', '-remote-allow-system-access',
                                     '--new-instance', '--profile', str(profile), 'about:blank'],
                                    env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         m = None

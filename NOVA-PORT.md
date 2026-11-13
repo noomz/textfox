@@ -1118,3 +1118,20 @@ Verification on host Firefox 159.0 build `20261022150525`, nixpkgs `/nix/store/w
 - `test-nova-layout-live.py` exits 2 (inconclusive), as since T3.
 - `test-rtl-locale-live.py` could not connect to Marionette, three times. The tree at HEAD (before T11) fails the same way, so this is an environment problem on this host, not a T11 regression. It is unverified for T11.
 - Subtraction check: without the `.tabbrowser-tab` override, 2 selected-tab cases fail (built-in themes, classic UI).
+
+## T12 Windows and macOS matrix
+
+Closes the "Platforms" line and the Windows high-contrast part of the T8 accessibility gate. Firefox 159.0 build `20261022150525` on both hosts, the same build as the Linux baseline, verified against Mozilla's `SHA256SUMS`.
+
+macOS 27.2.1 arm64 (M4 Max). Firefox ran from a disposable copy in `~/tf-t12`; the installed `/Applications/Firefox.app` (109.0.1) was not touched.
+
+- Manual scripts under macOS `/bin/sh` (bash 3.2.57, POSIX mode on) with BSD userland: `TF_TEST_SHELL=sh test-manual-install-files.py` passes 19/19. The harness can fail: macOS `sh` rejects the pre-B8 `tf-uninstall.sh` at parse time (`syntax error near unexpected token '<'`), while `bash` accepts it. `test-manual-install-live.py` (`FIREFOX`, `TF_TEST_SHELL=sh`, headless) passes for a fresh and an existing profile.
+- Flat context menu: `probe-context-icon.py` (headless, both Nova states, icon preference off and on). All five navigation items are direct children of `#contentAreaContextMenu`, as the tagged macOS markup says; there is no `#context-navigation`. textfox's icons compute when the preference is on and are `none` when it is off.
+- Headed, that styling never shows. `probe-macos-native-menu.py` found `widget.macos.native-context-menus` true by default: macOS draws the page context menu itself, and the XUL `#context-back` has 0x0 geometry while its icon still computes. With the preference false, the XUL menu shows (219x25) with textfox's icon. Headless runs always keep the XUL popup, so no earlier check could see this. Recorded as §B B9 with invariant V10; T13 sets the preference.
+
+Windows 11 Enterprise Evaluation 25H2 (build 26100) in a KVM guest on the Linux host: unattended install, local account with autologon, OpenSSH. Firefox needs the interactive desktop, so tests run as a scheduled task in that session.
+
+- `test-high-contrast-windows.py` switches real OS high contrast with `SystemParametersInfo(SPI_SETHIGHCONTRAST)` ("High Contrast Black") and sets no stand-in preference: `ui.useAccessibilityTheme` and `browser.display.document_color_use` stay unset, and the test requires the effective `document_color_use` to be Windows' default `0`. 8/8 pass (high contrast off/on, browser Nova off/on, vanilla and textfox). With high contrast on, chrome matches `(prefers-contrast: more)` and never `(forced-colors: active)`; new-tab content is forced by the OS alone. textfox chrome text measured 16.29:1 (vanilla's selected tab 7.07:1); with it off, 21:1. Can fail: a `config.css` setting `#nav-bar` text to `Canvas` failed all 4 textfox cases at 1:1.
+- Harness fix found on the way: on Windows, `terminate()` stops only the parent `firefox.exe`; its children keep the profile's cache open and the temporary profile cannot be removed. The test ends the process tree with `taskkill /T /F`.
+
+Bounds: computed colors, not painted pixels; one contrast theme (High Contrast Black); Nova browser chrome is still unsupported; macOS was not run headed for anything but the native-menu probe; no Windows run of the manual scripts (they need a POSIX `sh`).

@@ -31,7 +31,7 @@ def free_port():
 
 
 def install(profile):
-    result = subprocess.run(['bash', str(ROOT / 'tf-install.sh'), str(profile)], cwd=ROOT,
+    result = subprocess.run([os.environ.get('TF_TEST_SHELL', 'bash'), str(ROOT / 'tf-install.sh'), str(profile)], cwd=ROOT,
                             stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=60)
     if result.returncode != 0 or 'Installation completed' not in result.stdout:
         raise RuntimeError(f'manual installer failed: {result.stdout} {result.stderr}')
@@ -41,7 +41,7 @@ def install(profile):
 def session(profile, port):
     env = os.environ.copy()
     env['MOZ_REMOTE_ALLOW_SYSTEM_ACCESS'] = '1'
-    process = subprocess.Popen(['firefox', '--marionette', '-remote-allow-system-access',
+    process = subprocess.Popen([os.environ.get('FIREFOX', 'firefox'), '--marionette', '-remote-allow-system-access',
                                 '--new-instance', '--profile', str(profile), 'about:blank'],
                                env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     m = None
