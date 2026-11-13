@@ -1222,3 +1222,59 @@ Every runnable check was re-run on `8fc586b`. The only change since that commit 
 `test-nova-layout-live.py` enables new-tab widgets. The world clock ticks each minute. Weather, the crossword, and the wallpaper arrive from the network. Two captures of one page can therefore differ, and the test treats that difference as an unstable capture. The first sweep failed the overlap fixture at 545 restored pixels and the real page at 785. A run whose captures straddle the minute failed the same way, 785 pixels on the control capture and on the restored capture. The freeze CSS now also sets `visibility: hidden` on `.nova-enabled :is(.sidebar-inline-end, .content-full-width)` and on its descendants. Layout stays. The ticking pixels do not. The same minute-straddle with that CSS passed, both diffs 0. A later run of the file in this tree exited 0 on Firefox 159.0 build `20261022150525`. The logo painted 3052 pixels, the search box 44304, and 0 logo pixels fell inside the search region. The injected overlap fixture put 1414 there. The test had been failing safe. No §V invariant failed, so no §B entry was added.
 
 Nova support stays unclaimed. T17 and T18 are still open.
+
+## T17 Linux standalone home-manager activation
+
+The Linux half of T17 passed on this Omarchy host (Linux 7.2.5-3-omarchy, x86_64, non-NixOS). The Darwin half is the next section. Nova support stays unclaimed. T18 is still open.
+
+The proof is Home Manager's real `activate` script, built impurely from `tools/firefox-chrome/check-home-manager-standalone.nix` and run by `tools/firefox-chrome/test-home-manager-standalone.sh`. It is a standalone home-manager activation into a disposable `HOME` under `/tmp`. It is separate from the NixOS-module VM in `test-home-manager-vm.sh`.
+
+```
+sh tools/firefox-chrome/test-home-manager-standalone.sh \
+  /nix/store/wa9kz0gcy4wgakdv28p7i4jc7xkcbbky-source \
+  /nix/store/8sp96qrpjlzhmfvhr94z8k0yq03mszk8-source
+```
+
+Exit 0. Paired sources are the T16 pair (nixpkgs rev `1d060086`, home-manager master). `home.stateVersion` is `"26.05"`. `home.username` is the invoking user and `home.homeDirectory` is the disposable home, because `activate` checks both. The profile name is `test`. Options: border `7px`, font `17px`, titles off, vertical tabs off, Firefox context icons on.
+
+Passing generations:
+
+- Seeded home: `/nix/store/jzzaph3m9psyyjl9yj5raz0wcqf3ny2x-home-manager-generation`
+- Fresh home: `/nix/store/dcwihq4szcaxjrg2fax5j82cg48rli31-home-manager-generation`
+
+The seeded home started with `chrome/user-notes.txt` (`kept by the user`) and a `prefs.js` sentinel `tf.test.sentinel=true`, plus `browser.nova.enabled` true and `browser.shell.checkDefaultBrowser` false. The first `activate` was killed while `nix-env --profile … --set` was held. The notes and the sentinel were still there. Two later activations of the same generation completed, and both still had the notes, the sentinel, and `--tf-border-width: 7px` in `config.css`. The fresh home had one activation, no notes file, and no sentinel.
+
+Host Firefox 159.0 build `20261022150525` ran headless inside the same bwrap against each activated profile. The navbar border computed `7px`. `--tf-font-size` was `17px`, `--tf-display-vertical-tabs` was `none`, and `--tf-display-titles` was `none`. On the seeded profile, `browser.nova.enabled` was effective false, default true, user value present; `browser.newtabpage.activity-stream.nova.enabled` was effective true with no user value; `browser.shell.checkDefaultBrowser` was effective false with a user value; `tf.test.sentinel` was effective true. After a graceful shutdown, seeded `prefs.js` still had the sentinel and `browser.nova.enabled` false. The fresh profile had the same Nova and new-tab result, persisted `browser.nova.enabled` false, and did not contain the sentinel.
+
+Linked files, read through the nix-portable store because this host has no `/nix/store` at root: `chrome/icons/blank.svg` is present; `config.css` has the four configured variables; `user.js` has `user_pref("browser.nova.enabled", false);` and `user_pref("widget.macos.native-context-menus", false);`; the last two `@import`s in `userChrome.css` are `defaults.css` then `config.css`. The disposable home has no `Library` directory. Each completed activation logged `User systemd daemon not running. Skipping reload.` and did not log `Attempting to reload services`. The real `~/.nix-profile`, `~/.local/state/nix/profiles`, and `~/.config/mozilla` were unchanged.
+
+Bounds. This host has no system Nix daemon and no `/nix/store` at `/`. Nix came from nix-portable with `NP_RUNTIME=bwrap`, and `nix-env` was the store's Nix 2.20.6 (`/nix/store/j823gnvpxh1fjibycmldrspkk3pgivwp-nix-2.20.6/bin/nix-env`). The interrupt is a test-only wrapper around that binary: a warm store finishes `activate` before a poll can catch it, so the wrapper holds `--set` and the test kills the process while it is held. Completed activations call the store binary with no wrapper. Firefox runs inside bwrap so the activation symlinks resolve; `LD_LIBRARY_PATH` and `NIX_LDFLAGS` from `nix shell` are unset first. File checks rewrite `/nix/store` links onto `~/.nix-portable`. The module copies `chrome/` except `userChrome.css`, and this worktree has an untracked `chrome/.omc`; the test does not assert that directory is absent. On Darwin, `nix/modules/home-manager.nix` appends `Profiles/` and Home Manager's Firefox module also sets `profilesPath` to `${configPath}/Profiles`. With `home.stateVersion = "26.05"` that module's `configPath` is `Library/Application Support/Firefox`, so the profile directory is `Library/Application Support/Firefox/Profiles/test`. The `26.11` override to `org.nixos.firefox` does not apply. The Darwin run of that path is the next section.
+
+The physical Mac `<mac-host>` (macOS 27.2.1 arm64, Firefox 159.0 at `~/tf-t12`) was reachable over a private network and has no Nix install. `sudo` there requires a password. macOS has no single-user Nix installer, so a host install would be the multi-user daemon plus an `/nix` volume. That daemon was not installed on the physical Mac. The Darwin run used Tart VM `mac_jr` on that Mac.
+
+## T17 Darwin standalone home-manager activation
+
+The Darwin half of T17 passed inside Tart VM `mac_jr`. The guest is macOS 27.2 (build 26B123), Darwin 27.2.0 arm64, user `admin`. The physical Mac is still macOS 27.2.1 arm64 with no `/nix` and no `nix` on `PATH`. Nova support stays unclaimed. T18 is still open.
+
+The same script and expression as the Linux half, against `nix-store --add` copies of the same trees (nixpkgs rev `1d060086d60cb76a40cf37109f979d88a5bd6396`, home-manager master):
+
+```
+sh tools/firefox-chrome/test-home-manager-standalone.sh \
+  /nix/store/lw9n2gsykqbq10cxmfwj2lnij4c7v6a2-nixpkgs \
+  /nix/store/0nzi19bqisn1y1h2kha03gbdn1b7cbvl-home-manager
+```
+
+`home.stateVersion` is `"26.05"`. The disposable home was `/tmp/textfox-hm-standalone.yHQx3v`. Firefox was `/tmp/Firefox.app` (Mozilla Firefox 159.0). The log printed `Standalone home-manager activation passed`.
+
+Passing generations:
+
+- Seeded home: `/nix/store/nikz6jryq6lg77azw7kbl58m5g3m6bia-home-manager-generation`
+- Fresh home: `/nix/store/50ilh8ahh3na33wgxybhc7dd9166f0ks-home-manager-generation`
+
+Both homes wrote `Library/Application Support/Firefox/Profiles/test`. `Profiles/Profiles` does not exist. The seeded home kept `chrome/user-notes.txt` (`kept by the user`) and `tf.test.sentinel` through an interrupted activate and two completed activates. `config.css` sets `--tf-border-width: 7px`, `--tf-font-size: 17px`, `--tf-display-vertical-tabs: none`, and `--tf-display-titles: none`. `user.js` sets `browser.nova.enabled` false and `widget.macos.native-context-menus` false. The last two `@import`s in `userChrome.css` are `defaults.css` then `config.css`. `chrome/icons/blank.svg` is linked.
+
+Headless Firefox 159.0 build `20261022150525` reported a navbar border of `7px`. On the seeded profile, `browser.nova.enabled` was effective false, default true, with a user value; `browser.newtabpage.activity-stream.nova.enabled` was effective true with no user value; `browser.shell.checkDefaultBrowser` was effective false with a user value; `tf.test.sentinel` was effective true. After shutdown, seeded `prefs.js` still had the sentinel and `browser.nova.enabled` false. The fresh profile had the same Nova and new-tab result, persisted `browser.nova.enabled` false, had no notes file, and did not contain the sentinel.
+
+The activation log does not contain `Attempting to reload services`. Darwin does not require the Linux skip line. `/Users/admin/Library/Application Support/Firefox` is still dated 2026-10-28. `/nix/var/nix/profiles/per-user/admin` was not created. The VM was left running.
+
+Bounds. Nix inside the VM is the multi-user daemon, Nix 2.35.6. A non-login shell does not source it, so the script sources `/nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh` before `nix build` and before `activate`. The build is not `--offline`. It fetched 164 paths (470.5 MiB) and built 34 derivations, including `firefox-159.0.1`, because `programs.firefox.enable` pulls `pkgs.firefox`. The probe used the copied Firefox 159.0 app. The first launch exited with `nix: command not found` before that sourcing; that was a harness bug, and the rerun above is the pass. ProfD was compared with `pwd -P`, so the probe path is `/private/tmp/...`.
