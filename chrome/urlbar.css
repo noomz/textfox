@@ -7,10 +7,16 @@
   border: unset !important;
   box-shadow: unset !important;
 }
+/* Firefox 159 paints the open results on a joint .urlbarView-background (own
+   color, rounded, shadowed) that covers the view's border; textfox paints the
+   view itself as a flat box. */
+.urlbarView-background {
+  display: none !important;
+}
 .urlbarView {
   text-align: start;
   margin-top: 4px;
-  background-color: var(--tf-bg);
+  background-color: var(--tf-bg) !important;
   border: var(--border-width) solid var(--tf-accent) !important;
   border-radius: 0 0 var(--tf-rounding) var(--tf-rounding);
 }

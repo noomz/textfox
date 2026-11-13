@@ -1174,3 +1174,36 @@ Firefox 159.0 build `20261022150525`, Linux, 1244x700 content viewport:
 Run `"$HOME/.cache/textfox-firefox-live/venv/bin/python" tools/firefox-chrome/test-nova-layout-live.py`. It needs `sway`, `grim` and ImageMagick. New-tab feeds are on, so it may make network requests.
 
 Bounds: one viewport (1280x800 output), LTR, default font and logo, browser and new-tab Nova both on, Linux Wayland with software rendering. Responsive widths, the bidi pseudo-locale, other platforms, and the other surfaces belong to T15. Painted pixels prove where the logo paints, not that its text is legible.
+
+## T15 painted-pixel regression for key surfaces
+
+`test-surface-paint-live.py` checks textfox's key surfaces from painted pixels in a headed Firefox. It reuses the T14 harness: a disposable 1280x800 headless Sway compositor, Firefox headed inside it, and `grim` captures. It exits 0 or 1, never inconclusive.
+
+- Surfaces: navbar, URL bar text, URL bar results, horizontal tabs, app menu, toolbar context menu, findbar, new-tab search box and first shortcut tile. Each runs in both browser Nova states.
+- Each surface is hidden in turn with `visibility: hidden`, so layout is kept. The changed pixels are what it painted, and their bounding box is the surface on screen. A box much larger than the element fails the run as a wrong measurement.
+- Chrome surfaces must show three things. The dominant color must be `--tf-bg`. A border of the surface's variable must show on the left, right and bottom edges: `--tf-border` for navbar, tabs and findbar, `--tf-accent` for URL results, app menu and context menu. The top edge is skipped because the section title sits there, and a border color indistinguishable from the background fails. A textfox-colored text target must paint at least 30 pixels at 4.5:1 against the painted background. The text target is hidden in its own capture: the navbar title, URL bar text, an unselected tab label, the findbar Highlight All checkbox, an unselected result title, the app menu's New Tab item, and the first context-menu item. A whole-surface count was too loose: the app menu's Sync banner uses Firefox's own colors and stayed readable under a broken config.
+- New-tab surfaces must show a border of the resolved `--newtab-border-color` on the same three edges.
+- Colors are resolved inside each surface. The default `--tf-border` is `color-mix(in srgb, currentColor 24%, transparent)`, so a value resolved at `:root` (black text) did not match what painted on the navbar (white text). Translucent colors are composited over `--tf-bg`.
+- Cases: the shipped defaults, a sentinel `config.css` with distinct colors (`--config FILE` replaces it), and a built-in known-bad config (`--tf-fg: var(--tf-bg); --tf-border-width: 0px`). Every surface must fail the known-bad case, or the run fails.
+- Controls: a repeated capture and a capture after restoring styles must match the base exactly. Animations, transitions and the caret are frozen, and `ui.prefersReducedMotion` is 1. Probe-only overrides keep the page static: startup page blank; new-tab widgets, weather, stories and sponsored shortcuts off. The Marionette `remotecontrol` attribute is removed, because its URL bar stripes are not textfox's paint.
+
+First run at `e60b7f9` (exit 1, both Nova states, defaults and sentinel):
+
+- URL bar results painted Firefox's background (56,56,60) with no accent border. Firefox 159 draws the open results on a positioned joint `.urlbarView-background` (`browser/themes/shared/urlbar.css`): its own color, rounded corners, a shadow, and an outset past the view that covers `.urlbarView`'s border. textfox's `.urlbarView` background was a normal user rule, so Firefox's author rule beat it. T11 passed because it measured computed colors only.
+- The new-tab search box had no textfox border. It is the handoff button inside `content-search-handoff-ui`'s shadow root, which this file already recorded as a selector gap that was never fixed.
+
+Recorded as §B B10 with invariant V11. Fixes:
+
+- `chrome/urlbar.css`: `.urlbarView-background` is `display: none !important`, and the `.urlbarView` background is `!important`. Results now paint `--tf-bg` in a flat box with the `--tf-accent` border.
+- `chrome/content/newtab.css`: the host sets `--content-search-handoff-ui-border-width: var(--tf-border-width)`, `--content-search-handoff-ui-border-radius: var(--tf-rounding)`, `--content-search-handoff-ui-unfocused-border-color: var(--newtab-border-color)` and `--box-shadow-level-3: none`. The search box is now square with the same border as the shortcut tiles. Firefox's fake-focus border still uses its own variable.
+
+After the fix, Firefox 159.0 build `20261022150525`, Linux Wayland, software rendering:
+
+- `test-surface-paint-live.py`: exit 0. 9 surfaces pass in both browser Nova states with the defaults and the sentinel config, and the built-in known-bad config fails every surface. Before the fix, the same test failed URL bar results and new-tab search in all four good cases.
+- `--config` with a user file setting `--tf-accent: var(--tf-bg)`: exit 1. The URL results, app menu and context menu borders are reported as indistinguishable from the background, in both Nova states.
+- Passed: `test-nova-layout-live.py`, `test-readable-colors-live.py` (17), `test-high-contrast-live.py`, `test-newtab-live.sh`, `git diff --check`.
+- `test-urlbar-live.py` could not connect to Marionette, twice. A worktree at `e60b7f9` (before T15) fails the same way, so this is a host problem, not a T15 regression. It is unverified for T15.
+
+Run `"$HOME/.cache/textfox-firefox-live/venv/bin/python" tools/firefox-chrome/test-surface-paint-live.py`. It needs `sway`, `grim` and ImageMagick, and takes about 3 minutes (6 Firefox launches). Set `TF_SURFACE_ARTIFACTS=<dir>` to keep captures and masks. New-tab feeds are on, so it may make network requests.
+
+Bounds: one 1280x800 output, LTR, one platform (Linux Wayland, software rendering), new-tab Nova on (Firefox's default), handoff search mode only (not the gated in-page `moz-urlbar` or non-handoff input), horizontal tabs only (vertical tabs and the sidebar are not covered). The toolbar context menu stands in for the page context menu. Hover, focus rings and selected-row colors are not checked. Painted pixels show that colors and borders reach the screen and that text pixels reach 4.5:1, not that every label is legible.

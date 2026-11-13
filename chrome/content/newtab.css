@@ -66,6 +66,14 @@
   }
 
   /* search bar */
+  /* The handoff search box lives in content-search-handoff-ui's shadow root;
+     only the host's variables reach it. */
+  content-search-handoff-ui {
+    --content-search-handoff-ui-border-width: var(--tf-border-width) !important;
+    --content-search-handoff-ui-border-radius: var(--tf-rounding) !important;
+    --content-search-handoff-ui-unfocused-border-color: var(--newtab-border-color) !important;
+    --box-shadow-level-3: none !important;
+  }
   .search-wrapper {
     .search-handoff-button,
     input {
