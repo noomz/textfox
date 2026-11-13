@@ -12,6 +12,10 @@ proof that the other still disables it.
 unclaimed, so both files must set it to false until the gate is deliberately
 retired and this check updated with it.
 
+`widget.macos.native-context-menus` is pinned false as well (§B B9, V10): when it
+is true, macOS draws the page context menu itself and textfox's menu CSS never
+paints, while every headless check still sees a styled XUL popup.
+
 Exit 0 means both files name the same preferences with the same values.
 """
 import argparse
@@ -24,6 +28,7 @@ ROOT = Path(__file__).resolve().parents[2]
 USER_JS = ROOT / "user.js"
 WRAP = ROOT / "nix" / "pkgs" / "wrapTextfox.nix"
 NOVA = "browser.nova.enabled"
+NATIVE_MENUS = "widget.macos.native-context-menus"
 
 # `user_pref("name", value);` and `pref("name", value);`. Values are what the two
 # artifacts can carry: booleans, integers, and double-quoted strings.
@@ -63,6 +68,11 @@ def compare(user_js, wrap):
         raise ValueError(
             f"{NOVA} is {delivered[NOVA]!r}; V1 keeps Nova disabled until the "
             "support gates pass, so retire this check together with the gate"
+        )
+    if delivered.get(NATIVE_MENUS) is not False:
+        raise ValueError(
+            f"{NATIVE_MENUS} is {delivered.get(NATIVE_MENUS)!r}; macOS native context "
+            "menus ignore userChrome.css, so both artifacts must set it to false (B9)"
         )
     return delivered
 

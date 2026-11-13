@@ -121,6 +121,8 @@ let
     pref("layout.css.has-selector.enabled", true);
     // textfox does not support the new Nova UI yet
     pref("browser.nova.enabled", false);
+    // macOS: the OS-drawn native context menu ignores userChrome.css
+    pref("widget.macos.native-context-menus", false);
     // Opt-in escape hatch for a profile textfox cannot prove it owns: mismatched
     // owned files are copied aside, then converged. Off by default.
     var forceAdopt = false;

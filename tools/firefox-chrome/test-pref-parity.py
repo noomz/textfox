@@ -17,11 +17,13 @@ BASE_USER_JS = """\
 // >>> textfox managed prefs >>>
 user_pref("toolkit.legacyUserProfileCustomizations.stylesheets", true);
 user_pref("browser.nova.enabled", false);
+user_pref("widget.macos.native-context-menus", false);
 // <<< textfox managed prefs <<<
 """
 BASE_WRAP = """\
     pref("toolkit.legacyUserProfileCustomizations.stylesheets", true);
     pref("browser.nova.enabled", false);
+    pref("widget.macos.native-context-menus", false);
 """
 
 
@@ -74,6 +76,20 @@ def main() -> int:
         BASE_USER_JS.replace('"browser.nova.enabled", false', '"browser.nova.enabled", true'),
         BASE_WRAP.replace('"browser.nova.enabled", false', '"browser.nova.enabled", true'),
         "V1 keeps Nova disabled",
+    )
+    expect_failure(
+        "native macOS context menus left on in both files",
+        BASE_USER_JS.replace('"widget.macos.native-context-menus", false',
+                             '"widget.macos.native-context-menus", true'),
+        BASE_WRAP.replace('"widget.macos.native-context-menus", false',
+                          '"widget.macos.native-context-menus", true'),
+        "native context menus ignore userChrome.css",
+    )
+    expect_failure(
+        "native macOS context menu preference dropped from both files",
+        BASE_USER_JS.replace('user_pref("widget.macos.native-context-menus", false);\n', ""),
+        BASE_WRAP.replace('    pref("widget.macos.native-context-menus", false);\n', ""),
+        "native context menus ignore userChrome.css",
     )
     expect_failure(
         "a preference assigned twice in one artifact",

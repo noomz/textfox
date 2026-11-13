@@ -568,7 +568,9 @@ test('prefs are set before any profile write', (sandbox) => {
     'svg.context-properties.content.enabled',
     'layout.css.has-selector.enabled',
     'browser.nova.enabled',
+    'widget.macos.native-context-menus',
   ]);
+  assert.deepEqual(run.prefs.find(([name]) => name === 'widget.macos.native-context-menus'), ['widget.macos.native-context-menus', false]);
   assert.deepEqual(run.prefs.find(([name]) => name === 'browser.nova.enabled'), ['browser.nova.enabled', false]);
 });
 

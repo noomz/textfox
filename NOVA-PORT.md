@@ -1135,3 +1135,22 @@ Windows 11 Enterprise Evaluation 25H2 (build 26100) in a KVM guest on the Linux 
 - Harness fix found on the way: on Windows, `terminate()` stops only the parent `firefox.exe`; its children keep the profile's cache open and the temporary profile cannot be removed. The test ends the process tree with `taskkill /T /F`.
 
 Bounds: computed colors, not painted pixels; one contrast theme (High Contrast Black); Nova browser chrome is still unsupported; macOS was not run headed for anything but the native-menu probe; no Windows run of the manual scripts (they need a POSIX `sh`).
+
+## T13 macOS native context menus off on every delivery path
+
+Fixes §B B9. textfox now sets `widget.macos.native-context-menus` to false on every delivery path. Manual installs get it from the managed block in `user.js`. Home Manager reads the same packaged `user.js` through `extraConfig`. NixOS sets it as an autoconfig `pref()` in `wrapTextfox.nix`. On other platforms Firefox ignores the preference.
+
+- `check-pref-parity.py` now requires the preference to be false in both artifacts. `test-pref-parity.py` adds two failure cases: set to true in both files, and missing from both. Both are refused.
+- `test-nixos-update.js` expects the preference in the autoconfig pref list with value false. Without the `wrapTextfox.nix` line, that scenario fails.
+- `probe-macos-native-menu.py` has a third case. It writes the shipped `user.js` and sets nothing else about native menus. The probe exits 1 unless the context menu is a XUL popup with a visible Back item that computes textfox's icon.
+
+Headed on macOS 27.2.1 arm64 with Firefox 159.0 build `20261022150525` (`~/tf-t12` copy):
+
+- Default profile: the preference is true, the menu is native, and `#context-back` is 0x0.
+- Shipped `user.js`: the preference is false, `#context-back` is 219x25 with `back.svg`, and the probe prints `ok`.
+- Subtraction: with the preference line removed from the Mac copy of `user.js`, the menu is native again (0x0) and the probe prints `not ok`.
+- `TF_TEST_SHELL=sh test-manual-install-files.py`: 19/19.
+
+Linux: pref parity (check and 8 fixtures), `test-nixos-update.js` (22), `check-nixos-update-exhaustive.js` (no new violations), `test-manual-install-files.py` (19), `nixfmt-tree --ci` (0 changed), `git diff --check`.
+
+Bounds: only the page context menu's Back item was measured. Other context menus, painted pixels, and a headed run through a home-manager or NixOS install on macOS remain unverified. The NixOS module does not target Darwin.
