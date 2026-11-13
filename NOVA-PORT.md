@@ -1154,3 +1154,23 @@ Headed on macOS 27.2.1 arm64 with Firefox 159.0 build `20261022150525` (`~/tf-t1
 Linux: pref parity (check and 8 fixtures), `test-nixos-update.js` (22), `check-nixos-update-exhaustive.js` (no new violations), `test-manual-install-files.py` (19), `nixfmt-tree --ci` (0 changed), `git diff --check`.
 
 Bounds: only the page context menu's Back item was measured. Other context menus, painted pixels, and a headed run through a home-manager or NixOS install on macOS remain unverified. The NixOS module does not target Darwin.
+
+## T14 Nova logo and search box proven from headed painted pixels
+
+`test-nova-layout-live.py` no longer exits 2. It exits 0 on pass and 1 on fail, including any run whose instrument cannot be trusted. The estimated pseudo-element line boxes are gone (V8). The verdict now comes from painted pixels in a headed Firefox:
+
+- The test starts a disposable 1280x800 headless Sway compositor (`WLR_BACKENDS=headless`, pixman renderer, no borders). It runs Firefox headed inside it and captures the compositor output with `grim`. It drops `MOZ_HEADLESS` from its environment and fails unless Firefox reports `isHeadless` false.
+- Under Wayland, `mozInnerScreenX/Y` did not match the compositor (the search box painted about 9px left and 20px above the mapped box). The content origin is now measured: a fixed 20x20 marker at content (10, 10) is painted, and its changed-pixel box must be 24x24 (square plus outline).
+- Logo and search box visibility: each is hidden in turn with `visibility: hidden`, so layout is kept. The changed pixels are the pixels that element painted. The logo must paint at least 100 pixels, and the search box must paint pixels whose box is centered inside its DOM box.
+- Overlap: the count of logo-changed pixels inside the union of the search box's painted box and its DOM box must be zero.
+- Controls: a repeated capture and a capture after restoring the styles must match the first capture exactly. Animations, transitions and the caret are frozen during capture. An injected fixture moves the logo onto the search box above it, and the test fails unless that overlap is detected.
+- Wikipedia shortcut checks are unchanged (clipping, title collision, both self-tests). An unmeasured neighbor title is now a failure, not an inconclusive note. Wrapping is still only an observation.
+
+Firefox 159.0 build `20261022150525`, Linux, 1244x700 content viewport:
+
+- HEAD: exit 0. The logo paints 3052 pixels and the search box 48032. 0 logo pixels fall inside the search region; the injected fixture puts 1447 there. Both control diffs are 0. A second run with `MOZ_HEADLESS=1` set in the caller also passes.
+- Subtraction: with the T3 "contain the generated logo" rules removed from `chrome/content/newtab.css`, the test exits 1 with `295 logo pixels paint inside the search box`. The rules were restored afterward.
+
+Run `"$HOME/.cache/textfox-firefox-live/venv/bin/python" tools/firefox-chrome/test-nova-layout-live.py`. It needs `sway`, `grim` and ImageMagick. New-tab feeds are on, so it may make network requests.
+
+Bounds: one viewport (1280x800 output), LTR, default font and logo, browser and new-tab Nova both on, Linux Wayland with software rendering. Responsive widths, the bidi pseudo-locale, other platforms, and the other surfaces belong to T15. Painted pixels prove where the logo paints, not that its text is legible.

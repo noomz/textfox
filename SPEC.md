@@ -58,7 +58,7 @@ Port textfox to Firefox Nova without losing TUI appearance, existing configurati
 | T11 | x | Keep text readable for arbitrary `--tf-*` colors, including the app-menu foreground pairing (`--panel-text-color` against a configured background). | V4,V5,I.config,I.chrome |
 | T12 | x | Run the Windows and macOS matrix: Windows high contrast (`browser.display.document_color_use` 0), macOS flat context menu, manual scripts under macOS `sh`. Needs a Windows image and a Mac host. | V5,V6,V9,I.manual,I.chrome |
 | T13 | x | Set `widget.macos.native-context-menus` false in textfox's managed prefs on every delivery path (manual `user.js`, home-manager `extraConfig`, NixOS autoconfig). Pref parity check; headed macOS regression for menu geometry and icons. | V2,V3,V5,V10,I.prefs,I.manual,I.home,I.nixos |
-| T14 | . | Resolve `test-nova-layout-live.py` inconclusive: prove Nova logo and search-box visibility and no overlap from headed painted pixels. Test exits 0 or 1, never 2. | V5,V6,V8,I.chrome,I.probes |
+| T14 | x | Resolve `test-nova-layout-live.py` inconclusive: prove Nova logo and search-box visibility and no overlap from headed painted pixels. Test exits 0 or 1, never 2. | V5,V6,V8,I.chrome,I.probes |
 | T15 | . | Painted-pixel regression for key surfaces (navbar, URL bar and results, tabs, app menu, context menu, findbar, new-tab), both browser Nova states, headed. Must fail on a known-bad `config.css`. | V5,V6,V8,I.chrome,I.probes |
 | T16 | . | Re-run full Nova on/off live matrix and real NixOS and home-manager VM tests at HEAD. Record results. | V2,V3,V6,V7,V9,I.manual,I.home,I.nixos |
 | T17 | . | Verify home-manager activation on a standalone home-manager host and on Darwin (macOS host). | V2,V3,V9,I.home |
