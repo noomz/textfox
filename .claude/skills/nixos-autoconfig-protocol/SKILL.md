@@ -99,7 +99,7 @@ F1–F4 were fixed by T9 (intent marker with `pending` before any CSS rename, le
 
 ## Proven able to fail
 
-At `f6cd26f`, each of these one-line breaks in `wrapTextfox.nix` turned into a `NEW VIOLATION` at depth 3:
+At `115706d`, each of these one-line breaks in `wrapTextfox.nix` turned into a `NEW VIOLATION` at depth 3:
 
 | break | caught by |
 |---|---|

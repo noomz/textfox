@@ -933,7 +933,7 @@ These are DOM, media-query, and computed-geometry observations, not proof of pai
 
 ## Session handoff: T2 keyboard inventory
 
-T2 remains open. Latest verified slice `afcb04a` samples the new-tab search-engine wordmark's contrast cycle. The working tree contained only the pre-existing untracked `.pi/` directory before this handoff. No production CSS changes or preference migration have been made in the current session. Keep Nova disabled and retain the README warning.
+T2 remains open. Latest verified slice `a85cd63` samples the new-tab search-engine wordmark's contrast cycle. The working tree contained only the pre-existing untracked `.pi/` directory before this handoff. No production CSS changes or preference migration have been made in the current session. Keep Nova disabled and retain the README warning.
 
 Firefox release `browser/components/urlbar/tests/browser-newtab/browser_searchModeSwitcher.js` tests Shift+Tab from the input to `.searchmode-switcher`, followed by Enter, with `browser.urlbar.searchModeSwitcher.skipTabStop=true`. The disposable-profile probe now checks the effective preference and repeats this interaction. On headless Firefox 159.0 build `20261022150525`, variants `a`, `b`, and `both` each covered all eight browser Nova, new-tab Nova, and vanilla/textfox combinations. When browser Nova was enabled, Shift+Tab focused the switcher and Enter opened its menu in all 12 samples. Browser Nova off used the handoff component instead. At the focus sample, `:focus-visible` was false, outline style was `none`, and box shadow was `none` in both vanilla and textfox. These computed values do not establish painted focus visibility or a textfox-specific defect. The probe does not verify Escape closure for this keyboard interaction, menu item activation, real OS accessibility settings, or other platforms. It clicks the input first, so it does not establish keyboard-only traversal from outside the component. Disposable feeds may make network requests.
 
@@ -1057,7 +1057,7 @@ Re-run at this checkpoint: `test-pref-parity.py`, `check-pref-parity.py`, `test-
 
 ## T8 support gate
 
-Every runnable check passed on the tree at `ebd471f`, on host Firefox 159.0 build `20261022150525` (headless, plus a headless Sway compositor for the painted findbar check) and in disposable NixOS VMs on Firefox 159.0.1 build `20261102144711` (nixpkgs `/nix/store/wa9kz0gcy4wgakdv28p7i4jc7xkcbbky-source`, rev `1d060086`; home-manager `/nix/store/8sp96qrpjlzhmfvhr94z8k0yq03mszk8-source`):
+Every runnable check passed on the tree at `290cce8`, on host Firefox 159.0 build `20261022150525` (headless, plus a headless Sway compositor for the painted findbar check) and in disposable NixOS VMs on Firefox 159.0.1 build `20261102144711` (nixpkgs `/nix/store/wa9kz0gcy4wgakdv28p7i4jc7xkcbbky-source`, rev `1d060086`; home-manager `/nix/store/8sp96qrpjlzhmfvhr94z8k0yq03mszk8-source`):
 
 - Static and fixture: rule ledger, CSS and variable inventories, expanded selectors, selector evidence and atoms, unobserved dispositions, about-page index, Firefox variable source, cascade order (check and fixtures), context-icon source fixture, pref parity (check and 6 fixtures), `test-manual-install-files.py` (14), `test-nixos-update.js` (19), `check-nixos-update-exhaustive.js` depth 4 (no new violations), `check-home-manager-inputs.py`, `nixfmt-tree --ci` (0 changed), `git diff --check`. The tinycss2 checks need `~/.cache/textfox-css-venv`; the live venv lacks it.
 - Host live: every `test-*-live.py` and `test-*-live.sh` check, `check-config-defaults.py`, the places-icon pair, `test-newtab-widget-menu.py` (64-combination matrix with content forced colors, bidi pseudo-locale and reduced motion), `test-vertical-tabs-option-live.py` (10), `test-pref-icons-live.py` (8). `test-nova-layout-live.py` exits 2 (inconclusive), as recorded since T3.
@@ -1187,7 +1187,7 @@ Bounds: one viewport (1280x800 output), LTR, default font and logo, browser and 
 - Cases: the shipped defaults, a sentinel `config.css` with distinct colors (`--config FILE` replaces it), and a built-in known-bad config (`--tf-fg: var(--tf-bg); --tf-border-width: 0px`). Every surface must fail the known-bad case, or the run fails.
 - Controls: a repeated capture and a capture after restoring styles must match the base exactly. Animations, transitions and the caret are frozen, and `ui.prefersReducedMotion` is 1. Probe-only overrides keep the page static: startup page blank; new-tab widgets, weather, stories and sponsored shortcuts off. The Marionette `remotecontrol` attribute is removed, because its URL bar stripes are not textfox's paint.
 
-First run at `e60b7f9` (exit 1, both Nova states, defaults and sentinel):
+First run at `9dd741b` (exit 1, both Nova states, defaults and sentinel):
 
 - URL bar results painted Firefox's background (56,56,60) with no accent border. Firefox 159 draws the open results on a positioned joint `.urlbarView-background` (`browser/themes/shared/urlbar.css`): its own color, rounded corners, a shadow, and an outset past the view that covers `.urlbarView`'s border. textfox's `.urlbarView` background was a normal user rule, so Firefox's author rule beat it. T11 passed because it measured computed colors only.
 - The new-tab search box had no textfox border. It is the handoff button inside `content-search-handoff-ui`'s shadow root, which this file already recorded as a selector gap that was never fixed.
@@ -1202,7 +1202,7 @@ After the fix, Firefox 159.0 build `20261022150525`, Linux Wayland, software ren
 - `test-surface-paint-live.py`: exit 0. 9 surfaces pass in both browser Nova states with the defaults and the sentinel config, and the built-in known-bad config fails every surface. Before the fix, the same test failed URL bar results and new-tab search in all four good cases.
 - `--config` with a user file setting `--tf-accent: var(--tf-bg)`: exit 1. The URL results, app menu and context menu borders are reported as indistinguishable from the background, in both Nova states.
 - Passed: `test-nova-layout-live.py`, `test-readable-colors-live.py` (17), `test-high-contrast-live.py`, `test-newtab-live.sh`, `git diff --check`.
-- `test-urlbar-live.py` could not connect to Marionette, twice. A worktree at `e60b7f9` (before T15) fails the same way, so this is a host problem, not a T15 regression. It is unverified for T15.
+- `test-urlbar-live.py` could not connect to Marionette, twice. A worktree at `9dd741b` (before T15) fails the same way, so this is a host problem, not a T15 regression. It is unverified for T15.
 
 Run `"$HOME/.cache/textfox-firefox-live/venv/bin/python" tools/firefox-chrome/test-surface-paint-live.py`. It needs `sway`, `grim` and ImageMagick, and takes about 3 minutes (6 Firefox launches). Set `TF_SURFACE_ARTIFACTS=<dir>` to keep captures and masks. New-tab feeds are on, so it may make network requests.
 
@@ -1210,7 +1210,7 @@ Bounds: one 1280x800 output, LTR, one platform (Linux Wayland, software renderin
 
 ## T16 full matrix at HEAD
 
-Every runnable check was re-run on `8fc586b`. The only change since that commit is the harness fix below. Host Firefox is 159.0 build `20261022150525`. The VMs ran Firefox 159.0.1 build `20261102144711`, nixpkgs `/nix/store/wa9kz0gcy4wgakdv28p7i4jc7xkcbbky-source`, home-manager `/nix/store/8sp96qrpjlzhmfvhr94z8k0yq03mszk8-source`.
+Every runnable check was re-run on `e158586`. The only change since that commit is the harness fix below. Host Firefox is 159.0 build `20261022150525`. The VMs ran Firefox 159.0.1 build `20261102144711`, nixpkgs `/nix/store/wa9kz0gcy4wgakdv28p7i4jc7xkcbbky-source`, home-manager `/nix/store/8sp96qrpjlzhmfvhr94z8k0yq03mszk8-source`.
 
 - VMs, all exit 0. `test-home-manager-vm.sh` activated a profile whose navbar border computed `7px`, the configured `--tf-border-width`. `test-nixos-autoconfig-vm.sh` and `test-nixos-prefs-vm.sh` passed. The prefs VM kept a seeded profile at Nova effective false. `test-nixos-update-vm.sh` printed `NixOS update/migration VM scenarios passed`.
 - Static and fixture checks used `~/.cache/textfox-css-venv`. The rule ledger, unobserved-disposition, home-manager input, cascade-order, and pref-parity checks passed. So did the fixtures for the rule ledger, CSS inventory, variable inventory, expanded selectors, selector evidence, selector atoms, unobserved dispositions, the about-page index, Firefox variable source, cascade order, context-icon source, and pref parity. `test-manual-install-files.py` passed all 19 cases. `node tools/firefox-chrome/test-nixos-update.js` passed all 22 scenarios. `check-nixos-update-exhaustive.js --depth 4` reported no new violations. `nixfmt-tree --ci` formatted 15 Nix files and changed 0. `git diff --check` exited 0.
@@ -1283,7 +1283,7 @@ Bounds. Nix inside the VM is the multi-user daemon, Nix 2.35.6. A non-login shel
 
 Decision: Nova support is not claimed. `browser.nova.enabled` stays false on every path and the README warning stays (V1). T19 stays blocked because it runs only after a claim.
 
-Evidence base: T16's full matrix at `8fc586b`, plus T17. `git diff 8fc586b HEAD -- chrome nix user.js tf-install.sh tf-uninstall.sh flake.nix` is empty, so no theme or delivery file changed after that run. An independent review (a separate agent given SPEC.md, this file and the test scripts, not this verdict) reached the same gate results.
+Evidence base: T16's full matrix at `e158586`, plus T17. `git diff e158586 HEAD -- chrome nix user.js tf-install.sh tf-uninstall.sh flake.nix` is empty, so no theme or delivery file changed after that run. An independent review (a separate agent given SPEC.md, this file and the test scripts, not this verdict) reached the same gate results.
 
 | Gate | Result | Evidence |
 |---|---|---|
@@ -1550,16 +1550,16 @@ Decision: conditional. The evidence supports Nova support on Firefox 159.0 and 1
 
 Why 159.x only: every painted proof ran on 159.0 or 159.0.1. Firefox 160.0 (build `20261104181552`) had already shipped; the T22 Windows guest updated itself to it. textfox supports only the latest release, and B16 showed that a release can bring new Nova tokens that only paint on some platforms.
 
-### Re-runs at HEAD (`cf45649`)
+### Re-runs at HEAD (`99e235f`)
 
-The review found proofs older than the theme files they cover. B16 (`a957422`) changed `chrome/browser.css` after the last T20 and T21 runs. T21 (`640233c`) changed `chrome/defaults.css`, which affects the Nix `border.transition` option, and no option check had run since. Re-run on Firefox 159.0 build `20261022150525`, Linux Wayland:
+The review found proofs older than the theme files they cover. B16 (`f30d25b`) changed `chrome/browser.css` after the last T20 and T21 runs. T21 (`1f860d5`) changed `chrome/defaults.css`, which affects the Nix `border.transition` option, and no option check had run since. Re-run on Firefox 159.0 build `20261022150525`, Linux Wayland:
 
 - `test-surface-paint-more-live.py` (T20): exit 0. 23 surfaces in both browser Nova states, classic and revamp layouts, defaults and sentinel; the known-bad config fails every one.
 - `test-a11y-paint-live.py` (T21): exit 0, run alone. In each browser Nova state: 6 focus and 2 motion surfaces in `en` and in `he`, 9 RTL surfaces in `he`. Defaults and sentinel pass; each known-bad config fails every surface of its check.
 - `check-option-wiring.py` (25 options), `check-option-parity.py` (6), `check-home-manager-options.py`, `check-config-defaults.py`, `test-nixos-generated-live.py`: exit 0. Sources: nixpkgs `/nix/store/wa9kz0gcy4wgakdv28p7i4jc7xkcbbky-source`, home-manager `/nix/store/8sp96qrpjlzhmfvhr94z8k0yq03mszk8-source`. `check-option-parity.py` needs `MOZ_HEADLESS=1` without a display.
 - `check-pref-parity.py` (5 preferences), `test-pref-parity.py`, `test-nixos-update.js` (22), `test-manual-install-files.py` (19), `nixfmt-tree --ci` (0 changed), `git diff --check`: exit 0.
 
-T15's `test-surface-paint-live.py` ran at this tree in T23 (Linux Wayland, X11, 159.0.1). The macOS and Windows runs are at `a957422`; no theme file changed after them. The NixOS and home-manager VM suites last ran at `8fc586b` (T16) and in T17 and T23. Since then, only CSS changed, and the generated-CSS and option checks above cover that.
+T15's `test-surface-paint-live.py` ran at this tree in T23 (Linux Wayland, X11, 159.0.1). The macOS and Windows runs are at `f30d25b`; no theme file changed after them. The NixOS and home-manager VM suites last ran at `e158586` (T16) and in T17 and T23. Since then, only CSS changed, and the generated-CSS and option checks above cover that.
 
 The first T21 re-run ran next to T20 and stopped with `Failed to write ppm; only 0 of 3072016 bytes written`: the two runs' captures filled the 16 GB `/tmp` tmpfs. Every row it finished matched the expected result. Run the painted suites one at a time.
 
@@ -1760,3 +1760,7 @@ Bounds:
 - The Windows manual path has no tool (`fcntl`). The README points to `about:config`.
 - Home Manager assumes the profile directory equals the profile name, as the existing `home.file` entries already do.
 - Home Manager resets every profile in `textfox.profiles`, including one textfox never ran in, because activation cannot tell. The manual path resets only a profile textfox was installed in. The README's IMPORTANT note says that updating turns Nova on, including over a user's own `false`, and how to turn it off again.
+
+## Commit IDs after the 2026-11-14 history rewrite
+
+Before the first push, the unpublished commits were rewritten to remove a hostname, home-directory paths and a private address from this file. Every rewritten commit got a new ID. IDs quoted in this file, `SPEC.md` and the autoconfig protocol skill were updated to the new IDs. IDs inside commit messages were not, and refer to the pre-rewrite commits. To find a quoted ID's commit, match on its subject line: `git log --format='%h %s' | grep '<subject>'`.
