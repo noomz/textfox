@@ -41,7 +41,9 @@ def main():
     parser.add_argument('--border')
     parser.add_argument('--port', type=int, default=2828)
     parser.add_argument('--output', default='/tmp/shared/preferences.json')
-    parser.add_argument('--expect-nova', choices=('on', 'off'), default='off')
+    # default: no user value, Firefox's own default applies (T25: textfox no longer
+    # assigns browser.nova.enabled and clears the false it persisted earlier).
+    parser.add_argument('--expect-nova', choices=('on', 'off', 'default'), default='default')
     parser.add_argument('--defaults-css', default='/tmp/shared/defaults.css')
     parser.add_argument('--expect-vars', default='{}')
     parser.add_argument('--expect-prefs', default='{}')
@@ -103,7 +105,10 @@ def main():
     if args.border is not None and result['navbarBorder'] != args.border:
         raise RuntimeError('configured navbar border not applied')
     nova = result['preferences']['browser.nova.enabled']
-    if nova['effective'] != (args.expect_nova == 'on'):
+    if args.expect_nova == 'default':
+        if nova['user'] or nova['effective'] != nova['default']:
+            raise RuntimeError(f'browser Nova is not at Firefox\'s default: {nova}')
+    elif nova['effective'] != (args.expect_nova == 'on'):
         raise RuntimeError('browser Nova preference did not match expectation')
     # Off must come from a user value textfox set, or from a build whose own
     # default is already off; anything else means the probe read the wrong pref.

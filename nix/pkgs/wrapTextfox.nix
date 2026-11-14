@@ -119,10 +119,52 @@ let
     pref("toolkit.legacyUserProfileCustomizations.stylesheets", true);
     pref("svg.context-properties.content.enabled", true);
     pref("layout.css.has-selector.enabled", true);
-    // textfox does not support the new Nova UI yet
-    pref("browser.nova.enabled", false);
     // macOS: the OS-drawn native context menu ignores userChrome.css
     pref("widget.macos.native-context-menus", false);
+    // textfox supports Nova now and no longer assigns browser.nova.enabled. Earlier
+    // generations persisted it false as a user value, which Firefox keeps after the
+    // assignment is gone. Clear that once, behind the marker that
+    // tools/clear-nova-pref.py also writes, so a value the user sets later stays.
+    // Only a boolean false is cleared: textfox never wrote anything else. The save
+    // makes the marker durable at once; without it a crash before Firefox's own
+    // save would repeat the clear on a later start.
+    // A user.js that assigns Nova (an old manual textfox block, or the user's own
+    // line) sets it again on every start, and a marker set now would block every
+    // later clear, so nothing happens until user.js stops assigning it.
+    function userJsAssignsNova() {
+      var file = Services.dirsvc.get("ProfD", Ci.nsIFile);
+      file.append("user.js");
+      if (!file.exists()) {
+        return false;
+      }
+      var fis = Cc["@mozilla.org/network/file-input-stream;1"].createInstance(Ci.nsIFileInputStream);
+      fis.init(file, 0x01, 0444, 0);
+      var cis = Cc["@mozilla.org/intl/converter-input-stream;1"].createInstance(Ci.nsIConverterInputStream);
+      cis.init(fis, "UTF-8", 0, Ci.nsIConverterInputStream.DEFAULT_REPLACEMENT_CHARACTER);
+      var text = "";
+      var str = {};
+      while (cis.readString(65536, str) != 0) {
+        text += str.value;
+      }
+      cis.close();
+      return /^[ \t]*user_pref\([ \t]*"browser\.nova\.enabled"[ \t]*,/m.test(text);
+    }
+    try {
+      if (!Services.prefs.getBoolPref("textfox.nova.cleared", false) && !userJsAssignsNova()) {
+        var novaFalse = false;
+        try {
+          novaFalse = Services.prefs.prefHasUserValue("browser.nova.enabled") &&
+            !Services.prefs.getBoolPref("browser.nova.enabled", true);
+        } catch (e) {} // not a boolean: not a value textfox wrote
+        if (novaFalse) {
+          Services.prefs.clearUserPref("browser.nova.enabled");
+        }
+        Services.prefs.setBoolPref("textfox.nova.cleared", true);
+        Services.prefs.savePrefFile(null);
+      }
+    } catch (e) {
+      Cu.reportError("textfox: could not clear the retired browser.nova.enabled value: " + e);
+    }
     // Opt-in escape hatch for a profile textfox cannot prove it owns: mismatched
     // owned files are copied aside, then converged. Off by default.
     var forceAdopt = false;

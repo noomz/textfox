@@ -22,10 +22,32 @@ _a firefox theme for the tui enthusiast_
 
 ## Installation
 
-> [!WARNING]
-> textfox does not yet support Firefox's new "Nova" UI. Until it does, set
-> `browser.nova.enabled` to `false` in `about:config` (the provided `user.js`
-> and the Nix modules do this for you), then restart Firefox.
+> [!NOTE]
+> textfox supports Firefox's new "Nova" UI as well as the classic one, and no
+> longer sets `browser.nova.enabled`. Nova is checked on Firefox 159 and 160 with
+> textfox's default colors and a custom palette: on Linux for the toolbars, tabs,
+> sidebar, split view, private windows, menus, the extensions and all-tabs
+> panels, the new tab and `about:` pages, plus keyboard focus, right-to-left and
+> reduced motion; on macOS and Windows for the navigation bar, URL bar, tabs,
+> menus, findbar and new tab. Other panels, Firefox themes (lwtheme) and GPU
+> rendering are not checked yet.
+>
+> Earlier textfox versions turned Nova off. Updating gives Firefox's own setting
+> back once:
+>
+> - Installation script: run `sh tf-install.sh` again with Firefox closed. The
+>   reset needs `python3`. Without it, the script tells you to reset
+>   `browser.nova.enabled` in `about:config` yourself.
+> - Home Manager: the next activation resets it. If Firefox is running, it
+>   warns and resets on a later activation.
+> - NixOS: Firefox resets it on its next start.
+> - Manual copy: copy the new `user.js` first (the old one sets Nova off on every
+>   start), then close Firefox and run `python3 tools/clear-nova-pref.py <profile>`,
+>   or reset `browser.nova.enabled` in `about:config`. The script needs macOS or
+>   Linux; on Windows, use `about:config`.
+>
+> The reset happens once per profile. If you prefer the classic UI, set
+> `browser.nova.enabled` to `false` afterwards and textfox keeps it.
 
 ### Installation script
 

@@ -409,11 +409,34 @@ function makeContext(sandbox, options = {}) {
         return new FsFile(sandbox.profileDir);
       },
     },
+    // User values only: the default branch is not modelled. options.prefs is the
+    // profile's prefs.js as Firefox loaded it; the script's changes land in it.
+    // savePrefFile is a mutating step (a crash can fall before it) and hands the
+    // saved state to options.onSave.
     prefs: {
       getBoolPref(name, fallback) {
-        if (Object.prototype.hasOwnProperty.call(prefs, name)) return prefs[name];
+        if (Object.prototype.hasOwnProperty.call(prefs, name)) {
+          if (typeof prefs[name] !== 'boolean') throw new Error(`NS_ERROR_UNEXPECTED: ${name} is not a boolean`);
+          return prefs[name];
+        }
         if (arguments.length > 1) return fallback;
         throw new Error(`no such pref: ${name}`);
+      },
+      prefHasUserValue(name) {
+        return Object.prototype.hasOwnProperty.call(prefs, name);
+      },
+      clearUserPref(name) {
+        delete prefs[name];
+      },
+      setBoolPref(name, value) {
+        assert.equal(typeof value, 'boolean');
+        prefs[name] = value;
+      },
+      savePrefFile(file) {
+        assert.equal(file, null, 'autoconfig must save the profile\'s own prefs.js');
+        sandbox.step('savePrefs', path.join(sandbox.profileDir, 'prefs.js'));
+        sandbox.run.saves = (sandbox.run.saves || 0) + 1;
+        if (options.onSave) options.onSave({ ...prefs });
       },
     },
   };
@@ -442,7 +465,13 @@ function install(sandbox, options = {}) {
   sandbox.injection = null;
   let thrown = null;
   try {
-    vm.runInNewContext(codeFor(options.storeAbs), makeContext(sandbox, options), { timeout: 30000 });
+    // The profile's prefs.js persists across runs in one sandbox, as it does in a
+    // profile. A run that completes keeps its changes (Firefox saves them on exit);
+    // options.prefs adds to it for this run.
+    sandbox.savedPrefs = sandbox.savedPrefs || {};
+    const prefs = { ...sandbox.savedPrefs, ...(options.prefs || {}) };
+    vm.runInNewContext(codeFor(options.storeAbs), makeContext(sandbox, { ...options, prefs }), { timeout: 30000 });
+    sandbox.savedPrefs = prefs;
   } catch (error) {
     thrown = error;
   }
@@ -567,11 +596,70 @@ test('prefs are set before any profile write', (sandbox) => {
     'toolkit.legacyUserProfileCustomizations.stylesheets',
     'svg.context-properties.content.enabled',
     'layout.css.has-selector.enabled',
-    'browser.nova.enabled',
     'widget.macos.native-context-menus',
   ]);
   assert.deepEqual(run.prefs.find(([name]) => name === 'widget.macos.native-context-menus'), ['widget.macos.native-context-menus', false]);
-  assert.deepEqual(run.prefs.find(([name]) => name === 'browser.nova.enabled'), ['browser.nova.enabled', false]);
+  // T25: Nova is no longer assigned; the one-shot clear saves before any profile write.
+  assert.equal(run.prefs.some(([name]) => name === 'browser.nova.enabled'), false);
+  assert.match(run.steps[0], /^savePrefs /, `the clear must be saved first: ${JSON.stringify(run.steps)}`);
+});
+
+test('the persisted Nova false is cleared once, marked and saved at once', (sandbox) => {
+  const gen = writeStore(sandbox, GENERATION_A);
+  const saved = [];
+  sandbox.savedPrefs = { 'browser.nova.enabled': false, 'tf.sentinel': true };
+  const run = install(sandbox, { storeAbs: gen.abs, onSave: (p) => saved.push(p) });
+  assert.deepEqual(run.errors, []);
+  assert.deepEqual(saved, [{ 'tf.sentinel': true, 'textfox.nova.cleared': true }],
+    'the save must carry the cleared value and the marker');
+  // A value the user sets after the clear is kept by every later start.
+  sandbox.savedPrefs['browser.nova.enabled'] = false;
+  const again = install(sandbox, { storeAbs: gen.abs, onSave: (p) => saved.push(p) });
+  assert.equal(sandbox.savedPrefs['browser.nova.enabled'], false, 'a user false after the marker was cleared');
+  assert.equal(saved.length, 1, 'a marked profile must not be saved again');
+  assert.deepEqual(again.steps, []);
+});
+
+test('a Nova value other than false is kept, and the marker still set', (sandbox) => {
+  const gen = writeStore(sandbox, GENERATION_A);
+  sandbox.savedPrefs = { 'browser.nova.enabled': true };
+  install(sandbox, { storeAbs: gen.abs });
+  assert.deepEqual(sandbox.savedPrefs, { 'browser.nova.enabled': true, 'textfox.nova.cleared': true });
+});
+
+test('a user.js that still assigns Nova defers the clear and the marker', (sandbox) => {
+  const gen = writeStore(sandbox, GENERATION_A);
+  // A pre-T25 manual install moved to NixOS: its block sets the false on every start.
+  profileFile(sandbox, 'user.js', '// >>> textfox managed prefs >>>\nuser_pref("browser.nova.enabled", false);\n// <<< textfox managed prefs <<<\n');
+  sandbox.savedPrefs = { 'browser.nova.enabled': false };
+  const run = install(sandbox, { storeAbs: gen.abs });
+  assert.deepEqual(run.errors, []);
+  assert.deepEqual(sandbox.savedPrefs, { 'browser.nova.enabled': false }, 'no clear, no marker while user.js assigns Nova');
+  assert.equal(run.steps.some((step) => step.startsWith('savePrefs ')), false);
+  // Once user.js stops assigning it, the next start clears.
+  profileFile(sandbox, 'user.js', 'user_pref("some.other", 1);\n');
+  install(sandbox, { storeAbs: gen.abs });
+  assert.deepEqual(sandbox.savedPrefs, { 'textfox.nova.cleared': true });
+});
+
+test('a non-boolean Nova value is left alone and the marker set, without an error', (sandbox) => {
+  const gen = writeStore(sandbox, GENERATION_A);
+  sandbox.savedPrefs = { 'browser.nova.enabled': 'odd' };
+  const run = install(sandbox, { storeAbs: gen.abs });
+  assert.deepEqual(run.errors, []);
+  assert.deepEqual(sandbox.savedPrefs, { 'browser.nova.enabled': 'odd', 'textfox.nova.cleared': true });
+});
+
+test('a refused install still clears Nova; the clear touches no chrome file', (sandbox) => {
+  const gen = writeStore(sandbox, GENERATION_A);
+  profileFile(sandbox, 'chrome/userChrome.css', '/* hand-written */\n');
+  sandbox.savedPrefs = { 'browser.nova.enabled': false };
+  const before = chromeListing(sandbox);
+  const run = install(sandbox, { storeAbs: gen.abs });
+  assert.equal(hasRefusal(run), true);
+  assert.deepEqual(run.steps.map((step) => step.split(' ')[0]), ['savePrefs']);
+  assert.deepEqual(chromeListing(sandbox), before);
+  assert.deepEqual(sandbox.savedPrefs, { 'textfox.nova.cleared': true });
 });
 
 test('second run is a no-op: no writes, no restart, no errors', (sandbox) => {

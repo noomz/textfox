@@ -50,8 +50,9 @@ def main():
         try:
             m = connect(port)
             m.set_context('chrome')
-            meta = m.execute_script("return {profile:Services.dirsvc.get('ProfD',Ci.nsIFile).path,version:Services.appinfo.version,build:Services.appinfo.appBuildID,nova:Services.prefs.getBoolPref('browser.nova.enabled')}", sandbox='system')
-            if process.poll() is not None or Path(meta['profile']).resolve() != profile.resolve() or meta['nova']:
+            meta = m.execute_script("return {profile:Services.dirsvc.get('ProfD',Ci.nsIFile).path,version:Services.appinfo.version,build:Services.appinfo.appBuildID,novaUser:Services.prefs.prefHasUserValue('browser.nova.enabled')}", sandbox='system')
+            # T25: textfox assigns no Nova value, so a fresh profile keeps Firefox's default.
+            if process.poll() is not None or Path(meta['profile']).resolve() != profile.resolve() or meta['novaUser']:
                 raise RuntimeError(f'unexpected Firefox process, profile, or Nova preference: {meta}')
             deadline = time.monotonic() + 20
             while not m.execute_script('return gBrowserInit.delayedStartupFinished', sandbox='system'):

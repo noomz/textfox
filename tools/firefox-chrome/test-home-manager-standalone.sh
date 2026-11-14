@@ -333,8 +333,9 @@ assert_installed() {
     fail 'config.css does not hide vertical tabs'
   grep -q -- '--tf-display-titles: none;' "$config_css" ||
     fail 'config.css does not hide titles'
-  grep -qxF 'user_pref("browser.nova.enabled", false);' "$user_js" ||
-    fail 'user.js does not disable browser Nova'
+  if grep -qF 'user_pref("browser.nova.enabled"' "$user_js"; then
+    fail 'user.js still assigns the retired browser Nova gate'
+  fi
   grep -qxF 'user_pref("widget.macos.native-context-menus", false);' "$user_js" ||
     fail 'user.js does not keep macOS context menus in Firefox'
   python3 - "$user_chrome" <<'PY' || fail 'userChrome.css does not import config.css after defaults.css'
@@ -432,8 +433,8 @@ import json, sys
 prefs = json.load(open(sys.argv[1]))["preferences"]
 nova = prefs["browser.nova.enabled"]
 newtab = prefs["browser.newtabpage.activity-stream.nova.enabled"]
-if nova["effective"] is not False or nova["user"] is not True:
-    raise SystemExit(f"browser Nova {nova}")
+if nova["user"] is not False or nova["effective"] != nova["default"]:
+    raise SystemExit(f"browser Nova is not at Firefox's default {nova}")
 if newtab["user"] is not False or newtab["effective"] is not True:
     raise SystemExit(f"new-tab Nova {newtab}")
 PY
@@ -446,7 +447,7 @@ seeded=$work/seeded
 seeded_profile=$(profile_dir "$seeded")
 mkdir -p "$seeded_profile/chrome"
 printf '%s\n' \
-  'user_pref("browser.nova.enabled", true);' \
+  'user_pref("browser.nova.enabled", false);' \
   'user_pref("browser.shell.checkDefaultBrowser", false);' \
   'user_pref("tf.test.sentinel", true);' >"$seeded_profile/prefs.js"
 printf 'kept by the user' >"$seeded_profile/chrome/user-notes.txt"
@@ -475,8 +476,11 @@ firefox_check "$seeded_gen" "$seeded_profile" "$work/seeded.json" \
 assert_newtab_default "$work/seeded.json"
 grep -qxF 'user_pref("tf.test.sentinel", true);' "$seeded_profile/prefs.js" ||
   fail 'prefs.js lost the sentinel after Firefox shut down'
-grep -qxF 'user_pref("browser.nova.enabled", false);' "$seeded_profile/prefs.js" ||
-  fail 'prefs.js did not persist Nova off after Firefox shut down'
+grep -qxF 'user_pref("textfox.nova.cleared", true);' "$seeded_profile/prefs.js" ||
+  fail 'prefs.js did not persist textfox.nova.cleared after Firefox shut down'
+if grep -qF 'user_pref("browser.nova.enabled"' "$seeded_profile/prefs.js"; then
+  fail 'the Nova false an earlier textfox persisted survived activation'
+fi
 assert_notes "$seeded_profile"
 
 echo 'Fresh home: one activation'
@@ -495,8 +499,9 @@ test ! -e "$fresh_profile/chrome/user-notes.txt" ||
   fail 'fresh profile gained the seeded user file'
 firefox_check "$fresh_gen" "$fresh_profile" "$work/fresh.json"
 assert_newtab_default "$work/fresh.json"
-grep -qxF 'user_pref("browser.nova.enabled", false);' "$fresh_profile/prefs.js" ||
-  fail 'fresh prefs.js did not persist Nova off after Firefox shut down'
+if grep -qF 'user_pref("browser.nova.enabled"' "$fresh_profile/prefs.js"; then
+  fail 'fresh prefs.js gained a Nova user value'
+fi
 if grep -q 'tf.test.sentinel' "$fresh_profile/prefs.js"; then
   fail 'fresh prefs.js contains the seeded sentinel'
 fi

@@ -8,9 +8,12 @@ and missing or different in the other is a delivery path that silently keeps a
 different state, and removing a disabled-Nova assignment from one file is not
 proof that the other still disables it.
 
-`browser.nova.enabled` is additionally pinned: V1 keeps Nova disabled and support
-unclaimed, so both files must set it to false until the gate is deliberately
-retired and this check updated with it.
+`browser.nova.enabled` must be absent from both files (T25). Any assignment pins
+it as a user value: `false` disables Nova, and `true` is not Firefox's default.
+The persisted `false` from earlier installs is removed once by
+`tools/clear-nova-pref.py` (manual, home-manager) and by the autoconfig's
+`clearUserPref` behind the `textfox.nova.cleared` marker (NixOS), neither of
+which this check parses.
 
 `widget.macos.native-context-menus` is pinned false as well (§B B9, V10): when it
 is true, macOS draws the page context menu itself and textfox's menu CSS never
@@ -62,12 +65,10 @@ def compare(user_js, wrap):
     if differing:
         raise ValueError(f"preferences differ between the delivery artifacts: {differing}")
 
-    if NOVA not in delivered:
-        raise ValueError(f"the Nova gate is missing from both delivery artifacts")
-    if delivered[NOVA] is not False:
+    if NOVA in delivered:
         raise ValueError(
-            f"{NOVA} is {delivered[NOVA]!r}; V1 keeps Nova disabled until the "
-            "support gates pass, so retire this check together with the gate"
+            f"{NOVA} is assigned {delivered[NOVA]!r}; the Nova gate is retired (T25), and any "
+            "assignment pins it instead of leaving Firefox's default"
         )
     if delivered.get(NATIVE_MENUS) is not False:
         raise ValueError(

@@ -7,6 +7,10 @@ to reach the intended preference state through the delivered migration, and V2
 requires the user's own settings to keep applying. The existing-profile case
 launches Firefox twice, so the result is a persisted state rather than a
 first-read accident.
+
+Since T25 textfox assigns no Nova value: a fresh install leaves Firefox's
+default, and a Nova value the user chose before textfox stays. Clearing the false
+an earlier textfox persisted is `test-clear-nova-live.py`'s manual case.
 """
 import json
 import os
@@ -144,8 +148,8 @@ def fresh_profile():
         configure(profile, port)
         meta = check(True, profile, port)
         nova = meta['preferences']['browser.nova.enabled']
-        if nova['effective'] is not False or nova['user'] is not True:
-            raise RuntimeError(f'fresh install did not disable Nova as a user preference: {nova}')
+        if nova['user'] or nova['effective'] != nova['default']:
+            raise RuntimeError(f'fresh install gave Nova a value instead of Firefox\'s default: {nova}')
         print(json.dumps({'case': 'fresh-profile passed'}), flush=True)
 
 
@@ -183,14 +187,16 @@ def existing_profile():
             nova = meta['preferences']['browser.nova.enabled']
             sentinel = meta['preferences']['tf.test.sentinel']
             user_pref = meta['preferences']['tf.test.userjs']
-            if nova['effective'] is not False or nova['user'] is not True:
-                raise RuntimeError(f'{label}: Nova is not disabled by a user preference: {nova}')
+            # Firefox drops a user value equal to the default when it saves, so
+            # only the effective value is the user's choice here.
+            if nova['effective'] is not True:
+                raise RuntimeError(f'{label}: the user\'s own Nova true did not stay: {nova}')
             if sentinel['effective'] is not True:
                 raise RuntimeError(f'{label}: the profile lost its own preference: {sentinel}')
             if user_pref['effective'] is not True:
                 raise RuntimeError(f'{label}: the user\'s user.js preference stopped applying: {user_pref}')
-        if persisted['browser.nova.enabled'] is not False:
-            raise RuntimeError(f'prefs.js did not persist the migrated Nova value: {persisted}')
+        if persisted['browser.nova.enabled'] is False:
+            raise RuntimeError(f'prefs.js did not keep the user\'s Nova value: {persisted}')
         if persisted['tf.test.sentinel'] is not True:
             raise RuntimeError(f'prefs.js dropped the user\'s own preference: {persisted}')
         print(json.dumps({'case': 'existing-profile passed', 'prefs.js': persisted}), flush=True)

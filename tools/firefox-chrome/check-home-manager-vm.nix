@@ -54,7 +54,7 @@ let
               if [ ! -e "$profile/prefs.js" ]; then
                 mkdir -p "$profile/chrome"
                 printf '%s\n' \
-                  'user_pref("browser.nova.enabled", true);' \
+                  'user_pref("browser.nova.enabled", false);' \
                   'user_pref("browser.shell.checkDefaultBrowser", false);' \
                   'user_pref("tf.test.sentinel", true);' > "$profile/prefs.js"
                 printf 'kept by the user' > "$profile/chrome/user-notes.txt"
@@ -86,21 +86,23 @@ let
               if ${pkgs.python3}/bin/python3 ${./probe-vm-preferences.py} \
                 --profile /home/probe/.config/mozilla/firefox/test --border 7px \
                 --expect-vars '{"--tf-font-size":"17px","--tf-border-width":"7px","--tf-display-vertical-tabs":"none","--tf-display-titles":"none"}' \
-                --expect-prefs '{"shyfox.enable.context.menu.icons":true,"shyfox.enable.ext.mono.toolbar.icons":false}' \
+                --expect-prefs '{"shyfox.enable.context.menu.icons":true,"shyfox.enable.ext.mono.toolbar.icons":false,"textfox.nova.cleared":true}' \
                 --preserve-pref 'tf.test.sentinel=true' \
                 --preserve-pref 'browser.shell.checkDefaultBrowser=false' \
                 --preserve-file '/home/probe/.config/mozilla/firefox/test/chrome/user-notes.txt=kept by the user'; then
                 # Firefox rewrites prefs.js from its live user values on shutdown;
-                # the sentinel must survive that and Nova must persist as off.
+                # the sentinel and the marker must survive that, and the Nova false an
+                # earlier textfox persisted must stay cleared (T25).
                 systemctl stop firefox-probe
                 prefs=/home/probe/.config/mozilla/firefox/test/prefs.js
                 cp "$prefs" /tmp/shared/persisted-prefs.js
                 if grep -qxF 'user_pref("tf.test.sentinel", true);' "$prefs" &&
-                   grep -qxF 'user_pref("browser.nova.enabled", false);' "$prefs"; then
+                   grep -qxF 'user_pref("textfox.nova.cleared", true);' "$prefs" &&
+                   ! grep -qF 'user_pref("browser.nova.enabled"' "$prefs"; then
                   echo PASS > /tmp/shared/result
                 else
                   echo FAIL > /tmp/shared/result
-                  echo 'prefs.js lost the sentinel or did not persist Nova off after shutdown' > /tmp/shared/probe-error.txt
+                  echo 'prefs.js lost the sentinel or marker, or kept a Nova value, after shutdown' > /tmp/shared/probe-error.txt
                 fi
               else
                 echo FAIL > /tmp/shared/result

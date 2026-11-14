@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """Run the real NixOS delivery in a disposable profile Firefox has already used.
 
-The NixOS path disables Nova from `defaults/pref/autoconfig.js`, not from a
-`user.js`, so the question this answers is whether an autoconfig `pref()` beats a
-`browser.nova.enabled` value the profile already persisted. The profile seeded
-here holds Nova enabled and a sentinel preference in `prefs.js`, plus unrelated
-files. Firefox is the wrapped binary the module installs, run under nix-portable;
+Earlier textfox generations disabled Nova from `defaults/pref/autoconfig.js`, and
+Firefox persisted that `false` in `prefs.js`. Since T25 the autoconfig assigns no
+Nova value and clears that persisted `false` once, behind `textfox.nova.cleared`.
+The profile seeded here holds the earlier false and a sentinel preference in
+`prefs.js`, plus unrelated files; Nova must come back at Firefox's default. Firefox is the wrapped binary the module installs, run under nix-portable;
 nothing is installed into a system.
 
 Three launches. The first is the install run: the autoconfig copies the generated
@@ -38,7 +38,7 @@ from ff_inspect import connect
 ROOT = Path(__file__).resolve().parents[2]
 RUNNER = ROOT / 'tools/firefox-chrome/nix-portable-run.sh'
 SENTINEL_PREF = 'user_pref("tf.test.sentinel", true);'
-NOVA_PREFS = ('browser.nova.enabled', 'tf.test.sentinel')
+NOVA_PREFS = ('browser.nova.enabled', 'tf.test.sentinel', 'textfox.nova.cleared')
 
 
 def run_nix(args, env, timeout=600, capture=True):
@@ -189,7 +189,7 @@ def persisted_prefs(profile):
 def seed(profile, port):
     (profile / 'prefs.js').write_text(
         '// Mozilla User Preferences\n'
-        'user_pref("browser.nova.enabled", true);\n'
+        'user_pref("browser.nova.enabled", false);\n'
         'user_pref("browser.newtabpage.activity-stream.nova.enabled", true);\n'
         f'{SENTINEL_PREF}\n'
         f'user_pref("marionette.port", {port});\n'
@@ -202,8 +202,10 @@ def assert_state(label, state, profile):
         raise RuntimeError(f"{label}: unexpected profile {state['profile']}")
     nova = state['preferences']['browser.nova.enabled']
     sentinel = state['preferences']['tf.test.sentinel']
-    if nova['effective'] is not False or nova['user'] is not True:
-        raise RuntimeError(f'{label}: autoconfig did not disable Nova over the persisted value: {nova}')
+    if nova['user'] or nova['effective'] != nova['default']:
+        raise RuntimeError(f'{label}: the persisted Nova false was not cleared to the default: {nova}')
+    if state['preferences']['textfox.nova.cleared']['effective'] is not True:
+        raise RuntimeError(f"{label}: textfox.nova.cleared is not set")
     if sentinel['effective'] is not True:
         raise RuntimeError(f"{label}: the profile's own preference stopped applying: {sentinel}")
     if state['navbarBorderWidth'] != '11px':
@@ -236,13 +238,13 @@ def main():
             if process.poll() is not None:
                 raise RuntimeError('Firefox exited during the preference read')
             assert_state('first live start', first, profile)
-        print('first live start: Nova off, sentinel kept, CSS applied', flush=True)
+        print('first live start: Nova at default, marker set, sentinel kept, CSS applied', flush=True)
 
         if (profile / 'user.js').exists():
             raise RuntimeError('a user.js appeared: the autoconfig path must not write one')
         persisted = persisted_prefs(profile)
-        if persisted['browser.nova.enabled'] is not False:
-            raise RuntimeError(f'prefs.js did not persist the migrated Nova value: {persisted}')
+        if persisted['browser.nova.enabled'] is not None or persisted['textfox.nova.cleared'] is not True:
+            raise RuntimeError(f'prefs.js kept a Nova value or lost the marker: {persisted}')
         if persisted['tf.test.sentinel'] is not True:
             raise RuntimeError(f"prefs.js dropped the profile's own preference: {persisted}")
 

@@ -16,13 +16,13 @@ CHECK = ROOT / "tools" / "firefox-chrome" / "check-pref-parity.py"
 BASE_USER_JS = """\
 // >>> textfox managed prefs >>>
 user_pref("toolkit.legacyUserProfileCustomizations.stylesheets", true);
-user_pref("browser.nova.enabled", false);
+user_pref("svg.context-properties.content.enabled", true);
 user_pref("widget.macos.native-context-menus", false);
 // <<< textfox managed prefs <<<
 """
 BASE_WRAP = """\
     pref("toolkit.legacyUserProfileCustomizations.stylesheets", true);
-    pref("browser.nova.enabled", false);
+    pref("svg.context-properties.content.enabled", true);
     pref("widget.macos.native-context-menus", false);
 """
 
@@ -54,29 +54,30 @@ def main() -> int:
     expect_failure(
         "a preference missing from the autoconfig",
         BASE_USER_JS,
-        BASE_WRAP.replace('    pref("browser.nova.enabled", false);\n', ""),
+        BASE_WRAP.replace('    pref("svg.context-properties.content.enabled", true);\n', ""),
         "missing preferences",
     )
     expect_failure(
         "a preference missing from user.js",
         BASE_USER_JS.replace(
-            'user_pref("browser.nova.enabled", false);\n', ""),
+            'user_pref("svg.context-properties.content.enabled", true);\n', ""),
         BASE_WRAP,
         "missing preferences",
     )
     expect_failure(
         "the same preference with two values",
         BASE_USER_JS,
-        BASE_WRAP.replace('pref("browser.nova.enabled", false);',
-                          'pref("browser.nova.enabled", true);'),
+        BASE_WRAP.replace('pref("svg.context-properties.content.enabled", true);',
+                          'pref("svg.context-properties.content.enabled", false);'),
         "preferences differ",
     )
-    expect_failure(
-        "a Nova gate flipped in both files",
-        BASE_USER_JS.replace('"browser.nova.enabled", false', '"browser.nova.enabled", true'),
-        BASE_WRAP.replace('"browser.nova.enabled", false', '"browser.nova.enabled", true'),
-        "V1 keeps Nova disabled",
-    )
+    for value in ("false", "true"):
+        expect_failure(
+            f"the retired Nova gate assigned {value} in both files",
+            BASE_USER_JS.replace("// <<<", f'user_pref("browser.nova.enabled", {value});\n// <<<'),
+            BASE_WRAP + f'    pref("browser.nova.enabled", {value});\n',
+            "the Nova gate is retired",
+        )
     expect_failure(
         "native macOS context menus left on in both files",
         BASE_USER_JS.replace('"widget.macos.native-context-menus", false',
@@ -93,7 +94,7 @@ def main() -> int:
     )
     expect_failure(
         "a preference assigned twice in one artifact",
-        BASE_USER_JS + 'user_pref("browser.nova.enabled", true);\n',
+        BASE_USER_JS + 'user_pref("svg.context-properties.content.enabled", false);\n',
         BASE_WRAP,
         "more than once",
     )

@@ -7,9 +7,10 @@ assignment is gone, so retiring the assignment is not enough to give the profile
 Firefox's default back (V3). `user.js` can set a preference but cannot clear one,
 so the manual and home-manager paths clear it here, outside Firefox.
 
-Run it only after the profile's `user.js` carries the retired textfox block. A
-block that still assigns Nova would write the value back on the next start, and
-the marker below would then stop every later clear, so that case is refused.
+Run it only after the profile's `user.js` no longer assigns Nova. A `user.js`
+that still does (an old textfox block, a pre-marker copy without markers, or the
+user's own line) writes the value back on every start, and the marker below would
+then stop every later clear, so an unmarked profile in that state is refused.
 
 Editing `prefs.js` while Firefox runs is unsafe: Firefox rewrites the file from
 memory and would put the value back. The script therefore takes Firefox's own
@@ -25,8 +26,11 @@ Refresh Firefox, or deleting `prefs.js` removes it, and a later run would then
 clear a `false` the user chose. A run that is refused or interrupted writes no
 marker and can simply be repeated.
 
-Exit status: 0 cleared or already cleared, 75 Firefox holds the profile (close
-it and run again), 1 refused or failed.
+`--check-lock` only tests the lock: it touches nothing and skips the user.js
+check, so an installer can refuse to start while Firefox holds the profile.
+
+Exit status: 0 cleared or already cleared (with `--check-lock`: lock free), 75
+Firefox holds the profile (close it and run again), 1 refused or failed.
 """
 import argparse
 import errno
@@ -41,8 +45,6 @@ import time
 PREF = 'browser.nova.enabled'
 MARKER = 'textfox.nova.cleared'
 MARKER_LINE = f'user_pref("{MARKER}", true);\n'.encode()
-BLOCK_BEGIN = '// >>> textfox managed prefs >>>'
-BLOCK_END = '// <<< textfox managed prefs <<<'
 TEMP_PREFIX = 'prefs.js.textfox-'
 EX_TEMPFAIL = 75
 # Files Firefox writes into every profile it has opened.
@@ -70,21 +72,22 @@ def lock_profile(profile):
     return fd
 
 
-def textfox_block_assigns_nova(profile):
-    """Does the textfox block in user.js (through any link) still assign Nova?"""
+def user_js_assigns_nova(profile):
+    """Does user.js (through any link) assign Nova on any line?"""
     try:
         text = (profile / 'user.js').read_text(encoding='utf-8', errors='replace')
     except FileNotFoundError:
         return False
-    inside = False
-    for line in text.split('\n'):
-        if line == BLOCK_BEGIN:
-            inside = True
-        elif line == BLOCK_END:
-            inside = False
-        elif inside and NOVA_ANY.match(line):
-            return True
-    return False
+    return any(NOVA_ANY.match(line) for line in text.split('\n'))
+
+
+def already_marked(profile):
+    """Read-only look at prefs.js for the marker; clear() checks again under the lock."""
+    try:
+        data, _ = read_prefs(profile / 'prefs.js')
+    except Refused:
+        return False
+    return data is not None and any(MARKER_TRUE.match(line) for line in data.split(b'\n'))
 
 
 def read_prefs(prefs):
@@ -163,21 +166,24 @@ def clear(profile):
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument('profile', type=Path, help='Firefox profile directory')
-    profile = parser.parse_args().profile
+    parser.add_argument('--check-lock', action='store_true',
+                        help='only test whether Firefox holds the profile; change nothing')
+    args = parser.parse_args()
+    profile = args.profile
     try:
         if not profile.is_dir() or not any((profile / name).exists() for name in PROFILE_FILES):
             raise Refused(f'{profile} is not a Firefox profile (none of {", ".join(PROFILE_FILES)})')
         if profile.stat().st_uid != os.geteuid():
             raise Refused(f'{profile} belongs to uid {profile.stat().st_uid}; run this as that user')
-        if textfox_block_assigns_nova(profile):
-            raise Refused(f'the textfox block in {profile}/user.js still assigns {PREF}; '
-                          'install the retired block first')
+        if not args.check_lock and user_js_assigns_nova(profile) and not already_marked(profile):
+            raise Refused(f'{profile}/user.js still assigns {PREF}; install the retired textfox '
+                          'user.js (or remove that line) first')
         fd = lock_profile(profile)
         if fd is None:
             print(f'Firefox is using {profile}; close it and run this again', file=sys.stderr)
             return EX_TEMPFAIL
         try:
-            return clear(profile)
+            return 0 if args.check_lock else clear(profile)
         finally:
             os.close(fd)
     except Refused as error:

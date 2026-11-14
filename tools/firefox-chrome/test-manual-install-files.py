@@ -27,6 +27,7 @@ SENTINEL_CONFIG = ":root { --tf-border-width: 9px; }\n"
 SENTINEL_USER_JS = 'user_pref("tf.test.sentinel", true);\n'
 BEGIN = "// >>> textfox managed prefs >>>"
 END = "// <<< textfox managed prefs <<<"
+LOGO = r"\__/\___/_/|_|\__/_/  \____/_/|_|"
 
 
 def run(script: Path, profile: Path, answer: str = "") -> str:
@@ -111,7 +112,7 @@ def case_merge_keeps_user_prefs(profile: Path) -> None:
     install(profile)
 
     text = check_pref_block(profile)
-    assert "user_pref(\"browser.nova.enabled\", false);" in text, "merge must disable Nova"
+    assert "browser.nova.enabled" not in text, "merge must not assign the retired Nova gate (T25)"
     assert SENTINEL_USER_JS.strip() in text, "merge removed the user's own preference"
     assert text.startswith("// my settings\n"), "merge moved the user's own text"
     backups = sorted(profile.glob("user.js-*.bak"))
@@ -154,7 +155,7 @@ def case_replaces_stale_block(profile: Path) -> None:
     assert 'user_pref("browser.nova.enabled", true);' not in text, (
         "a stale managed block kept its old value"
     )
-    assert 'user_pref("browser.nova.enabled", false);' in text, "merge did not write the gate"
+    assert "browser.nova.enabled" not in text, "the retired Nova gate is still assigned (T25)"
     assert SENTINEL_USER_JS.strip() in text, "replacing a stale block removed the user's preference"
     print("ok   a stale managed block is replaced, not duplicated")
 
@@ -391,6 +392,97 @@ def case_same_second_backups_stay_apart(profile: Path) -> None:
     print("ok   two backups in one second stay apart")
 
 
+# T25: an earlier textfox install left browser.nova.enabled false in prefs.js.
+OLD_BLOCK = (ROOT / "tools" / "firefox-chrome" / "fixtures" / "user.js-nova-false").read_text()
+NOVA_FALSE = 'user_pref("browser.nova.enabled", false);\n'
+MARKER = 'user_pref("textfox.nova.cleared", true);\n'
+PREFS_SENTINEL = 'user_pref("tf.prefs.sentinel", 7);\n'
+
+
+def old_textfox_profile(profile: Path) -> None:
+    """A profile a pre-T25 textfox was installed in and Firefox then ran."""
+    (profile / "user.js").write_text(SENTINEL_USER_JS + "\n" + OLD_BLOCK)
+    (profile / "prefs.js").write_text("// Mozilla User Preferences\n" + PREFS_SENTINEL + NOVA_FALSE)
+
+
+def run_raw(profile: Path, env=None) -> subprocess.CompletedProcess:
+    return subprocess.run([SHELL, str(INSTALL), str(profile)], cwd=ROOT, text=True,
+                          capture_output=True, timeout=120, env=env)
+
+
+def case_install_clears_old_nova_false(profile: Path) -> None:
+    old_textfox_profile(profile)
+    install(profile)
+    text = check_pref_block(profile)
+    assert "browser.nova.enabled" not in text, f"the retired block still assigns Nova:\n{text}"
+    assert SENTINEL_USER_JS in text, "the user's own user.js line was lost"
+    prefs = (profile / "prefs.js").read_text()
+    assert NOVA_FALSE not in prefs, f"the persisted Nova false survived the install:\n{prefs}"
+    assert MARKER in prefs and PREFS_SENTINEL in prefs, f"marker or user pref missing:\n{prefs}"
+    install(profile)
+    assert (profile / "prefs.js").read_text() == prefs, "a reinstall changed prefs.js again"
+    print("ok   reinstall over an old textfox clears the persisted Nova false once")
+
+
+def case_install_aborts_while_firefox_holds_profile(profile: Path) -> None:
+    old_textfox_profile(profile)
+    (profile / "chrome").mkdir()
+    (profile / "chrome" / "userChrome.css").write_text("/* old textfox */\n" + LOGO + "\n")
+    before = {p.relative_to(profile): p.read_bytes() for p in profile.rglob("*") if p.is_file()}
+    holder = subprocess.Popen([sys.executable, "-c",
+                               "import fcntl, os, sys, time\n"
+                               "fd = os.open(sys.argv[1], os.O_WRONLY | os.O_CREAT, 0o644)\n"
+                               "fcntl.lockf(fd, fcntl.LOCK_EX)\n"
+                               "print('held', flush=True)\n"
+                               "time.sleep(60)\n", str(profile / ".parentlock")],
+                              stdout=subprocess.PIPE, text=True)
+    try:
+        assert holder.stdout.readline().strip() == "held"
+        result = run_raw(profile)
+    finally:
+        holder.kill()
+        holder.wait()
+    assert result.returncode != 0, "install must refuse while Firefox holds the profile"
+    assert "close Firefox" in result.stdout + result.stderr, result.stdout + result.stderr
+    after = {p.relative_to(profile): p.read_bytes() for p in profile.rglob("*") if p.is_file()}
+    after.pop(Path(".parentlock"), None)
+    before.pop(Path(".parentlock"), None)
+    assert after == before, "a refused install changed the profile"
+    print("ok   install aborts untouched while Firefox holds the profile")
+
+
+def case_install_keeps_nova_on_unrelated_profile(profile: Path) -> None:
+    (profile / "prefs.js").write_text(PREFS_SENTINEL + NOVA_FALSE)
+    install(profile)
+    prefs = (profile / "prefs.js").read_text()
+    assert prefs == PREFS_SENTINEL + NOVA_FALSE, f"a first install touched the user's prefs.js:\n{prefs}"
+    print("ok   a first install leaves a Nova value it never wrote alone")
+
+
+def case_install_without_python_prints_manual_step(profile: Path) -> None:
+    old_textfox_profile(profile)
+    bin_dir = Path(tempfile.mkdtemp(prefix="tf-nopython-"))
+    try:
+        for directory in os.environ["PATH"].split(os.pathsep):
+            if not os.path.isdir(directory):
+                continue
+            for name in os.listdir(directory):
+                target = bin_dir / name
+                if name.startswith("python") or target.exists():
+                    continue
+                source = Path(directory) / name
+                if source.is_file() and os.access(source, os.X_OK):
+                    target.symlink_to(source)
+        result = run_raw(profile, env={**os.environ, "PATH": str(bin_dir)})
+    finally:
+        shutil.rmtree(bin_dir, ignore_errors=True)
+    assert result.returncode == 0, f"install without python3 failed:\n{result.stdout}\n{result.stderr}"
+    assert "reset browser.nova.enabled" in result.stdout, result.stdout
+    assert NOVA_FALSE in (profile / "prefs.js").read_text(), "prefs.js changed without the tool"
+    assert "browser.nova.enabled" not in (profile / "user.js").read_text()
+    print("ok   without python3 the install completes and names the about:config step")
+
+
 def main() -> int:
     cases = [
         case_fresh_install,
@@ -412,6 +504,10 @@ def main() -> int:
         case_install_recognises_unmarked_textfox,
         case_user_sheet_over_textfox_is_offered,
         case_same_second_backups_stay_apart,
+        case_install_clears_old_nova_false,
+        case_install_aborts_while_firefox_holds_profile,
+        case_install_keeps_nova_on_unrelated_profile,
+        case_install_without_python_prints_manual_step,
     ]
     failures = 0
     for case in cases:

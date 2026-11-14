@@ -202,6 +202,20 @@ merge_user_js() {
   echo "Merged textfox preferences into ${target}"
 }
 
+# Earlier textfox installs assigned browser.nova.enabled false, and Firefox kept
+# that in prefs.js after the assignment left user.js. tools/clear-nova-pref.py
+# removes it once (marker textfox.nova.cleared). It needs Python 3.8 or newer.
+nova_python() {
+  command -v python3 >/dev/null 2>&1 &&
+    python3 -c 'import sys; sys.exit(sys.version_info < (3, 8))' 2>/dev/null
+}
+
+nova_manual_step() {
+  echo "[!!] To give Firefox its default Nova setting back, open about:config in this"
+  echo "     profile and reset browser.nova.enabled (or install python3 and run"
+  echo "     sh tf-install.sh again)."
+}
+
 tf_install() {
   printf "\nInstalling textfox...\n"
   local fp
@@ -222,11 +236,38 @@ tf_install() {
   fi
 
   echo "Using Firefox Profile @ ${ffpp}"
+  # Decided before anything moves: the backup takes the logo-bearing CSS away.
+  local clear_nova=no
+  if textfox_installed "${ffpp}"; then clear_nova=yes; fi
+  if [[ "${clear_nova}" == "yes" ]] && nova_python; then
+    local lock_status=0
+    python3 tools/clear-nova-pref.py --check-lock "${ffpp}" || lock_status=$?
+    if [[ "${lock_status}" -eq 75 ]]; then
+      echo "[!!] Installation aborted before any change: close Firefox, then run tf-install.sh again" >&2
+      return 1
+    elif [[ "${lock_status}" -ne 0 ]]; then
+      # The tool printed why: for example a directory with no Firefox profile files,
+      # or a Python without fcntl (Windows). Install anyway; the user resets by hand.
+      echo "[!!] Skipping the browser.nova.enabled reset for this profile"
+      nova_manual_step
+      clear_nova=no
+    fi
+  fi
   backup_existing_profile "${ffpp}"
   copy_chrome "${ffpp}"
   if ! merge_user_js "${ffpp}"; then
     echo "[!!] Installation aborted: the preference block was not merged" >&2
     return 1
+  fi
+  if [[ "${clear_nova}" == "yes" ]]; then
+    if ! nova_python; then
+      nova_manual_step
+    elif ! python3 tools/clear-nova-pref.py "${ffpp}"; then
+      echo "[!!] textfox is installed, but browser.nova.enabled was not reset." >&2
+      echo "     Close Firefox and run tf-install.sh again." >&2
+      nova_manual_step
+      return 1
+    fi
   fi
   printf "✓ Installation completed\n"
 }

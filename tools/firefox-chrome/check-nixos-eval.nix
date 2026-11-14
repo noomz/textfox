@@ -39,7 +39,10 @@ assert builtins.length matches == 1;
 assert lib.hasInfix "--tf-border-width: 7px;" evaluated.config.textfox.configCss;
 assert lib.hasInfix ''--tf-newtab-logo: "say \"hi\"\\path\A 1next\D test\A ";''
   evaluated.config.textfox.configCss;
-assert lib.hasInfix ''pref("browser.nova.enabled", false);''
+# T25: Nova is no longer assigned; the persisted false is cleared once.
+assert
+  !(lib.hasInfix ''pref("browser.nova.enabled"'' (builtins.head matches).passthru.capturedPrefs);
+assert lib.hasInfix ''clearUserPref("browser.nova.enabled")''
   (builtins.head matches).passthru.capturedPrefs;
 assert lib.hasInfix "textfox: refusing to install" (builtins.head matches).passthru.capturedPrefs;
 assert lib.hasInfix ''pref("shyfox.enable.context.menu.icons", true);''

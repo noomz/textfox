@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
-"""Prove the retirement clear of `browser.nova.enabled` on disposable profiles (T19).
+"""Prove the retirement clear of `browser.nova.enabled` on disposable profiles (T19, T25).
 
 Retiring textfox's Nova assignment must hand an existing profile back Firefox's
 default (V3) without losing the user's own preferences (V2). `user.js` cannot
 clear a preference, so the manual and home-manager paths run
-`tools/clear-nova-pref.py` outside Firefox. Nothing here changes what textfox
-ships; the retired `user.js` block is simulated in the disposable profiles.
+`tools/clear-nova-pref.py` outside Firefox. The pre-T25 block is the fixture
+`fixtures/user.js-nova-false`; the shipped `user.js` is the retired block.
 
 File cases run without Firefox. Live cases use a real Firefox:
 
-- manual: a profile installed with `tf-install.sh`, started once so Firefox itself
-  persisted Nova false, then given a retired block. Removing the assignment alone
-  must leave Nova false (the control). The clear must refuse while Firefox runs,
-  then clear, be one-shot, and survive two later starts.
+- manual: a profile with the pre-T25 block, started once so Firefox itself
+  persisted Nova false. Removing the assignment alone must leave Nova false (the
+  control). The T25 `tf-install.sh` must abort untouched while Firefox runs, then
+  retire the block and clear, be one-shot on reinstall, and survive two starts.
 - user value: afterwards the user sets Nova false in their own `user.js` lines;
   the marker keeps the clear from undoing it.
 - home-manager: `user.js` is a read-only symlink swapped between two generations,
@@ -38,7 +38,9 @@ CLEAR = Path(os.environ.get('TF_CLEAR_NOVA', ROOT / 'tools' / 'clear-nova-pref.p
 NOVA = 'browser.nova.enabled'
 MARKER = 'textfox.nova.cleared'
 NOVA_LINE = 'user_pref("browser.nova.enabled", false);'
-NOVA_COMMENT = '// Disable the new Firefox "Nova" UI (textfox does not support it yet)'
+# The block every textfox before T25 shipped; the shipped user.js is the retired one.
+OLD_BLOCK = (ROOT / 'tools' / 'firefox-chrome' / 'fixtures' / 'user.js-nova-false').read_text()
+SHIPPED = (ROOT / 'user.js').read_text()
 SENTINEL = 'user_pref("tf.test.sentinel", true);'
 USER_JS_PREF = 'user_pref("tf.test.userjs", true);'
 NAMES = [NOVA, MARKER, 'tf.test.sentinel', 'tf.test.userjs']
@@ -54,8 +56,8 @@ def free_port():
         return sock.getsockname()[1]
 
 
-def run_clear(profile):
-    return subprocess.run([sys.executable, str(CLEAR), str(profile)],
+def run_clear(profile, *flags):
+    return subprocess.run([sys.executable, str(CLEAR), *flags, str(profile)],
                           capture_output=True, text=True, timeout=30)
 
 
@@ -135,16 +137,28 @@ def file_cases():
         own = base / 'own'
         own.mkdir()
         (own / 'prefs.js').write_text('user_pref("browser.nova.enabled", true);\n')
-        (own / 'user.js').write_text(f'{NOVA_LINE}\n' + (ROOT / 'user.js').read_text().replace(f'{NOVA_LINE}\n', ''))
+        (own / 'user.js').write_text(SHIPPED)
         result = run_clear(own)
         if result.returncode != 0 or not (own / 'prefs.js').read_text().startswith('user_pref("browser.nova.enabled", true);\n'):
             fail(f'own values: expected the true kept, got {result.returncode}: {(own / "prefs.js").read_text()}')
+
+        # A user.js line outside any textfox block (a pre-marker copy, or the user's own)
+        # would write Nova back on every start, so an unmarked profile is refused.
+        loose = base / 'loose'
+        loose.mkdir()
+        (loose / 'prefs.js').write_text(f'{NOVA_LINE}\n')
+        (loose / 'user.js').write_text(f'{NOVA_LINE}\n' + SHIPPED)
+        result = run_clear(loose)
+        if result.returncode != 1 or 'still assigns' not in result.stderr:
+            fail(f'loose user.js line: expected refusal, got {result.returncode}: {result.stderr}')
+        if (loose / 'prefs.js').read_text() != f'{NOVA_LINE}\n' or backups(loose):
+            fail('loose user.js line: prefs.js changed')
 
         # Order safety: a block that still assigns Nova would write it back after the marker.
         early = base / 'early'
         early.mkdir()
         (early / 'prefs.js').write_text(f'{NOVA_LINE}\n')
-        (base / 'early-user.js').write_text((ROOT / 'user.js').read_text())
+        (base / 'early-user.js').write_text(OLD_BLOCK)
         (early / 'user.js').symlink_to(base / 'early-user.js')
         result = run_clear(early)
         if result.returncode != 1 or 'still assigns' not in result.stderr:
@@ -160,6 +174,7 @@ def file_cases():
         holder = lock_holder(locked)
         try:
             result = run_clear(locked)
+            checked = run_clear(locked, '--check-lock')
         finally:
             holder.kill()
             holder.wait()
@@ -167,6 +182,15 @@ def file_cases():
             fail(f'held lock: expected exit 75, got {result.returncode}')
         if (locked / 'prefs.js').read_text() != f'{NOVA_LINE}\n' or backups(locked):
             fail('held lock: prefs.js changed or backup written')
+        if checked.returncode != 75:
+            fail(f'--check-lock on a held lock: expected exit 75, got {checked.returncode}')
+        # The installer checks before it retires the block, so --check-lock must not refuse it.
+        (locked / 'user.js').write_text(OLD_BLOCK)
+        checked = run_clear(locked, '--check-lock')
+        if checked.returncode != 0:
+            fail(f'--check-lock on a free lock: expected exit 0, got {checked.returncode}: {checked.stderr}')
+        if (locked / 'prefs.js').read_text() != f'{NOVA_LINE}\n' or backups(locked):
+            fail('--check-lock: prefs.js changed or backup written')
 
         linked = base / 'linked'
         linked.mkdir()
@@ -177,7 +201,7 @@ def file_cases():
             fail(f'symlinked prefs.js: expected refusal, got {result.returncode}')
         if (base / 'real-prefs.js').read_text() != f'{NOVA_LINE}\n':
             fail('symlinked prefs.js: target changed')
-    print(json.dumps({'case': 'file cases passed', 'count': 8}), flush=True)
+    print(json.dumps({'case': 'file cases passed', 'count': 11}), flush=True)
 
 
 def lock_holder(profile):
@@ -271,48 +295,53 @@ def expect_textfox_false(label, state):
 
 
 def retire_block(user_js):
-    """The block a retired textfox would ship: the same, without the Nova assignment."""
+    """Swap the pre-T25 block for the shipped, retired one, as a reinstall would, without the clear."""
     text = user_js.read_text()
-    if NOVA_LINE not in text or NOVA_COMMENT not in text:
-        fail('shipped user.js no longer carries the Nova assignment this test retires')
-    user_js.write_text(text.replace(f'{NOVA_COMMENT}\n{NOVA_LINE}\n\n', ''))
-    if NOVA_LINE in user_js.read_text():
-        fail('retired block still assigns Nova')
+    if OLD_BLOCK not in text or NOVA_LINE in SHIPPED:
+        fail('the fixture block or the shipped retired block is not what this test expects')
+    user_js.write_text(text.replace(OLD_BLOCK, SHIPPED))
+
+
+def install_textfox(profile):
+    return subprocess.run(['bash', str(ROOT / 'tf-install.sh'), str(profile)], cwd=ROOT,
+                          stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=60)
 
 
 def manual_case():
+    """A pre-T25 manual install that Firefox ran, then the T25 tf-install.sh over it."""
     with tempfile.TemporaryDirectory(prefix='tf-clear-nova-manual-') as directory:
         profile = Path(directory).resolve()
         port = free_port()
+        own = (f'// my own settings\n{USER_JS_PREF}\nuser_pref("marionette.port", {port});\n'
+               'user_pref("browser.shell.checkDefaultBrowser", false);\n')
         (profile / 'prefs.js').write_text(f'// Mozilla User Preferences\n{SENTINEL}\n')
-        (profile / 'user.js').write_text(
-            f'// my own settings\n{USER_JS_PREF}\nuser_pref("marionette.port", {port});\n'
-            'user_pref("browser.shell.checkDefaultBrowser", false);\n')
+        (profile / 'user.js').write_text(own + '\n' + OLD_BLOCK)
         (profile / 'unrelated.txt').write_text('preserve this profile file')
-        install = subprocess.run(['bash', str(ROOT / 'tf-install.sh'), str(profile)], cwd=ROOT,
-                                 stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=60)
-        if install.returncode != 0:
-            fail(f'tf-install.sh failed: {install.stdout} {install.stderr}')
 
         installed = start_and_read(profile, port)
-        expect_textfox_false('installed', installed)
+        expect_textfox_false('installed (pre-T25 block)', installed)
         if not has_line(profile, NOVA_LINE):
             fail('Firefox did not persist textfox\'s Nova value in prefs.js')
         early = run_clear(profile)
         if early.returncode != 1 or not has_line(profile, NOVA_LINE) or backups(profile):
             fail(f'clear before the retired block: expected refusal, got {early.returncode}')
 
+        # V3 control: the retired assignment alone leaves the persisted false.
+        old_user_js = (profile / 'user.js').read_text()
         retire_block(profile / 'user.js')
         control = start_and_read(profile, port)
         expect_textfox_false('control (assignment removed, no clear)', control)
+        (profile / 'user.js').write_text(old_user_js)
 
         with firefox(profile, port) as (m, _):
-            before = (profile / 'prefs.js').read_bytes()
-            refused = run_clear(profile)
-            if refused.returncode != 75:
-                fail(f'clear while Firefox runs: expected exit 75, got {refused.returncode}: {refused.stdout}')
-            if (profile / 'prefs.js').read_bytes() != before or backups(profile):
-                fail('clear while Firefox runs touched prefs.js')
+            before = {name: (profile / name).read_bytes() for name in ('prefs.js', 'user.js')}
+            refused = install_textfox(profile)
+            if refused.returncode == 0 or 'close Firefox' not in refused.stdout + refused.stderr:
+                fail(f'tf-install.sh while Firefox runs: expected an abort, got {refused.returncode}: {refused.stdout}')
+            if {name: (profile / name).read_bytes() for name in before} != before or backups(profile):
+                fail('tf-install.sh while Firefox runs changed prefs.js or user.js')
+            if run_clear(profile, '--check-lock').returncode != 75:
+                fail('--check-lock while Firefox runs: expected exit 75')
             read_state(m, profile)
 
         # The other direction: Firefox must refuse a profile the helper holds.
@@ -333,17 +362,20 @@ def manual_case():
         if (profile / 'prefs.js').read_bytes() != before:
             fail('Firefox wrote prefs.js while the helper held the lock')
 
-        cleared = run_clear(profile)
-        if cleared.returncode != 0:
-            fail(f'clear failed: {cleared.returncode} {cleared.stderr}')
+        install = install_textfox(profile)
+        if install.returncode != 0:
+            fail(f'tf-install.sh failed: {install.stdout} {install.stderr}')
+        user_js = (profile / 'user.js').read_text()
+        if 'browser.nova.enabled' in user_js or USER_JS_PREF not in user_js:
+            fail(f'tf-install.sh did not retire the block or lost the user\'s line:\n{user_js}')
         if has_line(profile, 'user_pref("browser.nova.enabled"'):
-            fail('clear left a Nova line in prefs.js')
+            fail('tf-install.sh left a Nova line in prefs.js')
         if not has_line(profile, SENTINEL) or not has_line(profile, f'user_pref("{MARKER}", true);'):
             fail('clear dropped the sentinel or did not mark')
         snapshot = (profile / 'prefs.js').read_bytes()
-        again = run_clear(profile)
+        again = install_textfox(profile)
         if again.returncode != 0 or (profile / 'prefs.js').read_bytes() != snapshot or len(backups(profile)) != 1:
-            fail('clear is not one-shot')
+            fail(f'reinstall is not one-shot for prefs.js: {again.returncode} {again.stdout}')
 
         first = start_and_read(profile, port)
         second = start_and_read(profile, port)
@@ -385,12 +417,10 @@ def home_manager_case():
         profile = base / 'profile'
         profile.mkdir()
         port = free_port()
-        shipped = (ROOT / 'user.js').read_text()
         extra = f'\nuser_pref("marionette.port", {port});\nuser_pref("browser.shell.checkDefaultBrowser", false);\n'
         old, new = base / 'gen-old-user.js', base / 'gen-new-user.js'
-        old.write_text(shipped + extra)
-        new.write_text(shipped + extra)
-        retire_block(new)
+        old.write_text(OLD_BLOCK + extra)
+        new.write_text(SHIPPED + extra)
         for generation in (old, new):
             os.chmod(generation, 0o444)
         (profile / 'user.js').symlink_to(old)
@@ -408,8 +438,7 @@ def home_manager_case():
         cleared = run_clear(profile)
         if cleared.returncode != 0:
             fail(f'home-manager clear failed: {cleared.returncode} {cleared.stderr}')
-        if os.readlink(profile / 'user.js') != str(new) or new.read_text() != (shipped + extra).replace(
-                f'{NOVA_COMMENT}\n{NOVA_LINE}\n\n', ''):
+        if os.readlink(profile / 'user.js') != str(new) or new.read_text() != SHIPPED + extra:
             fail('home-manager clear touched the linked user.js')
         after = start_and_read(profile, port)
         expect_default('home-manager after clear', after)

@@ -29,8 +29,12 @@ Events:
 - The user writes their own bytes into `userChrome.css` or `userContent.css` (at most once per path).
 - The user deletes either file.
 - The user flips `textfox.force-adopt`.
+- The user sets `browser.nova.enabled` to false after `textfox.nova.cleared` is set.
+- The user removes a `user.js` line that assigns `browser.nova.enabled`.
 
-Starting profiles: fresh (no `chrome/`); hand-written `chrome/` with the user's own `userChrome.css`, `notes.txt`, `mine/extra.css`; a pre-marker legacy install whose store path still exists; the same legacy install after garbage collection.
+Starting profiles: fresh (no `chrome/`, Nova unset); hand-written `chrome/` with the user's own `userChrome.css`, `notes.txt`, `mine/extra.css` and the user's own Nova `true`; a pre-marker legacy install whose store path still exists, with the Nova `false` an earlier textfox persisted; the same legacy install after garbage collection.
+
+Preferences (T25): the shim's `Services.prefs` holds the profile's user values. A complete run persists what it holds, because Firefox saves on exit. After a crash only what the script saved with `savePrefFile` persists, and that save is a crash-injectable step.
 
 Properties, each checked after every event:
 
@@ -38,27 +42,28 @@ Properties, each checked after every event:
 |---|---|---|
 | P1 keep-user-bytes | Bytes the user wrote into an owned name stay in `chrome/`, either in place or in a `textfox-backup-*` directory, until the user removes them. | User CSS lost. |
 | P2 others-untouched | `prefs.js`, `chrome/notes.txt`, and `chrome/mine/` keep their bytes. | textfox deletes files it does not own. |
-| P3 refuse-only-foreign | A complete run refuses only when force-adopt is off and an owned CSS file holds bytes textfox cannot prove are its own. A refusal changes nothing and does not restart Firefox. | textfox wedges itself after its own crash, or refuses and still writes. |
+| P3 refuse-only-foreign | A complete run refuses only when force-adopt is off and an owned CSS file holds bytes textfox cannot prove are its own. A refusal changes no file in `chrome/` and does not restart Firefox. Preferences apply on every start, so a refusal may still save the one-shot Nova clear. | textfox wedges itself after its own crash, or refuses and still writes. |
 | P4 converge | A complete run that does not refuse leaves this generation's CSS, a marker naming it, its full asset directory, no `.textfox-staging-*`, no other `textfox-assets-*`, and no legacy marker. Firefox restarts when the CSS changed, and no internal failure is reported. | Stale or half-installed theme, missing icons, leaked files. |
 | P5 idempotent | A second complete run of the same generation makes no change and does not restart. | Restart loop, or needless writes on every start. |
+| P6 nova-once | A complete run leaves `textfox.nova.cleared` set and no `browser.nova.enabled` false that textfox wrote, unless `user.js` still assigns Nova: then neither the clear nor the marker may happen. No run removes or changes a Nova value the user chose. | Nova stays pinned off, or textfox undoes the user's choice. |
 
 "Bytes textfox can prove" means generation A or B bytes, or legacy bytes while the legacy marker and its store path both exist.
 
 ## Run it
 
 ```sh
-node tools/firefox-chrome/check-nixos-update-exhaustive.js            # depth 4: ~15k profiles, ~60 s
-node tools/firefox-chrome/check-nixos-update-exhaustive.js --depth 3  # ~2.2k profiles, ~8 s; use while iterating
-node tools/firefox-chrome/test-nixos-update.js                        # the 22 hand-written scenarios; run too
+node tools/firefox-chrome/check-nixos-update-exhaustive.js            # depth 4: ~33k profiles, ~5 min
+node tools/firefox-chrome/check-nixos-update-exhaustive.js --depth 3  # ~6k profiles, ~30 s; use while iterating
+node tools/firefox-chrome/test-nixos-update.js                        # the 27 hand-written scenarios; run too
 ```
 
 Requirements: Node.js only. The repo was checked with Node 26.8.2. No Nix build is needed: the script is read from the `.nix` source. Run depth 4 before you call a change done. Depth 3 already reaches every known finding.
 
-Exit 0 means there are no new violations. `test-nixos-update.js` exits 0 when all 22 scenarios pass, and a failing scenario there is a regression too. For the exhaustive check, exit 1 means a counterexample appeared that is not a known finding. The output prints it as numbered steps in the script's own words, for example `killed before step 5 (copy profile/chrome/.textfox-staging-userContent.css)`. Step numbers count mutating calls (`mkdir`, `copy`, `move`, `write`, `remove`, `create`) within that one run.
+Exit 0 means there are no new violations. `test-nixos-update.js` exits 0 when all 27 scenarios pass, and a failing scenario there is a regression too. For the exhaustive check, exit 1 means a counterexample appeared that is not a known finding. The output prints it as numbered steps in the script's own words, for example `killed before step 5 (copy profile/chrome/.textfox-staging-userContent.css)`. Step numbers count mutating calls (`mkdir`, `copy`, `move`, `write`, `remove`, `create`) within that one run.
 
 ## Does my change touch the verified code?
 
-Covered code, confirmed at commit **`5b4edf7`**:
+Covered code, confirmed at the **T25** commit (`git log --grep "^T25:"`):
 
 - `nix/pkgs/wrapTextfox.nix`: all of `configScript`, plus the `textfoxChrome` builder's `manifest.sha256` format and the `textfox-assets-<digest>` naming.
 - `tools/firefox-chrome/test-nixos-update.js`: the shim (`Sandbox`, `makeContext`, `codeFor`, `writeStore`, fixtures). If the shim's file semantics change, the check changes with them.
@@ -66,7 +71,7 @@ Covered code, confirmed at commit **`5b4edf7`**:
 Check for drift:
 
 ```sh
-git diff --stat 5b4edf7 -- nix/pkgs/wrapTextfox.nix tools/firefox-chrome/test-nixos-update.js tools/firefox-chrome/check-nixos-update-exhaustive.js
+git diff --stat "$(git log -1 --format=%h --grep "^T25:")" -- nix/pkgs/wrapTextfox.nix tools/firefox-chrome/test-nixos-update.js tools/firefox-chrome/check-nixos-update-exhaustive.js
 ```
 
 Any change to those files means rerun the check. Then reread the events and properties above against the new code. If the script gained a new mutating operation, owned name, pref, or start-up branch, the check must model it. Move the sync commit in this file forward only after you confirm that the check still describes the code at the new commit.
@@ -89,6 +94,7 @@ These print as `known Fn` on every run and do not fail the exit code. When a fix
 
 F1–F4 were fixed by T9 (intent marker with `pending` before any CSS rename, legacy marker name carried in the marker, manifest-verified asset directory). Their regressions are in `test-nixos-update.js`.
 
+- **F6 (P6), accepted in T25: a Nova `false` the user set before the one-shot clear is cleared with it.** Before the marker it cannot be told from the `false` earlier textfox versions wrote.
 - **F5 (P3): a legacy install with one CSS file deleted by the user is refused.** `adoptLegacy` requires both files. This may be intended conservatism. Confirm with the maintainer before "fixing" it.
 
 ## Proven able to fail
@@ -102,6 +108,9 @@ At `f6cd26f`, each of these one-line breaks in `wrapTextfox.nix` turned into a `
 | drop `profile[name] !== marker.css[name] &&` from the per-file gate | P3 (`marker: records these bytes`) |
 | stop sweeping `STAGING_PREFIX` names | P4 leftovers |
 | `var commit = true \|\| …` | P5 |
+| Nova clear without the `textfox.nova.cleared` check (`if (true)`) | P5, P6 |
+| clear any Nova value, not only `false` | P6 |
+| clear without the `user.js` guard (`&& !userJsAssignsNova()` removed) | P6 |
 
 To repeat one, edit the line, run depth 3, and see exit 1. Then `git checkout -- nix/pkgs/wrapTextfox.nix`.
 

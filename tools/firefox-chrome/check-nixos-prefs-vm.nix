@@ -1,8 +1,10 @@
 { nixpkgsPath }:
-# The NixOS module migrating a profile that was already in use: Nova switched on,
-# a preference and a file textfox knows nothing about, and no user.js. The
-# autoconfig must switch Nova off, install the CSS, and leave the rest alone, and
-# a graceful shutdown must persist all of it to prefs.js.
+# The NixOS module migrating a profile an earlier textfox already ran in: Nova
+# persisted false (what textfox assigned before T25), a preference and a file
+# textfox knows nothing about, and no user.js. The autoconfig must clear that
+# false once, so Nova is back at Firefox's default, set textfox.nova.cleared,
+# install the CSS and leave the rest alone, and a graceful shutdown must persist
+# all of it to prefs.js.
 let
   pkgs = import nixpkgsPath { system = "x86_64-linux"; };
   wrap = pkgs.callPackage ../../nix/pkgs/wrapTextfox.nix { };
@@ -41,7 +43,7 @@ let
               if [ ! -e ${profile}/prefs.js ]; then
                 mkdir -p ${profile}
                 cat > ${profile}/prefs.js <<'EOF'
-              user_pref("browser.nova.enabled", true);
+              user_pref("browser.nova.enabled", false);
               user_pref("browser.newtabpage.activity-stream.nova.enabled", true);
               user_pref("tf.test.sentinel", true);
               user_pref("browser.shell.checkDefaultBrowser", false);
@@ -126,8 +128,8 @@ let
                 exit 1
               fi
               if ! ${pkgs.python3}/bin/python3 ${./probe-vm-preferences.py} \
-                --profile ${profile} --border 11px --expect-nova off \
-                --expect-prefs '{"tf.test.sentinel":true,"browser.shell.checkDefaultBrowser":false}'; then
+                --profile ${profile} --border 11px --expect-nova default \
+                --expect-prefs '{"tf.test.sentinel":true,"browser.shell.checkDefaultBrowser":false,"textfox.nova.cleared":true}'; then
                 fail 'live preference probe failed'
               elif [ -e ${profile}/user.js ]; then
                 fail 'user.js exists'
@@ -142,18 +144,16 @@ let
               live = json.load(open(sys.argv[2]))['preferences']
               user = {m[0]: m[1] for m in re.findall(r'user_pref\("([^"]+)",\s*(true|false)\);', text)}
               nova = 'browser.nova.enabled'
-              # Firefox drops a user value equal to the default, so an absent Nova
-              # line is only acceptable when the default itself is false.
-              persisted_nova = user[nova] == 'true' if nova in user else live[nova]['default']
               result = {'sentinel': user.get('tf.test.sentinel'), 'nova_line': user.get(nova),
-                        'nova_default': live[nova]['default'], 'nova_persisted_effective': persisted_nova}
+                        'marker': user.get('textfox.nova.cleared'), 'nova_default': live[nova]['default']}
               print(json.dumps(result))
-              sys.exit(0 if user.get('tf.test.sentinel') == 'true' and persisted_nova is False else 1)
+              sys.exit(0 if user.get('tf.test.sentinel') == 'true' and nova not in user
+                       and user.get('textfox.nova.cleared') == 'true' else 1)
               EOF
                 then
                   echo PASS > $shared/result
                 else
-                  fail 'prefs.js after graceful stop lacks sentinel true or Nova false'
+                  fail 'prefs.js after graceful stop: sentinel or marker missing, or a Nova line kept'
                 fi
               fi
               diagnostics

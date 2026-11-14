@@ -15,6 +15,8 @@ starting profiles. An event is one of:
   - the user writes their own bytes into userChrome.css or userContent.css
   - the user deletes userChrome.css or userContent.css
   - the user flips textfox.force-adopt
+  - the user sets browser.nova.enabled to false after textfox.nova.cleared
+  - the user removes a user.js line that assigns browser.nova.enabled
 Reached profiles are deduplicated by content, so each distinct profile is
 expanded once.
 
@@ -31,7 +33,18 @@ Properties (checked after every event):
                        directory, no staging names, no other asset directory,
                        and no legacy marker; it restarts Firefox when the CSS
                        bytes changed; and it reports no internal failure.
+                       Preferences apply on every start, so a refusal may
+                       still save the one-shot Nova clear (T25).
   P5 idempotent        A second complete run of the same generation does nothing.
+  P6 nova-once         A complete run leaves textfox.nova.cleared set and no
+                       browser.nova.enabled false that textfox wrote, unless
+                       user.js still assigns Nova: then neither the clear nor
+                       the marker may happen, because user.js would write the
+                       value back and the marker would block every later clear.
+                       No run ever removes or changes a Nova value the user chose.
+                       prefs.js persists what a complete run holds (Firefox
+                       saves on exit) and, after a crash, only what the script
+                       saved itself.
 
 Exit 0: every property holds in every explored state. Exit 1: the shortest
 counterexample per property is printed as numbered steps.
@@ -156,24 +169,47 @@ function stateKey(state) {
   }
   const backupSigs = Object.values(backups).map((b) => b.join(';')).sort();
   const { env } = state;
-  return JSON.stringify([plain, backupSigs, env.force, env.legacyStore, env.edits, [...env.ghost].sort()]);
+  return JSON.stringify([plain, backupSigs, env.force, env.legacyStore, env.edits, [...env.ghost].sort(), env.nova]);
 }
 
 /* ------------------------------------------------------------ the script */
 
-function runScript(gen, force, crash) {
+function runScript(gen, force, crash, nova) {
   sandbox.steps = [];
   sandbox.dead = false;
   sandbox.failIndex = crash ? crash.index : -1;
   sandbox.crashMode = crash ? crash.mode : null;
   const run = sandbox.beginRun();
-  const prefs = force ? { 'textfox.force-adopt': true } : {};
+  // Firefox applies user.js on load: an assigning line puts its false back.
+  if (userJsAssigns()) nova = { ...nova, value: 'false-textfox' };
+  const loaded = { ...(force ? { 'textfox.force-adopt': true } : {}) };
+  if (nova.marker) loaded['textfox.nova.cleared'] = true;
+  if (nova.value !== 'unset') loaded['browser.nova.enabled'] = nova.value === 'true';
+  const prefs = { ...loaded };
+  let saved = null;
   try {
-    compiled[gen].runInNewContext(makeContext(sandbox, { prefs }), { timeout: 30000 });
+    compiled[gen].runInNewContext(makeContext(sandbox, { prefs, onSave: (p) => { saved = p; } }), { timeout: 30000 });
   } catch (error) {
     run.errors.push(`uncaught: ${error}`);
   }
-  return { steps: sandbox.steps, errors: run.errors, restarts: run.restarts, killed: sandbox.dead };
+  // A crash keeps only the script's own save; a live Firefox saves on exit.
+  const kept = sandbox.dead ? (saved || loaded) : prefs;
+  return { steps: sandbox.steps, errors: run.errors, restarts: run.restarts, killed: sandbox.dead,
+           nova: novaFrom(kept, nova) };
+}
+
+const USER_JS = path.join(sandbox.profileDir, 'user.js');
+function userJsAssigns() {
+  return fs.existsSync(USER_JS) && /^\s*user_pref\(\s*"browser\.nova\.enabled"/m.test(fs.readFileSync(USER_JS, 'utf8'));
+}
+
+// Nova as prefs.js holds it: 'unset', 'true', or a false with its author. The
+// script never writes false, so a false that is still there keeps its author.
+function novaFrom(prefs, before) {
+  const marker = prefs['textfox.nova.cleared'] === true;
+  if (!Object.prototype.hasOwnProperty.call(prefs, 'browser.nova.enabled')) return { value: 'unset', marker };
+  if (prefs['browser.nova.enabled'] === true) return { value: 'true', marker };
+  return { value: before.value.startsWith('false') ? before.value : 'false-invented', marker };
 }
 
 /* ------------------------------------------------------------ properties */
@@ -205,6 +241,21 @@ function checkAlways(before, after, violations) {
   }
 }
 
+function checkNova(before, after, complete, violations) {
+  const was = before.env.nova.value, now = after.env.nova.value;
+  if (now === 'false-invented') violations.push(['P6 nova-once', 'textfox wrote browser.nova.enabled false']);
+  if ((was === 'false-user' || was === 'true') && now !== was) {
+    violations.push(['P6 nova-once', `the user's browser.nova.enabled ${was} became ${now}`]);
+  }
+  const reasserted = after.files.some((f) => f.rel === 'user.js' && /browser\.nova\.enabled/.test(f.data));
+  if (complete && reasserted && after.env.nova.marker && !before.env.nova.marker) {
+    violations.push(['P6 nova-once', 'marker set while user.js still assigns Nova; every later clear is blocked']);
+  }
+  if (complete && !reasserted && (!after.env.nova.marker || now === 'false-textfox')) {
+    violations.push(['P6 nova-once', `a complete run left Nova ${now}, marker ${after.env.nova.marker}`]);
+  }
+}
+
 function checkCompleteRun(gen, before, result, after, violations) {
   const refused = result.errors.some((m) => m.startsWith('textfox: refusing to install'));
   const failed = result.errors.filter((m) => !m.startsWith('textfox: refusing') && !m.startsWith('textfox: textfox.force-adopt is on'));
@@ -216,7 +267,8 @@ function checkCompleteRun(gen, before, result, after, violations) {
       const why = before.env.force ? 'force-adopt is on' : 'every CSS file present holds bytes textfox wrote';
       violations.push(['P3 refuse-only-foreign', `run refused although ${why} (${CSS_NAMES.map((n) => `${n}=${describeBytes(pre[n])}`).join(', ')}; ${describeMarker(before.files, pre)})`]);
     }
-    if (result.steps.length || result.restarts) violations.push(['P3 refuse-only-foreign', `refusal still made ${result.steps.length} change(s) or restarted`]);
+    const changes = result.steps.filter((step) => !step.label.startsWith('savePrefs '));
+    if (changes.length || result.restarts) violations.push(['P3 refuse-only-foreign', `refusal still made ${changes.length} change(s) or restarted`]);
     return false;
   }
   const store = stores[gen];
@@ -276,7 +328,7 @@ function describeBytes(bytes) {
 function* events(state) {
   for (const gen of Object.keys(stores)) {
     restore(state);
-    const dry = runScript(gen, state.env.force, null);
+    const dry = runScript(gen, state.env.force, null, state.env.nova);
     yield { label: `Firefox starts on generation ${gen}; the script runs to the end`, run: { gen, crash: null } };
     for (let i = 0; i < dry.steps.length; i++) {
       yield { label: `Firefox starts on generation ${gen}; killed before step ${i} (${dry.steps[i].label})`, run: { gen, crash: { index: i, mode: 'before' } } };
@@ -292,6 +344,12 @@ function* events(state) {
     if (state.files.some((f) => f.rel === `chrome/${name}`)) yield { label: `user deletes ${name}`, user: { remove: name } };
   }
   yield { label: `user sets textfox.force-adopt to ${!state.env.force}`, user: { force: true } };
+  if (state.files.some((f) => f.rel === 'user.js' && /browser\.nova\.enabled/.test(f.data))) {
+    yield { label: 'user removes the user.js line that assigns browser.nova.enabled', user: { userJsRetire: true } };
+  }
+  if (state.env.nova.marker && state.env.nova.value !== 'false-user') {
+    yield { label: 'user sets browser.nova.enabled to false', user: { novaFalse: true } };
+  }
 }
 
 function apply(state, event) {
@@ -299,7 +357,8 @@ function apply(state, event) {
   const env = { ...state.env, ghost: new Set(state.env.ghost) };
   let result = null;
   if (event.run) {
-    result = runScript(event.run.gen, env.force, event.run.crash);
+    result = runScript(event.run.gen, env.force, event.run.crash, env.nova);
+    env.nova = result.nova;
   } else if (event.user.edit || event.user.remove) {
     const name = event.user.edit || event.user.remove;
     const abs = path.join(chromeDir, name);
@@ -314,6 +373,10 @@ function apply(state, event) {
     } else {
       fs.rmSync(abs);
     }
+  } else if (event.user.userJsRetire) {
+    fs.writeFileSync(USER_JS, 'user_pref("tf.some.other", 1);\n');
+  } else if (event.user.novaFalse) {
+    env.nova = { ...env.nova, value: 'false-user' };
   } else {
     env.force = !env.force;
   }
@@ -322,14 +385,15 @@ function apply(state, event) {
 
 /* ------------------------------------------------------- start profiles */
 
-function startProfile(name, build, legacyStore) {
+function startProfile(name, build, legacyStore, novaValue) {
   fs.rmSync(sandbox.profileDir, { recursive: true, force: true });
   fs.mkdirSync(sandbox.profileDir);
   fs.writeFileSync(path.join(sandbox.profileDir, 'prefs.js'), '// the user\'s prefs\n');
   const ghost = build() || [];
   const files = walk(sandbox.profileDir);
   const others = files.filter((f) => !f.dir && (f.rel === 'prefs.js' || f.rel === 'chrome/notes.txt' || f.rel.startsWith('chrome/mine/')));
-  return { name, files, env: { force: false, legacyStore, edits: 0, ghost: new Set(ghost), others } };
+  return { name, files, env: { force: false, legacyStore, edits: 0, ghost: new Set(ghost), others,
+                               nova: { value: novaValue, marker: false } } };
 }
 
 function unrelated() {
@@ -346,15 +410,20 @@ function legacyInstall() {
 }
 
 const starts = [
-  startProfile('fresh profile, no chrome/ directory', () => null, true),
-  startProfile('hand-written chrome/ (user\'s own userChrome.css, notes.txt, mine/extra.css)', () => {
+  startProfile('fresh profile, no chrome/ directory, Nova unset', () => null, true, 'unset'),
+  startProfile('hand-written chrome/ (user\'s own userChrome.css, notes.txt, mine/extra.css), user\'s own Nova true', () => {
     unrelated();
     const bytes = '/* the user\'s hand-written userChrome.css */\n';
     fs.writeFileSync(path.join(chromeDir, 'userChrome.css'), bytes);
     return [bytes];
-  }, true),
-  startProfile('pre-marker legacy install, legacy store path still present', legacyInstall, true),
-  startProfile('pre-marker legacy install, legacy store path garbage-collected', legacyInstall, false),
+  }, true, 'true'),
+  startProfile('pre-marker legacy install, legacy store path still present, Nova false from textfox', legacyInstall, true, 'false-textfox'),
+  startProfile('pre-marker legacy install, legacy store path garbage-collected, Nova false from textfox', legacyInstall, false, 'false-textfox'),
+  startProfile('pre-T25 manual install moved to NixOS: user.js block still assigns Nova false', () => {
+    unrelated();
+    fs.writeFileSync(USER_JS, '// >>> textfox managed prefs >>>\nuser_pref("browser.nova.enabled", false);\n// <<< textfox managed prefs <<<\n');
+  }, true, 'false-textfox'),
+  startProfile('fresh profile, the user set Nova false before any clear', () => null, true, 'false-user'),
 ];
 
 /* ------------------------------------------------------------ the search */
@@ -382,11 +451,12 @@ for (let depth = 1; depth <= DEPTH && frontier.length; depth++) {
       transitions += 1;
       const violations = [];
       checkAlways(node.state, after, violations);
+      if (event.run) checkNova(node.state, after, !event.run.crash, violations);
       if (event.run && !event.run.crash) {
         const settled = checkCompleteRun(event.run.gen, node.state, result, after, violations);
         if (settled) {
           restore(after);
-          const again = runScript(event.run.gen, after.env.force, null);
+          const again = runScript(event.run.gen, after.env.force, null, after.env.nova);
           if (again.steps.length || again.restarts) {
             violations.push(['P5 idempotent', `second run of generation ${event.run.gen} still did: ${again.steps.map((s) => s.label).join(', ') || 'a restart'}`]);
           }
@@ -425,6 +495,14 @@ sandbox.cleanup();
 // shortest counterexample, so a regression that breaks the same property
 // without a crash still shows up as new.
 const KNOWN = [
+  {
+    // Accepted (T25): before the marker, a user's own false cannot be told from
+    // the false earlier textfox versions wrote, so the one-shot clear takes it.
+    id: 'F6',
+    summary: 'a Nova false the user set before the one-shot clear is cleared with it',
+    match: (kind, steps) => kind.startsWith('P6 ') && kind.includes("user's browser.nova.enabled false-user became unset") &&
+      steps[0].includes('the user set Nova false before any clear'),
+  },
   {
     id: 'F5',
     summary: 'a legacy install with one CSS file deleted by the user is refused',
@@ -465,5 +543,5 @@ if (fresh.length) {
   console.log(`\n${fresh.length} new violation(s): the change broke a property, or the check needs updating.`);
   process.exit(1);
 }
-console.log('\nno new violations: P1 keep-user-bytes, P2 others-untouched, P3 refuse-only-foreign, P4 converge, P5 idempotent hold outside the known findings');
+console.log('\nno new violations: P1 keep-user-bytes, P2 others-untouched, P3 refuse-only-foreign, P4 converge, P5 idempotent, P6 nova-once hold outside the known findings');
 process.exit(0);

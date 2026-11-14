@@ -1656,3 +1656,106 @@ D=~/.cache/textfox-firefox-live/firefox-160.0
 TMPDIR=~/.cache/textfox-firefox-live/tmp PATH=$D/bin:$PATH FIREFOX=$D/bin/firefox \
   "$HOME/.cache/textfox-firefox-live/venv/bin/python" tools/firefox-chrome/test-surface-paint-live.py --expect-version 160.0
 ```
+
+## T25 Nova assignment retired with a one-shot clear
+
+textfox no longer assigns `browser.nova.enabled` on any delivery path. The `false` that earlier versions persisted in `prefs.js` is cleared once per profile, behind the marker `textfox.nova.cleared` that every path shares. A profile that moves between delivery paths is therefore cleared only once. Nova support is claimed in the README within T24's scope, extended to Firefox 160.0 by T26.
+
+What ships:
+
+- `user.js`: the Nova line is gone. The pre-T25 block is kept as the fixture `tools/firefox-chrome/fixtures/user.js-nova-false`.
+- NixOS (`nix/pkgs/wrapTextfox.nix`): no `pref()` for Nova. In the prefs section, before any profile write, the clear runs if the marker is absent and the profile's `user.js` does not assign Nova on any line. It removes the user value only when that value is a boolean `false`, then sets the marker and calls `Services.prefs.savePrefFile(null)`. A non-boolean value is left alone and still marked. The clear also runs on a refused or force-adopted install, because preferences apply on every start. Firefox loads `prefs.js` and `user.js` in `Preferences::InitializeUserPrefs` before it notifies `prefservice:before-read-userprefs`, the topic that runs the autoconfig, so the clear sees the persisted value. The live and VM runs confirm it.
+- `tools/clear-nova-pref.py`:
+  - New `--check-lock`: it takes and releases Firefox's profile lock and changes nothing.
+  - An unmarked profile whose `user.js` assigns Nova on any line is refused. That covers an old block, a pre-marker copy without markers, and the user's own line, because each would write the value back and the marker would block every later clear.
+- Manual (`tf-install.sh`): applies only to a profile textfox was installed in before (`textfox_installed`, decided before the backup moves files).
+  - With Python 3.8 or newer, `--check-lock` runs before any change, and exit 75 aborts the install untouched. Any other check failure, for example a directory without profile files or a Python without `fcntl`, skips the reset and prints the `about:config` step.
+  - After the merge, the clear runs. Without `python3`, the install completes and prints the `about:config` step.
+  - A profile textfox never touched keeps any Nova value.
+- Home Manager:
+  - `nix/pkgs/default.nix` ships `clear-nova-pref.py`.
+  - `home.activation.textfoxClearNova` runs after `linkGeneration`, for each `textfox.profiles` entry, with `${pkgs.python3}`, through `run`.
+  - Exit 75 is a `warnEcho`, and the next activation retries. Messages are shell-quoted.
+- `check-pref-parity.py`: four preferences. Any Nova assignment in either artifact fails, `false` or `true`.
+
+User decisions: the manual install checks the profile lock first and aborts while Firefox runs; without `python3` it installs and prints the `about:config` step.
+
+T24 acceptance items:
+
+- Marker name: `textfox.nova.cleared` on every path.
+- Placement: in the prefs section, before `refuse()` and force-adopt.
+- Crash before the save: the immediate `savePrefFile` makes the marker durable. The exhaustive check injects a crash before that save.
+- Switching delivery paths:
+  - From NixOS to manual or Home Manager: the marker makes the tool a no-op.
+  - From manual or Home Manager to NixOS with an old `user.js`: the autoconfig waits until `user.js` stops assigning Nova. Found by the review.
+
+Proofs:
+
+- `test-nixos-update.js`: 27 scenarios. Five cover the clear:
+  - cleared once, marked and saved;
+  - a `true` kept;
+  - a refused install still clears;
+  - a `user.js` that assigns Nova defers the clear and the marker;
+  - a non-boolean value is left alone.
+
+  The shim's `Services.prefs` now persists user values across runs. `savePrefFile` is a mutating step.
+- `check-nixos-update-exhaustive.js`:
+  - New property P6 nova-once.
+  - The prefs model persists a complete run's values, and after a crash only what the script saved. `user.js` is modelled: an assigning line puts its `false` back on every load.
+  - New events: the user sets Nova `false` after the marker, and the user removes the assigning `user.js` line.
+  - New starts: Nova unset, the user's own `true`, a textfox `false`, a pre-T25 manual block moved to NixOS, and the user's own `false` before any clear.
+  - P3 now allows a refusal to save the prefs clear.
+  - Known finding F6, accepted: before the marker, a user's own `false` cannot be told from the one earlier textfox wrote, so the one-shot clear takes it.
+  - Proven able to fail: a clear without the marker check (caught by P5 and P6), a clear of any value (P6), and a clear without the `user.js` guard (P6).
+- `test-manual-install-files.py`: 23 cases, under `bash` and `sh`. New cases:
+  - a reinstall over an old textfox clears once;
+  - the install aborts untouched while the lock is held;
+  - a first install leaves a Nova value alone;
+  - without `python3` the install completes and names the `about:config` step.
+- `test-clear-nova-live.py`, all on Firefox 160.0 build `20261104181552`, headless:
+  - 11 file cases, including the `--check-lock` pair and a loose `user.js` line.
+  - Manual: a pre-T25 block that Firefox ran, then the T25 `tf-install.sh`. It aborts untouched while Firefox runs, then retires the block, clears, is one-shot on reinstall, and survives two starts.
+  - The user's own value afterwards is kept.
+  - The Home Manager link swap.
+  - A stale lock.
+- `test-manual-install-live.py` (160.0): a fresh install leaves Firefox's default. A user's own Nova `true` stays effective. Firefox drops a user value equal to the default when it saves.
+- `test-nixos-prefs-live.py`: the wrapped 159.0.1 under nix-portable, seeded with Nova `false`. Nova is at the default, the marker is set and persisted, the sentinel is kept, and the CSS is applied, across restarts.
+- VMs (nixpkgs `/nix/store/wa9kz0gcy4wgakdv28p7i4jc7xkcbbky-source`, home-manager `/nix/store/8sp96qrpjlzhmfvhr94z8k0yq03mszk8-source`, Firefox 159.0.1):
+  - `test-nixos-update-vm.sh`, `test-nixos-autoconfig-vm.sh`.
+  - `test-nixos-prefs-vm.sh`: seeded `false`, expects the default and the marker persisted after a graceful stop.
+  - `test-home-manager-vm.sh`: seeded `false`, activation clears, marker persisted.
+- Standalone Home Manager:
+  - Linux, same sources.
+  - Darwin (Tart `mac_jr`, `/nix/store/lw9n2gsykqbq10cxmfwj2lnij4c7v6a2-nixpkgs`, `/nix/store/0nzi19bqisn1y1h2kha03gbdn1b7cbvl-home-manager`, `FIREFOX=home-manager`, 159.0.1): seeded `false` cleared, marker persisted.
+- `check-home-manager-options.py`, `test-home-manager-live.py` (160.0), `check-option-wiring.py` (25), `check-option-parity.py` (6), `check-config-defaults.py`, `test-nixos-generated-live.py`, `test-nix-logo-live.py`, `check-home-manager-inputs.py`, the rule ledger, CSS inventory and cascade-order checks, `nixfmt-tree --ci`, `git diff --check`.
+- `test-surface-paint-live.py` on Linux, Firefox 160.0: 9 surfaces, both Nova states; known-bad fails every one. No CSS changed in T25.
+
+Re-run after the review fixes (autoconfig `user.js` guard, Home Manager quoting), all exit 0: `check-nixos-update-exhaustive.js` depth 4 (33,348 profiles, 138,656 events; P1–P6 hold outside known F5 and F6), `test-nixos-prefs-live.py`, `test-nixos-update-vm.sh`, `test-nixos-prefs-vm.sh`, `test-nixos-autoconfig-vm.sh`, `test-home-manager-vm.sh`, and standalone Home Manager on Linux and Darwin. The README changed only after these passed.
+
+Harness fixes on the way:
+
+- `check-home-manager.nix` and `check-home-manager-standalone.nix` passed the source tree as the package. The derivation's layout differs: the tool sits at the package root. The first Darwin run could not find it and left Nova `false`. Both harnesses now build `nix/pkgs/default.nix`, as the VM harness did.
+- This host's `~/.local/bin/nix` forces `NP_RUNTIME=proot`. Under proot, a build that copies the source tree fails with `cp: setting permissions for 'textfox'` and `do not know how to unpack source archive`. Home Manager checks that build the package need a `bwrap` nix first on `PATH`. The runs used `~/.cache/textfox-firefox-live/nix-bwrap-bin/nix`, which sets `NP_RUNTIME=bwrap` and runs `nix-portable nix`.
+- Expectations that pinned Nova off moved to Firefox's default: `probe-vm-preferences.py` gained `--expect-nova default` (now the default), and `check-nixos-eval.nix` asserts no Nova `pref()` and a `clearUserPref`.
+
+Independent review (a separate agent given the diff and the spec, not this record) asked for changes. Fixed:
+- the manual-to-NixOS `user.js` case;
+- the `about:config` message on a failed lock check;
+- README scope and the manual-copy order;
+- the non-boolean value;
+- quoting in Home Manager messages;
+- the user's own pre-marker `false`, now recorded as F6.
+
+Declined:
+- Not writing a marker on a profile without `prefs.js`: a fresh profile's marker is what keeps a later activation from clearing a `false` the user sets afterwards.
+- `run --quiet`: the flag depends on the Home Manager version.
+
+Out of scope:
+- `tf-uninstall.sh` on an older textfox leaves its persisted `false`.
+
+Bounds:
+
+- A pre-marker Nova `false` the user set themselves is cleared with textfox's (F6). The README says to set it again after the reset.
+- On a profile with no `prefs.js`, the marker is written at once. Removing it (`about:config` reset, Refresh Firefox) lets a later run clear a user's `false`, as T19 records.
+- The Windows manual path has no tool (`fcntl`). The README points to `about:config`.
+- Home Manager assumes the profile directory equals the profile name, as the existing `home.file` entries already do.

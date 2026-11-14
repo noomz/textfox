@@ -57,7 +57,8 @@ def main():
         'shyfox.enable.ext.mono.toolbar.icons': True,
         'shyfox.enable.ext.mono.context.icons': True,
         'shyfox.enable.context.menu.icons': True,
-        'browser.nova.enabled': False,
+        # T25: the retired Nova gate must not be assigned at all.
+        'browser.nova.enabled': None,
     }
     applied = {name: re.search(rf'user_pref\("{re.escape(name)}", (true|false)\);', user_js)
                for name in expected_prefs}
@@ -78,8 +79,9 @@ def main():
     failures = []
     for name, value in expected_prefs.items():
         observed = report['prefs'][name]
-        if observed != str(value).lower():
-            failures.append(f'preference {name} is {observed!r}, expected {str(value).lower()!r}')
+        want = None if value is None else str(value).lower()
+        if observed != want:
+            failures.append(f'preference {name} is {observed!r}, expected {want!r}')
     if report['missingVariables']:
         failures.append(f'generated config.css is missing {report["missingVariables"]}')
     if report['extraVariables']:
