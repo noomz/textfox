@@ -70,7 +70,13 @@
     content: "navbar";
     background-color: var(--tf-bg);
     position: absolute;
-    margin: -16px 8px;
+    /* Centered on the top border line (V14). #nav-bar is positioned and its padding is a
+       user variable, so offset from its padding box instead of the static position. */
+    z-index: 1;
+    line-height: normal;
+    top: calc(-1 * (var(--border-width) / 2 + 0.5lh));
+    left: 8px;
+    margin: 0;
     padding: 0 2px;
   }
   &:hover::before {
@@ -99,8 +105,13 @@
     content: "bookmarks";
     background-color: var(--tf-bg);
     position: absolute;
-    margin: -1.25rem 0.4rem;
     padding: 0 2px;
+    /* Centered on the top border line (V14): the static position sits 4px below the
+       border (the box's top padding), so pull up by that, half the border and half a line. */
+    z-index: 1;
+    align-self: flex-start;
+    line-height: normal;
+    margin: calc(-1 * (4px + var(--border-width) / 2 + 0.5lh)) 0 0 8px;
   }
   &:hover::before {
     color: var(--tf-accent);
@@ -129,11 +140,6 @@ toolbarbutton.bookmark-item:not(.subviewbutton) {
 }
 
 @media -moz-pref("sidebar.revamp") {
-  #nav-bar::before {
-    margin: -1.35rem 0.75rem;
-    left: 0;
-  }
-
   .titlebar-spacer[type="pre-tabs"],
   .titlebar-spacer[type="post-tabs"] {
     width: 0 !important;

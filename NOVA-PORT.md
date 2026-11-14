@@ -1764,3 +1764,54 @@ Bounds:
 ## Commit IDs after the 2026-11-14 history rewrite
 
 Before the first push, the unpublished commits were rewritten to remove a hostname, home-directory paths and a private address from this file. Every rewritten commit got a new ID. IDs quoted in this file, `SPEC.md` and the autoconfig protocol skill were updated to the new IDs. IDs inside commit messages were not, and refer to the pre-rewrite commits. To find a quoted ID's commit, match on its subject line: `git log --format='%h %s' | grep '<subject>'`.
+
+## T27 section titles centered on their borders
+
+Reported by the user after installing into a throwaway profile (Firefox 159, scaled display, revamp layout, vertical tabs, browser Nova on): "navbar" was cut by the window top, "tabs" was half-covered, and "tools" sat over Nova's gear button (§B B18).
+
+Cause:
+
+- Every title is an absolute `::before` placed by a hand-tuned negative margin (`-16px`, `-1.75rem`, `-1rem`, `3.25rem`). Nothing tied the title to its box's border, and only "main" had a `z-index`.
+- A leftover `@media -moz-pref("sidebar.revamp") { #nav-bar::before { margin: -1.35rem 0.75rem; left: 0 } }` in `chrome/navbar.css` put the revamp navbar title about 19px above the window.
+- On Firefox 159, chrome painted over the part of the "tabs" title above its box; 160 did not. Measured at device pixel ratio 2, it was cut at the navbar area's bottom edge.
+- "tools" lives in `sidebar-main`'s shadow root on `.buttons-wrapper`, which has `overflow: clip`. Its title was therefore placed inside the box, and Nova moves the customize (gear) button to that box's top-left.
+- No painted test measured title placement. T20 recorded the tools overlap as an observation only.
+
+Fix (user's choice: center titles on the line, `┌─ tabs ─┐`):
+
+- Each title keeps its static position and is pinned to the top-left with `align-self: flex-start`. It is pulled up by its box's top padding, half the border and half a line: `margin: calc(-1 * (<top padding> + var(--border-width) / 2 + 0.5lh)) 0 0 8px`. Hosts that clip their overflow (bookmarks, vertical tabs, findbar, tools) stay unpositioned, so they do not clip their own title.
+- `#nav-bar` is positioned and its padding is a user variable, so its title uses `top: calc(-1 * (var(--border-width) / 2 + 0.5lh)); left: 8px`.
+- Every title has `z-index: 1` and `line-height: normal`.
+- The stale revamp `#nav-bar::before` rule is removed.
+- `.buttons-wrapper` and `#TabsToolbar` get `padding-top: 0.5lh`, so their buttons and tabs start below the title's lower half.
+- Files: `chrome/navbar.css`, `chrome/tabs.css`, `chrome/browser.css`, `chrome/sidebar.css`, `chrome/findbar.css`.
+
+Proof: `tools/firefox-chrome/test-titles-paint-live.py` (V14), headed in the disposable Sway compositor.
+
+- In place: a title's glyphs are the pixels that change when only that title is hidden and that are not its background.
+- Reference: a copy of the title (same computed font, padding, colors and text) appended at a fixed spot on top of everything, measured the same way.
+- Checks:
+  - Whole: the in-place glyph box is at least the reference size, less 1 device pixel.
+  - On the line: the glyphs reach above the box's top border and below its bottom edge.
+  - Clear of controls: the glyph box intersects no visible toolbarbutton, button, moz-button, tab, menulist or checkbox, light or shadow DOM.
+- Titles:
+  - Classic: navbar, bookmarks, horizontal tabs (`--tf-display-horizontal-tabs: block`, as the README says), main, sidebar, find.
+  - Revamp: navbar, bookmarks, vertical tabs, main, tools, find.
+- Matrix: browser Nova off and on, classic and revamp, device pixel ratio 1 and 2 (`layout.css.devPixelsPerPx`).
+- Red at the old CSS (worktree at `e25b10f`, Firefox 159): every combination failed. "navbar" and vertical "tabs" were cut, titles did not straddle their borders, and "tools" overlapped `main-button` and `tools-overflow`.
+- Green: exit 0 on Firefox 159.0 build `20261022150525` and on Firefox 160.0 build `20261104181552`. The first full run caught the horizontal "tabs" title over the first tab at ratio 2; the strip's `padding-top` fixed it.
+
+Harness fix (V13): `test-surface-paint-live.py` (T15) never parked the pointer. On macOS the real cursor rested on the newly centered "find" title, so the findbar border painted its hover color and the run failed on left, right and bottom, in both Nova states. T15 now moves the pointer to the window's top-left after setup and after each popup opens, as T20 does. Per V13 it was re-run on every platform.
+
+Regression with the new CSS on Firefox 160.0:
+- Linux: `test-surface-paint-live.py`, `test-surface-paint-more-live.py` (23), `test-a11y-paint-live.py`, `test-nova-layout-live.py`.
+- macOS: `test-surface-paint-live.py` with the parked pointer.
+- Windows: `test-surface-paint-live.py` with the parked pointer, plus the OS High Contrast Black run (all 9 surfaces readable in both Nova states; known-bad fails the rest).
+- Linux T15 with the parked pointer: exit 0.
+
+Bounds:
+
+- The navbar title fits the window with the default `--tf-navbar-margin` top (8px) and `--tf-font-size` (14px). A smaller top margin or a larger font can push it past the window top again.
+- Title paddings are written into the calc for each box. A box whose top padding textfox does not set (`#TabsToolbar`, `.buttons-wrapper`, now given `0.5lh`) depends on that value staying.
+- Horizontal tabs measured with `block`, the README value. Other `--tf-display-horizontal-tabs` values place the title by their own static-position rules.
+- Pointer focus and hover on titles are not measured. Firefox themes (lwtheme) and right-to-left are not in the title matrix.

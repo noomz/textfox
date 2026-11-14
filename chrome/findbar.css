@@ -20,8 +20,13 @@ findbar {
     content: "find";
     background-color: var(--tf-bg);
     position: absolute;
-    margin: -1.75rem .75rem;
     padding: 0 4px;
+    /* Centered on the top border line (V14): the static position sits 8px below the
+       border (the box's top padding), so pull up by that, half the border and half a line. */
+    z-index: 1;
+    align-self: flex-start;
+    line-height: normal;
+    margin: calc(-1 * (8px + var(--border-width) / 2 + 0.5lh)) 0 0 8px;
   }
 
   &:where([hidden]) {

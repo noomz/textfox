@@ -430,6 +430,14 @@ def wait(m, script, what, timeout=30, sandbox='system'):
         time.sleep(.2)
 
 
+def neutral_pointer(m):
+    """Park the pointer in the window's top-left margin so no bordered box shows its hover color.
+
+    The real cursor stays wherever the desktop left it. On macOS it rested on the findbar's
+    title once T27 centered titles on their borders, and the hover border failed the judge."""
+    m.actions.sequence('pointer', 'mouse', {'pointerType': 'mouse'}).pointer_move(2, 2, origin='viewport').perform()
+
+
 def run(display, nova, config, kind, high_contrast=None, newtab_defaults=False, expect_version=None):
     """Launch Firefox with config on display and return (metadata, records, failures by surface).
 
@@ -538,11 +546,13 @@ def run(display, nova, config, kind, high_contrast=None, newtab_defaults=False, 
                              sandbox='system')
             wait(m, "return gBrowser.tabs.length == 2 && !!document.querySelector('findbar:not([hidden])')",
                  'second tab and findbar')
+            neutral_pointer(m)
             time.sleep(1)
             for name, selector, border_var, text_selector, opener in CHROME_SURFACES:
                 if opener:
                     m.execute_script(opener[0], sandbox='system')
                     wait(m, opener[1], f'{name} open')
+                    neutral_pointer(m)  # a popup opens under the pointer; keep its items unhovered
                     time.sleep(1)
                 colors = m.execute_script(RESOLVE_JS, script_args=[selector], sandbox='system')
                 if not colors:
