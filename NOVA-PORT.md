@@ -1759,3 +1759,4 @@ Bounds:
 - On a profile with no `prefs.js`, the marker is written at once. Removing it (`about:config` reset, Refresh Firefox) lets a later run clear a user's `false`, as T19 records.
 - The Windows manual path has no tool (`fcntl`). The README points to `about:config`.
 - Home Manager assumes the profile directory equals the profile name, as the existing `home.file` entries already do.
+- Home Manager resets every profile in `textfox.profiles`, including one textfox never ran in, because activation cannot tell. The manual path resets only a profile textfox was installed in. The README's IMPORTANT note says that updating turns Nova on, including over a user's own `false`, and how to turn it off again.

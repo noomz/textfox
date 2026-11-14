@@ -22,6 +22,19 @@ _a firefox theme for the tui enthusiast_
 
 ## Installation
 
+> [!IMPORTANT]
+> **Updating textfox turns Firefox's new "Nova" UI on.** Earlier versions kept
+> Nova off, and Firefox saved that in each profile. The update resets that saved
+> setting once per profile, so Firefox's default (Nova on) applies again. This
+> happens even if you turned Nova off yourself, for example because an earlier
+> version of this README told you to: the reset cannot tell your choice from
+> textfox's. With Home Manager it also applies to every profile listed in
+> `textfox.profiles`, including ones textfox never ran in before.
+>
+> To keep the classic UI, set `browser.nova.enabled` to `false` in
+> `about:config` after updating and restart Firefox. textfox keeps that choice
+> from then on.
+
 > [!NOTE]
 > textfox supports Firefox's new "Nova" UI as well as the classic one, and no
 > longer sets `browser.nova.enabled`. Nova is checked on Firefox 159 and 160 with
@@ -46,8 +59,8 @@ _a firefox theme for the tui enthusiast_
 >   or reset `browser.nova.enabled` in `about:config`. The script needs macOS or
 >   Linux; on Windows, use `about:config`.
 >
-> The reset happens once per profile. If you prefer the classic UI, set
-> `browser.nova.enabled` to `false` afterwards and textfox keeps it.
+> The reset happens once per profile (see the note above to keep the classic
+> UI).
 
 ### Installation script
 
