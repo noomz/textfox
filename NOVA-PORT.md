@@ -1543,3 +1543,74 @@ Bounds:
 - The default new tab is one region (GB) and one locale (en-US), with the weather widget in its opt-in state, not showing a forecast. Stories render below the 800-pixel fold. They are asserted rendered, not painted.
 - The 159.0.1 painted run is on Linux only. On Darwin, 159.0.1 is the home-manager launch, headless.
 - The T20 and T21 painted tests were not run on 159.0.1, on X11 or with the default new tab.
+
+## T24 support decision re-review
+
+Decision: conditional. The evidence supports Nova support on Firefox 159.0 and 159.0.1 within the scope below, if T26 and T25 pass. Nothing public changes in T24. `browser.nova.enabled` stays false on every path, the README warning stays, and V1 is unchanged. T26 re-runs the painted suites on the current Firefox release (160.0 or newer); any failure there withdraws this decision. T25 then retires the preference with a one-shot clear, and only its passing regression may change the README.
+
+Why 159.x only: every painted proof ran on 159.0 or 159.0.1. Firefox 160.0 (build `20261104181552`) had already shipped; the T22 Windows guest updated itself to it. textfox supports only the latest release, and B16 showed that a release can bring new Nova tokens that only paint on some platforms.
+
+### Re-runs at HEAD (`cf45649`)
+
+The review found proofs older than the theme files they cover. B16 (`a957422`) changed `chrome/browser.css` after the last T20 and T21 runs. T21 (`640233c`) changed `chrome/defaults.css`, which affects the Nix `border.transition` option, and no option check had run since. Re-run on Firefox 159.0 build `20261022150525`, Linux Wayland:
+
+- `test-surface-paint-more-live.py` (T20): exit 0. 23 surfaces in both browser Nova states, classic and revamp layouts, defaults and sentinel; the known-bad config fails every one.
+- `test-a11y-paint-live.py` (T21): exit 0, run alone. In each browser Nova state: 6 focus and 2 motion surfaces in `en` and in `he`, 9 RTL surfaces in `he`. Defaults and sentinel pass; each known-bad config fails every surface of its check.
+- `check-option-wiring.py` (25 options), `check-option-parity.py` (6), `check-home-manager-options.py`, `check-config-defaults.py`, `test-nixos-generated-live.py`: exit 0. Sources: nixpkgs `/nix/store/wa9kz0gcy4wgakdv28p7i4jc7xkcbbky-source`, home-manager `/nix/store/8sp96qrpjlzhmfvhr94z8k0yq03mszk8-source`. `check-option-parity.py` needs `MOZ_HEADLESS=1` without a display.
+- `check-pref-parity.py` (5 preferences), `test-pref-parity.py`, `test-nixos-update.js` (22), `test-manual-install-files.py` (19), `nixfmt-tree --ci` (0 changed), `git diff --check`: exit 0.
+
+T15's `test-surface-paint-live.py` ran at this tree in T23 (Linux Wayland, X11, 159.0.1). The macOS and Windows runs are at `a957422`; no theme file changed after them. The NixOS and home-manager VM suites last ran at `8fc586b` (T16) and in T17 and T23. Since then, only CSS changed, and the generated-CSS and option checks above cover that.
+
+The first T21 re-run ran next to T20 and stopped with `Failed to write ppm; only 0 of 3072016 bytes written`: the two runs' captures filled the 16 GB `/tmp` tmpfs. Every row it finished matched the expected result. Run the painted suites one at a time.
+
+### Gates
+
+| Gate | Result | Evidence | Scope and gaps |
+|---|---|---|---|
+| UI (V6, V11) | Pass with scope | T15 and T22: 9 key surfaces on Linux, macOS and Windows. T20: 23 surfaces on Linux, re-run above. T23: default Nova new tab with widgets, stories and weather on, nothing hidden, and the layout test. | Only 2 panels measured (unified extensions, all tabs). Identity, protections, permissions, downloads, bookmark-edit and library panels are not. Split view, the page context menu and `about:` pages are classic layout only. The revamp launcher is not a separate surface. New-tab widgets and story cards keep Firefox styling (below). |
+| Delivery (V2, V7, V9) | Pass for current artifacts | T16 VMs (NixOS, home-manager), T17 standalone home-manager on Linux and Darwin, T23 home-manager-delivered 159.0.1 launched on Darwin, plus the re-runs above. | Every run proves the Nova-false state. The retired state is T25. |
+| Migration (V3) | Pass on design, conditional on T25 | T19: `tools/clear-nova-pref.py` and `test-clear-nova-live.py`, Linux and macOS, 159.0. T7: autoconfig clear design. | Wiring is unbuilt (T25). Windows manual path has no mechanism (`fcntl`). Manual macOS needs Python 3. The autoconfig design is one sentence; the open points are T25 acceptance items below. |
+| Accessibility (V5, V12) | Pass with scope | T21 re-run above: 6 focus surfaces, 2 motion surfaces, 9 painted RTL surfaces (`he`), both browser Nova states. T22: Windows OS High Contrast Black from painted pixels. `test-high-contrast-live.py` on Linux. | Focus, motion and RTL are Linux only. Focus measured under reduced motion only. No lwtheme or light theme. RTL is `he`, horizontal tabs, classic layout. Linux high contrast is detected through `ui.useAccessibilityTheme`, not the OS. |
+| Platforms (V10) | Pass with scope | Linux Wayland and X11 (T23). macOS (VM, DPR 2) and Windows (1024x768, plus High Contrast Black): T15's 9 surfaces headed (T22). | T20 surfaces and T21 checks never ran on macOS or Windows; B16 showed defects that only those platforms paint. No GPU rendering: every painted run is software WebRender over pixman (Linux) or a VM display. |
+
+Claim scope if T26 and T25 pass: Linux (Wayland and X11, software WebRender) for every measured surface and the accessibility checks; macOS and Windows for T15's 9 key surfaces, the navbar, URL bar and results, tabs, app menu, context menu, findbar and new tab, plus Windows High Contrast Black. Listed as unverified: T20 surfaces and T21 checks on macOS and Windows, the unmeasured panels, GPU rendering, lwtheme and light themes, the Windows manual migration.
+
+### T18 blockers and weak proofs
+
+| Item | Status |
+|---|---|
+| 1. Painted remaining surfaces (V11) | Closed on Linux (T20, re-run). Open on macOS and Windows. |
+| 2. Painted focus, RTL, reduced motion (V5) | Closed on Linux (T21, re-run). |
+| 3. macOS and Windows painted run (V10) | Partly: T15 surfaces only, one VM display each. |
+| 4. V1/V3 ordering | Closed: T24 records a conditional decision, T25 builds and proves the clear. |
+| 5. Manual and home-manager clear | Closed as tool and proof (T19). Wiring is T25; Windows and Python-less manual macOS open. |
+| 6. Autoconfig re-check after the clear | Open by design: T25. |
+| T16 widget hiding | Closed (T23, subtraction red). |
+| Default new tab not painted | Closed for the 9 surfaces, one region and locale (GB, en-US). Stories asserted rendered, not painted. |
+| Linux high contrast via `ui.useAccessibilityTheme` | Open on Linux. Real OS high contrast is painted on Windows. |
+| Darwin ran a copied binary | Closed: T23 launched the delivered 159.0.1, headless. |
+| No painted run on 159.0.1 | Partly: T15 surfaces on Linux only. |
+| One render setup | Partly: X11 added. No GPU run. |
+
+### T25 acceptance items (autoconfig clear)
+
+T7's design is `Services.prefs.clearUserPref` behind a textfox-owned marker preference. T25 must settle:
+
+- The marker name. Reuse T19's `textfox.nova.cleared`, so a profile that moves between delivery paths is cleared once.
+- Where the clear runs in the autoconfig script relative to the removed `pref()`, and whether it runs on a refused (`refuse()`) or force-adopted install.
+- A crash before `prefs.js` is saved loses the marker. The next start clears again and drops a `false` the user set in that session. Decide whether that is accepted, and test it.
+- Switching between NixOS and the manual or home-manager path, in both directions.
+
+### New-tab widgets and story cards
+
+On the default Nova new tab, the widgets (weather, clocks, crossword, focus timer) and the story cards (`.ds-card`) keep Firefox styling. textfox's `.card-outer .card` rule in `chrome/content/newtab.css` matches nothing there. V11 does not require every surface, so no gate fails. It does fall short of §G's "without losing TUI appearance". New-tab Nova is Firefox's default and textfox never sets it, so users see this today, whatever happens to browser Nova. It needs its own §T task; T24 records it and adds none.
+
+### Harness findings, not fixed in T24
+
+- `test-surface-paint-live.py` counts the known-bad config as detected by any failure on a surface. T20's `KNOWN_BAD_SIGNS` and T21's per-check signs require a border, text or font failure. A surface that fails for an unrelated reason therefore counts as detecting the bad config.
+- In `--high-contrast` mode the known-bad config has to fail only one surface. Disclosed in T22.
+- An empty first measurement would carry through as zero surfaces. Missing targets raise, so the risk is low; a non-empty assertion would remove it.
+
+### Review
+
+An independent review (a separate agent given SPEC.md, this file and the test scripts, not this verdict) returned accept-with-reservations: a scoped, conditional claim is supported, an unscoped one is not. Its findings are the HEAD re-runs, the Firefox 160 drift, V1's wording against a recorded claim, the thin autoconfig design, the new-tab cards and the harness findings above. The user chose to scope to 159.x, add T26 as a 160 re-run gate before T25, and keep V1 by recording a decision that changes nothing public.
