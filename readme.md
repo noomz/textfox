@@ -42,8 +42,12 @@ _a firefox theme for the tui enthusiast_
 > sidebar, split view, private windows, menus, the extensions and all-tabs
 > panels, the new tab and `about:` pages, plus keyboard focus, right-to-left and
 > reduced motion; on macOS and Windows for the navigation bar, URL bar, tabs,
-> menus, findbar and new tab. Other panels, Firefox themes (lwtheme) and GPU
-> rendering are not checked yet.
+> menus, findbar and new tab. Firefox themes from the theme picker (Light,
+> Dark, Alpenglow and the Nova themes) are checked on Linux for the same
+> surfaces and the section titles: textfox takes the theme's frame color as its
+> background and paints every box with it, so the theme's toolbar color and
+> background images do not show. Other panels, themes on macOS and Windows, and
+> GPU rendering are not checked yet.
 >
 > Earlier textfox versions turned Nova off. Updating gives Firefox's own setting
 > back once:
@@ -336,7 +340,7 @@ The theme ships with a `defaults.css`, this file can be overridden by creating a
   --tf-accent: var(--toolbarbutton-icon-fill); /* Accent color used, eg: color when hovering a container  */
   --tf-bg: var(--lwt-accent-color, -moz-dialog); /* Background color of all elements, tab colors derive from this */
   --tf-fg: contrast-color(var(--tf-bg)); /* Text color on --tf-bg; black or white, whichever reads better. var(--lwt-text-color) keeps the theme's text color */
-  --tf-border: var(--panel-border-color, var(--toolbar-field-background-color)); /* Border color when not hovered */
+  --tf-border: color-mix(in srgb, var(--tf-fg) 20%, var(--tf-bg)); /* Border color when not hovered */
   --tf-border-transition: 0.2s ease; /* Smooth color transitions for borders */
   --tf-border-width: 2px; /* Width of borders */
   --tf-rounding: 0px; /* Border radius used through out the config */

@@ -18,7 +18,14 @@ headed inside it, `grim` captures. For each title present:
 - on the border: the in-place box must reach above the box's top border and below
   its bottom edge;
 - clear of controls: the in-place box may not intersect any visible button, tab or
-  toolbar button, light or shadow DOM, other than the title's own box.
+  toolbar button, light or shadow DOM, other than the title's own box;
+- blends in (B19): the title's background is the box's own paint. Inside the box,
+  just right of the title and below the top border, the dominant painted color
+  must match the title's background color. A Firefox theme painting its toolbar
+  color or images under the box shows the title as a patch.
+
+`--theme ID[:light|dark]` (repeatable) or `--themes default|every` runs the matrix
+with that Firefox theme active (ff_themes.py, V15).
 
 Matrix: browser Nova on and off, classic layout (horizontal tabs, bookmarks
 sidebar) and revamp layout (vertical tabs and the tools launcher), device pixel
@@ -44,6 +51,7 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
 sys.path.insert(0, str(HERE))
 import paint_display  # noqa: E402
+import ff_themes  # noqa: E402
 
 _paint = runpy.run_path(str(HERE / 'test-surface-paint-live.py'))
 connect, wait, CHROME_STYLE_JS, FREEZE = (_paint[k] for k in ('connect', 'wait', 'CHROME_STYLE_JS', 'FREEZE'))
@@ -63,6 +71,7 @@ TITLES = {
     'find': ('findbar:not([hidden])', "gBrowser.selectedTab._findBar ?? document.querySelector('findbar:not([hidden])')",
              ('classic', 'revamp')),
 }
+BLEND = 4  # per channel: title background vs the box paint beside it
 REF_X, REF_Y = 420, 300  # CSS px: where the reference copy of a title paints
 
 HOSTS_JS = r"""
@@ -176,6 +185,19 @@ def glyph_box(with_title, without, bg, region=None):
     return {'x': min(xs), 'y': min(ys), 'width': max(xs) - min(xs) + 1, 'height': max(ys) - min(ys) + 1}
 
 
+def dominant(path, region):
+    """Most frequent color in region (x0, y0, x1, y1) of a capture, or None if empty."""
+    width, height, data = paint_display.read_ppm(path)
+    x0, y0, x1, y1 = region
+    tally = {}
+    for y in range(max(0, y0), min(height, y1)):
+        for x in range(max(0, x0), min(width, x1)):
+            i = (y * width + x) * 3
+            p = tuple(data[i:i + 3])
+            tally[p] = tally.get(p, 0) + 1
+    return max(tally, key=tally.get) if tally else None
+
+
 def measure(m, shooter, name, selector, geometry, dpr):
     in_shadow = geometry['inShadow']
     hide = f'{selector}::before {{ visibility: hidden !important; }}'
@@ -220,10 +242,20 @@ def measure(m, shooter, name, selector, geometry, dpr):
     if hits:
         failures.append(f'{name}: title overlaps {hits[:3]}')
     record['overlaps'] = hits
+    # Beside the title, inside the box: right of its padding, below the top border, above its bottom.
+    x0 = here['x'] + here['width'] + round(8 * dpr)
+    y0 = bottom + round(2 * dpr)
+    y1 = here['y'] + here['height']
+    beside = dominant(base, (x0, y0, x0 + round(16 * dpr), y1)) if y1 > y0 else None
+    record['beside'] = beside
+    if beside is None:
+        raise RuntimeError(f'{name}: no box paint beside the title to compare')
+    if max(abs(a - b) for a, b in zip(beside, bg)) > BLEND:
+        failures.append(f'{name}: title background {bg} on box paint {beside}, not the same color')
     return record, failures
 
 
-def run(display, nova, layout, dpp, expect_version):
+def run(display, nova, layout, dpp, expect_version, theme=None):
     port = free_port()
     with tempfile.TemporaryDirectory(prefix='tf-titles-') as name:
         directory = Path(name)
@@ -245,6 +277,7 @@ def run(display, nova, layout, dpp, expect_version):
             'layout.css.devPixelsPerPx': str(dpp),
             'marionette.port': port,
             **LAYOUTS[layout],
+            **(ff_themes.prefs(theme) if theme else {}),
         }
         (profile / 'user.js').write_text(''.join(
             f'user_pref({json.dumps(k)}, {json.dumps(v)});\n' for k, v in prefs.items()))
@@ -265,6 +298,8 @@ def run(display, nova, layout, dpp, expect_version):
                 raise RuntimeError(f'unexpected Firefox state: {meta}')
             if expect_version and meta['version'] != expect_version:
                 raise RuntimeError(f'Firefox {meta["version"]}, expected {expect_version}')
+            if theme:
+                meta['theme'] = ff_themes.apply(m, theme)
             m.execute_script("gBrowser.addTrustedTab('about:blank')", sandbox='system')
             if layout == 'classic':
                 m.execute_script("SidebarController.show('viewBookmarksSidebar')", sandbox='system')
@@ -298,7 +333,13 @@ def main():
     parser.add_argument('--layout', choices=tuple(LAYOUTS))
     parser.add_argument('--dpp', default='1,2', help='device pixel ratios, comma-separated')
     parser.add_argument('--expect-version')
+    parser.add_argument('--theme', action='append', default=[], help='Firefox theme ID[:light|dark] (repeatable)')
+    parser.add_argument('--themes', choices=('default', 'every'), help='theme set (see ff_themes.py)')
     args = parser.parse_args()
+    themes = args.theme + {'default': ff_themes.DEFAULT_THEMES, 'every': ff_themes.EVERY_THEME,
+                           None: []}[args.themes]
+    for spec in themes:
+        ff_themes.parse(spec)
     novas = [args.nova == 'true'] if args.nova else [False, True]
     layouts = [args.layout] if args.layout else list(LAYOUTS)
     dpps = [float(v) for v in args.dpp.split(',')]
@@ -306,14 +347,15 @@ def main():
     with tempfile.TemporaryDirectory(prefix='tf-titles-sway-') as name:
         display = paint_display.open_display(name, dict(os.environ))
         try:
-            for dpp in dpps:
-                for nova in novas:
-                    for layout in layouts:
-                        meta, records, problems = run(display, nova, layout, dpp, args.expect_version)
-                        print(json.dumps({'nova': nova, 'layout': layout, 'dpp': dpp, 'firefox': meta,
-                                          'titles': records}), flush=True)
-                        failures += [f'nova={nova} {layout} dpp={dpp}: {p}' for p in problems]
+            runs = [(t, d, n, la) for t in themes or [None] for d in dpps for n in novas for la in layouts]
+            for theme, dpp, nova, layout in runs:
+                meta, records, problems = run(display, nova, layout, dpp, args.expect_version, theme)
+                print(json.dumps({'nova': nova, 'layout': layout, 'dpp': dpp, 'theme': theme, 'firefox': meta,
+                                  'titles': records}), flush=True)
+                failures += [f'nova={nova} {layout} dpp={dpp} theme={theme}: {p}' for p in problems]
         except Exception as error:  # noqa: BLE001 - any harness failure fails the run
+            for failure in failures:
+                print(f'FAIL {failure}', flush=True)
             print(f'FAIL: {error}', flush=True)
             return 1
         finally:
@@ -323,8 +365,9 @@ def main():
             print(f'FAIL {failure}', flush=True)
         return 1
     states = '/'.join('on' if nova else 'off' for nova in novas)
-    print('PASS: every section title paints whole on its top border, clear of controls '
-          f'(browser Nova {states}, {", ".join(layouts)}, dpr {args.dpp})', flush=True)
+    print('PASS: every section title paints whole on its top border, clear of controls, on its box\'s paint '
+          f'(browser Nova {states}, {", ".join(layouts)}, dpr {args.dpp}'
+          + (f', themes {", ".join(themes)}' if themes else '') + ')', flush=True)
     return 0
 
 

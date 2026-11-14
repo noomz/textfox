@@ -83,7 +83,7 @@ in
       border = {
         color = mkOption {
           type = str;
-          default = "var(--panel-border-color, var(--toolbar-field-background-color))";
+          default = "color-mix(in srgb, var(--tf-fg) 20%, var(--tf-bg))";
           description = "Border color when not hovered";
         };
         transition = mkOption {

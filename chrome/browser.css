@@ -59,14 +59,13 @@ browser {
   background-image: none !important;
 }
 
-/* Browser Nova paints a half-transparent gradient (--toolbox-background-gradient) over the
-   window background on macOS and Windows; Linux's native theme sets it transparent. It sits on
-   body's background-image, above --tf-bg. Set on body, these beat the values inherited from
-   :root; a theme's own images (lwtheme) stay. */
+/* body's background-image paints above --tf-bg: browser Nova's half-transparent gradient
+   (--toolbox-background-gradient; macOS and Windows, Linux's native theme sets it transparent),
+   and a Firefox theme's header and additional images (--toolbox-background-image), such as a
+   Nova theme's window gradient. Every box paints --tf-bg, so neither paints. Set on body,
+   these beat the values inherited from :root. */
 body {
   --toolbox-background-gradient: none;
-}
-:root:not([lwtheme]) body {
   --toolbox-background-image: none;
 }
 

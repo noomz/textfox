@@ -1815,3 +1815,53 @@ Bounds:
 - Title paddings are written into the calc for each box. A box whose top padding textfox does not set (`#TabsToolbar`, `.buttons-wrapper`, now given `0.5lh`) depends on that value staying.
 - Horizontal tabs measured with `block`, the README value. Other `--tf-display-horizontal-tabs` values place the title by their own static-position rules.
 - Pointer focus and hover on titles are not measured. Firefox themes (lwtheme) and right-to-left are not in the title matrix.
+
+## T28 boxes paint --tf-bg under Firefox themes
+
+Reported by the user on Firefox 159 with the Nova theme `nova-ash@mozilla.org`: the "navbar" title showed as a black box on gray (§B B19).
+
+Facts:
+
+- Firefox 159.0's theme picker (`moz-src/browser/themes/ThemesList.sys.mjs`) offers the built-in Light, Dark and Alpenglow themes and 11 Nova themes. The Nova themes are not built in: the picker installs them from AMO (`nova-{sun,spark,flame,flare,lavender,dusk,lagoon,pine,tide,ash,smoke}@mozilla.org`, version 1.1). Spec amended first (`43e8605`).
+- Each Nova theme has a `theme` (light) and a `dark_theme` variant, picked by the color scheme. Each sets `additional_backgrounds` gradients with `backgrounds_area: window` and a half-transparent toolbar color.
+- Built-in Light and Dark (`firefox-compact-{light,dark}@mozilla.org`) are in-app themes: Firefox's own CSS forced to one color scheme. They set no `lwtheme` attribute and no `--lwt-*` colors, so `--tf-bg` falls back to `-moz-dialog`. Alpenglow is an lwtheme.
+
+Cause:
+
+- `--tf-bg` follows `--lwt-accent-color`, the theme's frame color (black for nova-ash dark).
+- A theme's header and additional images are `--toolbox-background-image`, painted as body's background-image above `--tf-bg`. B16's rule cleared it only without a theme (`:root:not([lwtheme]) body`), so a Nova theme's window gradient showed under every box that leaves its background to the window: navbar, URL bar text area, tabs.
+- A title paints `--tf-bg`, so on a box showing the gradient it was a dark patch.
+
+Fix:
+
+- `chrome/browser.css` sets `--toolbox-background-image: none` on body with or without a theme, next to `--toolbox-background-gradient: none`. textfox takes the theme's frame color as its background; the theme's toolbar color and images do not show.
+- B20, found by this task's light-scheme runs: the default `--tf-border` (`var(--panel-border-color, var(--toolbar-field-background-color))`) painted (240,240,244) on `--tf-bg` (250,250,251) under built-in Light, browser Nova off. Border boxes were invisible. Every painted run before T28 had a dark scheme. User's choice: fix in T28. Default `--tf-border` is now `color-mix(in srgb, var(--tf-fg) 20%, var(--tf-bg))` in `chrome/defaults.css`, the `border.color` default in `nix/modules/options.nix`, and README (§V V16).
+
+Probes:
+
+- `tools/firefox-chrome/ff_themes.py`: the Nova XPIs pinned by AMO file path and sha256, fetched once into `~/.cache/textfox-firefox-live/themes` and checked on every use. A spec `ID[:light|dark]` sets `ui.systemUsesDarkTheme` before startup. `apply()` installs from file, enables the theme in the chrome context and fails unless it is in effect: lwtheme set with an accent color, or for in-app themes active with the forced scheme. The scheme must match.
+- `--theme ID[:scheme]` (repeatable) and `--themes default|every` on `test-surface-paint-live.py` (T15), `test-surface-paint-more-live.py` (T20) and `test-titles-paint-live.py` (T27). `default` is compact-dark dark, compact-light light, nova-ash dark and light. `every` is the 11 Nova themes in both variants, compact-dark, compact-light and Alpenglow in both schemes (26 setups).
+- T27 gains a check: the color beside each title (a 16px strip right of it, below the border line) must match the title's background within 4 per channel. It is what B19 looked like.
+- The T15 judge is unchanged, so §V V13 owes no cross-platform rerun.
+
+Red at the old CSS (worktree at HEAD; `chrome/` unchanged since `6ad43d0`; nova-ash dark, Firefox 159.0):
+
+- T15: navbar, urlbar-text and tabs paint the gradient, not `--tf-bg`.
+- T20 classic: tabs and the private window's navbar fail.
+- T27 at ratio 1: navbar, bookmarks and horizontal tabs titles have background (18,17,20) on box paint (60,59,63), the B19 symptom.
+- B20: T20 `--themes default` failed under compact-light, Nova off, on "indistinguishable from its background".
+
+Green on the final CSS (Firefox 159.0 build `20261022150525`, Linux, Sway, headed):
+
+- `test-surface-paint-live.py --themes every`: 156 runs (26 setups, both browser Nova states, defaults, sentinel and known-bad configs); 9 surfaces each paint textfox styling, known-bad fails. Exit 0. Without a theme: 6 runs, exit 0.
+- `test-surface-paint-more-live.py --themes default`: 48 runs (4 setups, both Nova states, classic and revamp, 3 configs), 23 surfaces. Covers V16: built-in Light borders are no longer "indistinguishable from its background". Without a theme: 12 runs. Exit 0 both.
+- `test-titles-paint-live.py --dpp 1 --themes every`: 104 runs, 624 titles whole, on the line, clear of controls and on their box's paint. Without a theme at ratio 1 and 2: exit 0.
+- `test-a11y-paint-live.py`, `check-config-defaults.py`, `check-option-wiring.py` (25), `check-option-parity.py` (6), `nixfmt-tree --ci`: exit 0.
+
+Harness limit: with `TMPDIR` set to a longer path (`~/.cache/textfox-firefox-live/tmp/t28/final`), T15 failed to connect to Marionette ("Timed out"); the same run passes with a shorter one. The likely cause is the socket path length under `paint_display`'s display directory. The default `/tmp` is short; it ran out of quota here, which is why `TMPDIR` was moved.
+
+Bounds:
+
+- Linux only. Themes on macOS and Windows, and GPU rendering, are not checked.
+- Surfaces outside T15, T20 and T27 under themes are not checked.
+- A theme's toolbar, tab and text colors are not used. `--tf-fg` is `contrast-color(--tf-bg)`; users who want the theme's text color set `var(--lwt-text-color)`.

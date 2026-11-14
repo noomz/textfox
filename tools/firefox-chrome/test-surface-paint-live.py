@@ -51,6 +51,12 @@ the run asserts those features are effective and rendered, and the widgets must
 paint in the captures. Live widgets (the clocks tick each minute) can change a
 capture set; an unstable set is retried, never accepted.
 
+`--theme ID[:light|dark]` (repeatable) runs every case with that Firefox theme
+active (ff_themes.py: built-in Light, Dark, Alpenglow, or a Nova theme from its
+pinned AMO file, which the run downloads once); `--themes default` runs a dark and
+a light classic and Nova theme, `--themes every` all theme-picker themes in both
+schemes (V15). Surfaces must paint --tf-bg under the theme, as without one.
+
 `--expect-version` fails the run unless Firefox reports that version. FIREFOX may
 be a command line (paint_display.py), for example a nix-portable launch of a
 store Firefox; TF_PAINT_X11=1 runs Firefox as an X11 client on Linux.
@@ -74,6 +80,7 @@ import tempfile
 import time
 
 from ff_inspect import connect
+import ff_themes
 from paint_display import diff, open_display
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -438,11 +445,12 @@ def neutral_pointer(m):
     m.actions.sequence('pointer', 'mouse', {'pointerType': 'mouse'}).pointer_move(2, 2, origin='viewport').perform()
 
 
-def run(display, nova, config, kind, high_contrast=None, newtab_defaults=False, expect_version=None):
+def run(display, nova, config, kind, high_contrast=None, newtab_defaults=False, expect_version=None, theme=None):
     """Launch Firefox with config on display and return (metadata, records, failures by surface).
 
     high_contrast: the OS high-contrast state the run set (Windows), or None where not set.
-    newtab_defaults: the new tab as Firefox ships it (widgets, stories, weather), nothing hidden."""
+    newtab_defaults: the new tab as Firefox ships it (widgets, stories, weather), nothing hidden.
+    theme: a ff_themes spec enabled before any capture, or None for no theme."""
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0))
         port = sock.getsockname()[1]
@@ -481,6 +489,8 @@ def run(display, nova, config, kind, high_contrast=None, newtab_defaults=False, 
             for k in ('widgets.enabled', 'showWeather', 'feeds.section.topstories', 'showSponsoredTopSites'):
                 del prefs[f'browser.newtabpage.activity-stream.{k}']
             prefs.update(NEWTAB_DEFAULT_PREFS)
+        if theme:
+            prefs.update(ff_themes.prefs(theme))
         # textfox's shipped prefs first, as installed (macOS: no native context menus);
         # the probe's own prefs follow and win where both set one.
         (profile / 'user.js').write_text((ROOT / 'user.js').read_text() + ''.join(
@@ -533,6 +543,8 @@ def run(display, nova, config, kind, high_contrast=None, newtab_defaults=False, 
                     problems.append(f'new tab not at Firefox defaults: {found}')
             if problems:
                 raise RuntimeError(f'unexpected Firefox process, profile, display or preference {problems}: {meta}')
+            if theme:
+                meta['theme'] = ff_themes.apply(m, theme)
             meta['window'] = display.bind(m)
             meta['platform'] = display.platform
             # Marionette stripes the URL bar while under remote control; that is not textfox's paint.
@@ -612,6 +624,9 @@ def main():
     parser.add_argument('--newtab-defaults', action='store_true',
                         help="new tab as Firefox ships it: widgets, stories and weather on, nothing hidden")
     parser.add_argument('--expect-version', help='fail unless Firefox reports this version, e.g. 159.0.1')
+    parser.add_argument('--theme', action='append', default=[], help='Firefox theme ID[:light|dark] (repeatable)')
+    parser.add_argument('--themes', choices=('default', 'every'), help='theme set: default (dark and light, classic '
+                        'and Nova) or every theme-picker theme in both schemes')
     parser.add_argument('--high-contrast', action='store_true',
                         help='Windows only: run with real OS high contrast on (High Contrast Black)')
     args = parser.parse_args()
@@ -620,6 +635,10 @@ def main():
         raise RuntimeError('--high-contrast needs Windows')
     if sys.platform == 'win32':  # set OS high contrast either way: a state left on would skew a plain run
         hc = runpy.run_path(str(HERE / 'test-high-contrast-windows.py'))
+    themes = args.theme + {'default': ff_themes.DEFAULT_THEMES, 'every': ff_themes.EVERY_THEME,
+                           None: []}[args.themes]
+    for spec in themes:
+        ff_themes.parse(spec)
     configs = dict(CONFIGS)
     if args.config:
         del configs['sentinel']
@@ -633,30 +652,31 @@ def main():
         try:
             if hc:
                 hc['set_high_contrast'](args.high_contrast)
-            for nova in (False, True):
-                for kind, config in configs.items():
-                    meta, records, found = run(display, nova, config, kind,
-                                                high_contrast=args.high_contrast if hc else None,
-                                                newtab_defaults=args.newtab_defaults,
-                                                expect_version=args.expect_version)
-                    print(json.dumps({'nova': nova, 'config': kind, 'firefox': meta, 'surfaces': records}),
-                          flush=True)
-                    surfaces = surfaces or list(found)
-                    if list(found) != surfaces:
-                        raise RuntimeError(f'surfaces measured differ: {list(found)}')
-                    if kind == 'known-bad':
-                        undetected = [s for s, problems in found.items() if not problems]
-                        if args.high_contrast:
-                            # High contrast keeps some surfaces readable whatever config.css says;
-                            # the check must still fail where textfox's colors reach the screen.
-                            if len(undetected) == len(found):
-                                raise RuntimeError(f'nova={nova}: known-bad config.css not detected anywhere')
-                            hc_kept[nova] = undetected
-                        elif undetected:
-                            raise RuntimeError(f'nova={nova}: known-bad config.css not detected on '
-                                               + ', '.join(undetected))
-                        continue
-                    failures += [f'nova={nova} config={kind}: {p}' for problems in found.values() for p in problems]
+            for theme, nova, kind in [(t, n, k) for t in themes or [None] for n in (False, True) for k in configs]:
+                config = configs[kind]
+                meta, records, found = run(display, nova, config, kind,
+                                            high_contrast=args.high_contrast if hc else None,
+                                            newtab_defaults=args.newtab_defaults,
+                                            expect_version=args.expect_version, theme=theme)
+                print(json.dumps({'nova': nova, 'config': kind, 'theme': theme, 'firefox': meta,
+                                  'surfaces': records}), flush=True)
+                nova = f'{nova} theme={theme}' if theme else nova
+                surfaces = surfaces or list(found)
+                if list(found) != surfaces:
+                    raise RuntimeError(f'surfaces measured differ: {list(found)}')
+                if kind == 'known-bad':
+                    undetected = [s for s, problems in found.items() if not problems]
+                    if args.high_contrast:
+                        # High contrast keeps some surfaces readable whatever config.css says;
+                        # the check must still fail where textfox's colors reach the screen.
+                        if len(undetected) == len(found):
+                            raise RuntimeError(f'nova={nova}: known-bad config.css not detected anywhere')
+                        hc_kept[nova] = undetected
+                    elif undetected:
+                        raise RuntimeError(f'nova={nova}: known-bad config.css not detected on '
+                                           + ', '.join(undetected))
+                    continue
+                failures += [f'nova={nova} config={kind}: {p}' for problems in found.values() for p in problems]
         finally:
             try:
                 if hc:
@@ -669,6 +689,7 @@ def main():
         return 1
     good = ', '.join(k for k in configs if k != 'known-bad')
     where = display.platform + (' with OS high contrast' if args.high_contrast else '') + (
+        f' with Firefox themes {", ".join(themes)}' if themes else '') + (
         ' with the default new tab (widgets, stories, weather)' if args.newtab_defaults else '')
     if args.high_contrast:
         print(f'PASS: {len(surfaces)} surfaces paint readable text and new-tab borders on {where} in both browser '

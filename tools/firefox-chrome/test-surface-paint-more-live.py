@@ -29,6 +29,9 @@ known-bad config.css (text the color of the background, borders gone, a
 proportional font). Every surface must fail the known-bad case. Exits 0 or 1,
 never inconclusive.
 
+`--theme ID[:light|dark]` (repeatable) or `--themes default|every` runs every
+case with that Firefox theme active, as test-surface-paint-live.py does (V15).
+
 Requires sway, grim, ImageMagick, and the live-tool venv Python. Set
 TF_SURFACE_ARTIFACTS to a directory to keep captures and masks.
 """
@@ -45,6 +48,7 @@ import tempfile
 import time
 
 from ff_inspect import connect
+import ff_themes
 
 ROOT = Path(__file__).resolve().parents[2]
 HERE = Path(__file__).resolve().parent
@@ -349,7 +353,7 @@ def private(m, run, layout):
     run.font('about:privatebrowsing', prefix='private ')
 
 
-def launch(env, nova, layout, config, kind):
+def launch(env, nova, layout, config, kind, theme=None):
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0))
         port = sock.getsockname()[1]
@@ -372,6 +376,7 @@ def launch(env, nova, layout, config, kind):
             'ui.prefersReducedMotion': 1,
             'marionette.port': port,
             **LAYOUTS[layout],
+            **(ff_themes.prefs(theme) if theme else {}),
         }
         (profile / 'user.js').write_text(''.join(
             f'user_pref({json.dumps(k)}, {json.dumps(v)});\n' for k, v in prefs.items()))
@@ -400,6 +405,8 @@ def launch(env, nova, layout, config, kind):
                     or meta['verticalTabs'] != LAYOUTS[layout]['sidebar.verticalTabs']):
                 raise RuntimeError(f'unexpected Firefox process, profile, display or preference: {meta}')
             wait(m, 'return gBrowserInit.delayedStartupFinished', 'Firefox startup')
+            if theme:
+                meta['theme'] = ff_themes.apply(m, theme)
             m.execute_script("document.documentElement.removeAttribute('remotecontrol'); "
                              "gBrowser.addTrustedTab('about:blank')", sandbox='system')
             wait_open(m, 'return gBrowser.tabs.length == 2', 'second tab')
@@ -421,7 +428,13 @@ def main():
     parser.add_argument('--config', type=Path, help='config.css to check in place of the sentinel config')
     parser.add_argument('--layout', choices=list(LAYOUTS), action='append', help='limit to a layout (repeatable)')
     parser.add_argument('--nova', choices=['false', 'true'], action='append', help='limit to a browser Nova state')
+    parser.add_argument('--theme', action='append', default=[], help='Firefox theme ID[:light|dark] (repeatable)')
+    parser.add_argument('--themes', choices=('default', 'every'), help='theme set (see ff_themes.py)')
     args = parser.parse_args()
+    themes = args.theme + {'default': ff_themes.DEFAULT_THEMES, 'every': ff_themes.EVERY_THEME,
+                           None: []}[args.themes]
+    for spec in themes:
+        ff_themes.parse(spec)
     configs = dict(CONFIGS)
     if args.config:
         del configs['sentinel']
@@ -435,25 +448,25 @@ def main():
         env = os.environ.copy()
         sway = start_sway(directory, env)
         try:
-            for nova in novas:
-                for layout in layouts:
-                    for kind, config in configs.items():
-                        meta, records, found = launch(env, nova, layout, config, kind)
-                        print(json.dumps({'nova': nova, 'layout': layout, 'config': kind, 'firefox': meta,
-                                          'surfaces': records}), flush=True)
-                        surfaces.setdefault(layout, list(found))
-                        if list(found) != surfaces[layout]:
-                            raise RuntimeError(f'{layout}: surfaces measured differ: {list(found)}')
-                        if kind == 'known-bad':
-                            # The known-bad config hides text, borders and the font; other failures do not count.
-                            undetected = [s for s, problems in found.items()
-                                          if not any(KNOWN_BAD_SIGNS & set(p.split()) for p in problems)]
-                            if undetected:
-                                raise RuntimeError(f'nova={nova} layout={layout}: known-bad config.css not '
-                                                   'detected on ' + ', '.join(undetected))
-                            continue
-                        failures += [f'nova={nova} layout={layout} config={kind}: {p}'
-                                     for problems in found.values() for p in problems]
+            runs = [(t, n, la, k) for t in themes or [None] for n in novas for la in layouts for k in configs]
+            for theme, nova, layout, kind in runs:
+                config = configs[kind]
+                meta, records, found = launch(env, nova, layout, config, kind, theme)
+                print(json.dumps({'nova': nova, 'layout': layout, 'config': kind, 'theme': theme,
+                                  'firefox': meta, 'surfaces': records}), flush=True)
+                surfaces.setdefault(layout, list(found))
+                if list(found) != surfaces[layout]:
+                    raise RuntimeError(f'{layout}: surfaces measured differ: {list(found)}')
+                if kind == 'known-bad':
+                    # The known-bad config hides text, borders and the font; other failures do not count.
+                    undetected = [s for s, problems in found.items()
+                                  if not any(KNOWN_BAD_SIGNS & set(p.split()) for p in problems)]
+                    if undetected:
+                        raise RuntimeError(f'nova={nova} layout={layout} theme={theme}: known-bad config.css not '
+                                           'detected on ' + ', '.join(undetected))
+                    continue
+                failures += [f'nova={nova} layout={layout} theme={theme} config={kind}: {p}'
+                             for problems in found.values() for p in problems]
         finally:
             stop(sway, 10)
     if failures:
