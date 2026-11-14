@@ -407,7 +407,11 @@ def judge(name, shot, colors, border_var=None, border_color=None, dpr=1, readabl
         elif missing:
             failures.append(f'{name} has no {label} border {color} on {", ".join(missing)}')
     if shot['text']:
-        exclude = [colors['--tf-border'], colors['--tf-accent']]
+        # Leave out the surface's own border, which inflate() takes in. Excluding --tf-accent
+        # everywhere dropped Firefox 160's de-emphasized macOS tab labels (black at 0.6 on white,
+        # 5.7:1), which paint within 16 of the default accent (B17). Borderless: both.
+        decoration = border_color or (colors[border_var] if border_var else None)
+        exclude = [decoration] if decoration else [colors['--tf-border'], colors['--tf-accent']]
         text = [image.pixel(x, y) for x, y in image.coordinates(inflate(box, 4, size))
                 if image.pixel(x, y) != shot['text'].pixel(x, y)]
         strong = sum(1 for p in text if ratio(p, background) >= MIN_RATIO and not any(near(p, c, 16) for c in exclude))

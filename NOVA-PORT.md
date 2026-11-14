@@ -1614,3 +1614,45 @@ On the default Nova new tab, the widgets (weather, clocks, crossword, focus time
 ### Review
 
 An independent review (a separate agent given SPEC.md, this file and the test scripts, not this verdict) returned accept-with-reservations: a scoped, conditional claim is supported, an unscoped one is not. Its findings are the HEAD re-runs, the Firefox 160 drift, V1's wording against a recorded claim, the thin autoconfig design, the new-tab cards and the harness findings above. The user chose to scope to 159.x, add T26 as a 160 re-run gate before T25, and keep V1 by recording a decision that changes nothing public.
+
+## T26 painted suites on Firefox 160.0
+
+Firefox 160.0 build `20261104181552` is the current release (`product-details.mozilla.org`, released 2026-11-10). Each host got Mozilla's release build, verified against `releases/160.0/SHA256SUMS`, with `distribution/policies.json` setting `DisableAppUpdate`. Every run asserted 160.0 (`--expect-version 160.0` for T15; the other suites record the version in each launch's JSON).
+
+- Linux: `~/.cache/textfox-firefox-live/firefox-160.0` (tarball). `test-surface-paint-more-live.py` and `test-a11y-paint-live.py` launch a bare `firefox`, so the run puts a `bin/firefox` link first in `PATH`. Hebrew language pack `langpacks/160.0/he.xpi`, verified the same way.
+- macOS: Tart VM `mac_jr`, `~/ff160/Firefox.app` from the 160.0 dmg. The guest is reached by ssh from the Mac host (`ssh <mac-host>`, then `ssh admin@<vm-ip>`); this machine has no host key for the guest.
+- Windows: the T12 KVM guest, `C:\tf\Firefox160` extracted from `Firefox Setup 160.0.exe` (`/ExtractDir`), scheduled tasks `tf-t26` and `tf-t26hc` running `C:\tf\t26\run-t26.cmd`. SSH on `127.0.0.1:2222` uses `~/VMs/tf-t12/known_hosts`. The global `known_hosts` holds a different host for that address.
+
+Results, all exit 0:
+
+| Suite | Host | Result |
+|---|---|---|
+| `test-surface-paint-live.py` (T15) | Linux Wayland | 9 surfaces, both browser Nova states, defaults and sentinel; known-bad fails every one |
+| `test-surface-paint-live.py` | macOS (DPR 2) | same |
+| `test-surface-paint-live.py` | Windows | same |
+| `test-surface-paint-live.py --high-contrast` | Windows | OS High Contrast Black: all 9 surfaces paint readable text and new-tab borders in both Nova states; known-bad fails the rest. High contrast kept tabs, app menu and new-tab tile readable, as on 159 |
+| `test-surface-paint-more-live.py` (T20) | Linux Wayland | 23 surfaces, classic and revamp, both Nova states; known-bad fails every one |
+| `test-a11y-paint-live.py` (T21) | Linux Wayland | 6 focus and 2 motion surfaces per locale (`en`, `he`), 9 RTL surfaces, both Nova states; each known-bad config fails every surface of its check |
+| `test-nova-layout-live.py` | Linux Wayland | logo and search box paint, no overlap |
+
+Found on the way (§B B17):
+
+- macOS, browser Nova off, defaults: the T15 tabs surface failed with `tabs text paints 55 pixels at 4.5:1, fewer than 120`. It reproduced on a second run. Firefox 160 de-emphasizes unselected tab labels with `.tab-label-container:not([selected], [multiselected]) { opacity: var(--opacity-deemphasized-strong); }` in `chrome://browser/skin/browser.css`, which computes to 0.6. Firefox 159 had a literal 0.7 (`browser/themes/osx/browser.css:160`). The label is black, so it paints (102,102,102) on white: 5.7:1, readable. That gray is within 16 of the default `--tf-accent` (91,91,102) on macOS, and the judge dropped `--tf-border` and `--tf-accent` pixels from every surface's text count. Recounting the saved captures: 1072 text pixels changed and 583 reach 4.5:1. 528 of those are (102,102,102), and every one was excluded. The judge now excludes only the surface's own border color, which `inflate()` takes into the text region. A borderless surface (URL bar text) keeps both exclusions. The saved capture then counts 583. Linux's 160 `browser.css` has no such rule. Windows was not inspected; it passed with the old judge too.
+- Windows: the first 160 run stopped with `module 'os' has no attribute 'getpgid'`. T23's process-group stop in `paint_display.py` ran after `WindowsDisplay`'s `taskkill`, and T23 never re-ran Windows. On Windows, `stop_firefox` now uses only the `taskkill /T /F` tree kill and then waits. Under the old judge, Windows on 160 passed. All results in the table use the new judge.
+
+Both are harness faults, not theme defects. No CSS changed in T26. V13 now requires a shared painted-harness change to be re-run on every platform a claim cites.
+
+Infrastructure notes:
+
+- `/tmp` here is a RAM-backed tmpfs (16 GB, about 13 GB used by leftovers from earlier sessions). With the Windows VM holding 12 GB of RAM, `grim` failed to write captures twice: once with T20 and T21 running side by side, once with T20 alone. The Linux runs above used `TMPDIR=~/.cache/textfox-firefox-live/tmp` on disk; the tests take their temporary directories from `tempfile`.
+- Firefox 160 Marionette still needs system access for chrome context. The suites pass `-remote-allow-system-access`; an ad hoc probe also needed `MOZ_REMOTE_ALLOW_SYSTEM_ACCESS=1`. `InspectorUtils.getCSSStyleRules` is now `getMatchingCSSRules`.
+
+Effect on T24: T26 passed, so T24's conditional decision stands and now covers 160.0 as well as 159.x, within the same scope and bounds. T25 may start. X11, the default new tab (`--newtab-defaults`) and 159.0.1 were not re-run on 160.
+
+Run on Linux:
+
+```
+D=~/.cache/textfox-firefox-live/firefox-160.0
+TMPDIR=~/.cache/textfox-firefox-live/tmp PATH=$D/bin:$PATH FIREFOX=$D/bin/firefox \
+  "$HOME/.cache/textfox-firefox-live/venv/bin/python" tools/firefox-chrome/test-surface-paint-live.py --expect-version 160.0
+```

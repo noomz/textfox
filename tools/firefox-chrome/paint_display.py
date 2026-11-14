@@ -356,9 +356,14 @@ class WindowsDisplay(Display):
 
     def stop_firefox(self, process):
         # terminate() stops only the parent; child processes would keep the profile open.
+        # Windows has no process groups (os.getpgid); the tree kill above is the group stop.
         subprocess.run(['taskkill', '/T', '/F', '/PID', str(process.pid)],
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        super().stop_firefox(process)
+        try:
+            process.wait(timeout=15)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait()
 
 
 def open_display(directory, env):
