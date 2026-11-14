@@ -10,6 +10,12 @@ and no logo pixel lands inside the search box's painted region. Before the
 verdict, an injected overlap fixture must be detected and repeated captures
 must match, or the run fails.
 
+The new tab is Firefox's default (widgets, stories, weather on; region GB, where
+weather, clocks, crossword, focus timer, lists and stories ship), asserted
+effective and rendered, and the widgets stay visible: they must paint in the
+captures. The world clock ticks each minute, so a capture set whose controls
+changed is retried, and a set that never settles fails the run.
+
 Requires sway, grim, ImageMagick, and the live-tool venv Python. The disposable
 profile enables new-tab feeds and may make network requests.
 """
@@ -31,12 +37,38 @@ OUTPUT = (1280, 800)
 MIN_LOGO_PIXELS = 100
 
 FREEZE = ('*, *::before, *::after { animation: none !important; transition: none !important; '
-          'caret-color: transparent !important; }'
-          # Live widgets repaint between captures: the world clock ticks each minute, and
-          # weather, crossword and wallpaper arrive from the network. Hidden, layout kept.
-          '.nova-enabled :is(.sidebar-inline-end, .content-full-width), '
-          '.nova-enabled :is(.sidebar-inline-end, .content-full-width) * '
-          '{ visibility: hidden !important; }')
+          'caret-color: transparent !important; }')
+# Default widgets stay visible; hiding them is only the painted-widgets guard.
+HIDE_WIDGETS = ('.nova-enabled :is(.weather-widget, .ds-layout-widgets) '
+                '{ visibility: hidden !important; }')
+MIN_WIDGET_PIXELS = 5000  # the default GB widgets paint tens of thousands
+CONTROL_NOISE = 2         # of 255, per channel, stability controls only
+UNSTABLE_RETRIES = 4      # a clock tick lands in at most one capture set per minute
+# Marionette's RecommendedPreferences.sys.mjs sets widgets and sponsored shortcuts false on the
+# default branch; Firefox 159's own defaults are true. The region decides which widgets ship.
+NEWTAB_DEFAULT_PREFS = {
+    'browser.newtabpage.activity-stream.widgets.enabled': True,
+    'browser.newtabpage.activity-stream.showSponsoredTopSites': True,
+    'browser.search.region': 'GB',
+}
+NEWTAB_DEFAULT_ON = ['browser.newtabpage.activity-stream.' + k for k in (
+    'showWeather', 'system.showWeather', 'feeds.weatherfeed', 'feeds.section.topstories',
+    'feeds.system.topstories', 'widgets.system.enabled', 'widgets.weather.enabled')]
+NEWTAB_DEFAULTS_JS = r"""
+const p = Services.prefs, on = arguments[0];
+return {region: ChromeUtils.importESModule('resource://gre/modules/Region.sys.mjs').Region.home,
+        off: on.filter(k => !p.getBoolPref(k, false)), userSet: on.filter(k => p.prefHasUserValue(k))};
+"""
+NEWTAB_RENDERED_JS = r"""
+const shown = e => e.getClientRects().length && getComputedStyle(e).visibility === 'visible';
+const missing = ['.weather-widget', '.clocks-widget', '.ds-layout-widgets article', '.ds-card']
+  .filter(s => ![...document.querySelectorAll(s)].some(shown));
+const pending = [...document.images].filter(i => {
+  const r = i.getBoundingClientRect();
+  return shown(i) && r.bottom > 0 && r.top < innerHeight && !i.complete;
+}).length;
+return {missing, pending, stories: [...document.querySelectorAll('.ds-card')].filter(shown).length};
+"""
 HIDE_LOGO = '.nova-enabled .wordmark::before { visibility: hidden !important; }'
 HIDE_SEARCH = '.nova-enabled .search-wrapper { visibility: hidden !important; }'
 # Fixed square at content (10, 10); its painted box locates the content area on screen,
@@ -128,9 +160,14 @@ def magick(*args):
     return subprocess.check_output(['magick', *map(str, args)], text=True).strip()
 
 
-def changed_mask(first, second, out):
-    magick(first, second, '-compose', 'difference', '-composite', '-colorspace', 'gray',
-           '-threshold', '0', out)
+def changed_mask(first, second, out, noise=0):
+    """White where the captures differ; with noise, only where some channel differs by more."""
+    if noise:
+        magick(first, second, '-compose', 'difference', '-composite', '-separate',
+               '-evaluate-sequence', 'max', '-threshold', f'{noise / 255 * 100}%', out)
+    else:
+        magick(first, second, '-compose', 'difference', '-composite', '-colorspace', 'gray',
+               '-threshold', '0', out)
     return out
 
 
@@ -183,14 +220,33 @@ class Page:
 
     def content_origin(self):
         """Screen position of the content viewport, measured from a painted marker."""
-        base = self.capture('')
-        marked = self.capture(SHOW_MARKER)
-        box = painted_box(changed_mask(base, marked, self.directory / 'mask-marker.png'))
         size = MARKER[1] + 4  # square plus its outline on every side
-        if not box or abs(box['width'] - size) > 1 or abs(box['height'] - size) > 1:
-            raise RuntimeError(f'position marker painted {box}, expected about {size}px square')
-        offset = MARKER[0] - 2
-        return box['x'] - offset, box['y'] - offset
+        for attempt in range(UNSTABLE_RETRIES + 1):
+            base = self.capture('')
+            marked = self.capture(SHOW_MARKER)
+            box = painted_box(changed_mask(base, marked, self.directory / 'mask-marker.png'))
+            if box and abs(box['width'] - size) <= 1 and abs(box['height'] - size) <= 1:
+                offset = MARKER[0] - 2
+                return box['x'] - offset, box['y'] - offset
+            time.sleep(1)  # a widget repaint (clock tick) widens the box; measure again
+        raise RuntimeError(f'position marker painted {box}, expected about {size}px square')
+
+    def widget_pixels(self):
+        """Pixels the default widgets paint: the guard that they are on screen, not hidden."""
+        base = self.capture('')
+        hidden = self.capture(HIDE_WIDGETS)
+        return count(changed_mask(base, hidden, self.directory / 'mask-widgets.png'))
+
+    def stable_measure(self, search_rect, extra_css=''):
+        """measure(), retried while live widgets change its controls; the last set is returned."""
+        for attempt in range(UNSTABLE_RETRIES + 1):
+            result = self.measure(search_rect, extra_css)
+            result['attempts'] = attempt + 1
+            if not result['controlChangedPixels'] and not result['restoredChangedPixels']:
+                return result
+            print(f'RETRY unstable capture set {result}', file=sys.stderr, flush=True)
+            time.sleep(1)
+        return result  # verdict() fails an unstable set
 
     def measure(self, search_rect, extra_css=''):
         """Paint the logo and search box, each hidden in turn, and diff them.
@@ -207,19 +263,22 @@ class Page:
         search = changed_mask(base, no_search, f'{stem}-search.png')
         search_box = painted_box(search)
         region = union(search_box, search_rect) if search_box else None
-        return {'controlChangedPixels': count(changed_mask(base, control, f'{stem}-control.png')),
-                'restoredChangedPixels': count(changed_mask(base, restored, f'{stem}-restored.png')),
+        # Controls ignore glyph antialiasing that differs by 1/255 between identical frames
+        # (seen on a shortcut title); test-surface-paint-live.py's CONTROL_NOISE is the same 2.
+        return {'controlChangedPixels': count(changed_mask(base, control, f'{stem}-control.png', CONTROL_NOISE)),
+                'restoredChangedPixels': count(changed_mask(base, restored, f'{stem}-restored.png', CONTROL_NOISE)),
                 'logoPixels': count(logo), 'logoBox': painted_box(logo),
                 'searchPixels': count(search), 'searchBox': search_box,
                 'searchRegion': region,
                 'logoPixelsInSearch': count(logo, crop_of(region)) if region else None}
 
 
-def start_sway(directory, env):
+def start_sway(directory, env, xwayland=False):
+    """Start headless Sway; with xwayland, also its Xwayland server, and set DISPLAY to it."""
     config = directory / 'sway.conf'
     config.write_text(f'output * mode {OUTPUT[0]}x{OUTPUT[1]} scale 1\n'
                       'default_border none\ndefault_floating_border none\n'
-                      'seat seat0 fallback true\n')
+                      'seat seat0 fallback true\n' + ('xwayland force\n' if xwayland else ''))
     env.update({'XDG_RUNTIME_DIR': str(directory), 'WLR_BACKENDS': 'headless',
                 'WLR_RENDERER': 'pixman', 'WLR_LIBINPUT_NO_DEVICES': '1', 'MOZ_ENABLE_WAYLAND': '1'})
     env.pop('MOZ_HEADLESS', None)
@@ -231,11 +290,30 @@ def start_sway(directory, env):
         sockets = [p for p in directory.glob('wayland-*') if p.is_socket()]
         if sockets:
             env['WAYLAND_DISPLAY'] = sockets[0].name
+            if xwayland:
+                env['DISPLAY'] = xwayland_display(directory, env, sway)
             return sway
         if sway.poll() is not None or time.monotonic() >= deadline:
             sway.kill()
             raise RuntimeError('headless Sway did not start')
         time.sleep(.1)
+
+
+def xwayland_display(directory, env, sway):
+    """DISPLAY that Sway gives its own clients: its Xwayland server."""
+    out = directory / 'xwayland-display'
+    deadline, sent = time.monotonic() + 20, False
+    while time.monotonic() < deadline and sway.poll() is None:
+        ipc = [p for p in directory.glob('sway-ipc.*.sock') if p.is_socket()]
+        if ipc and not sent:
+            sent = subprocess.run(['swaymsg', '-s', str(ipc[0]), 'exec',
+                                   f'printenv DISPLAY > {out}.tmp && mv {out}.tmp {out}'],
+                                  env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
+        if out.exists() and out.read_text().strip():
+            return out.read_text().strip()
+        time.sleep(.2)
+    sway.kill()
+    raise RuntimeError('Sway started no Xwayland display')
 
 
 def stop(process, timeout):
@@ -296,6 +374,7 @@ def run(directory, env):
         'browser.newtabpage.activity-stream.widgets.enabled': True,
         'browser.shell.checkDefaultBrowser': False,
         'marionette.port': port,
+        **NEWTAB_DEFAULT_PREFS,
     }
     (profile / 'user.js').write_text(''.join(
         f'user_pref({json.dumps(k)}, {json.dumps(v)});\n' for k, v in prefs.items()))
@@ -312,6 +391,9 @@ def run(directory, env):
             raise RuntimeError('Marionette connected to an unexpected Firefox profile')
         if metadata['headless'] or not metadata['browserNova'] or not metadata['newtabNova']:
             raise RuntimeError(f'Firefox is headless or Nova is off: {metadata}')
+        defaults = m.execute_script(NEWTAB_DEFAULTS_JS, script_args=[NEWTAB_DEFAULT_ON], sandbox='system')
+        if defaults['region'] != NEWTAB_DEFAULT_PREFS['browser.search.region'] or defaults['off'] or defaults['userSet']:
+            raise RuntimeError(f'new tab not at Firefox defaults: {defaults}')
         m.execute_script('gBrowser.selectedTab = gBrowser.addTrustedTab("about:newtab")', sandbox='system')
         m.set_context('content')
         m.switch_to_window(m.window_handles[-1])
@@ -320,19 +402,31 @@ def run(directory, env):
             if time.monotonic() >= deadline:
                 raise RuntimeError('Nova new-tab shortcut did not initialize')
             time.sleep(.25)
+        deadline = time.monotonic() + 60
+        while True:
+            rendered = m.execute_script(NEWTAB_RENDERED_JS)
+            if not rendered['missing'] and not rendered['pending']:
+                break
+            if time.monotonic() >= deadline:
+                raise RuntimeError(f'default new tab did not render: {rendered}')
+            time.sleep(1)
         time.sleep(2)
         shortcut = m.execute_script(SHORTCUT_JS)
         page = Page(m, directory, env)
         geometry = m.execute_script(GEOMETRY_JS, script_args=list(page.content_origin()))
         if geometry['dpr'] != 1:
             raise RuntimeError(f'unsupported device pixel ratio: {geometry}')
-        real = page.measure(geometry['searchWrapper'])
+        rendered['widgetPixels'] = page.widget_pixels()
+        if rendered['widgetPixels'] < MIN_WIDGET_PIXELS:
+            raise RuntimeError(f'default new-tab widgets paint {rendered["widgetPixels"]} pixels, '
+                               f'fewer than {MIN_WIDGET_PIXELS}: {rendered}')
+        real = page.stable_measure(geometry['searchWrapper'])
         # Known-bad fixture: move the logo onto the search box, painted above it.
         dx = geometry['searchInner']['x'] - geometry['wordmark']['x']
         dy = geometry['searchInner']['y'] - geometry['wordmark']['y']
-        fixture = page.measure(geometry['searchWrapper'], f'.nova-enabled .wordmark {{ position: relative !important; z-index: 10 !important; '
+        fixture = page.stable_measure(geometry['searchWrapper'], f'.nova-enabled .wordmark {{ position: relative !important; z-index: 10 !important; '
                                f'transform: translate({dx}px, {dy}px) !important; }}')
-        result = {'firefox': metadata, 'geometry': geometry, 'real': real,
+        result = {'firefox': metadata, 'newtab': dict(defaults, rendered=rendered), 'geometry': geometry, 'real': real,
                   'overlapFixture': fixture, 'shortcut': shortcut}
         print(json.dumps(result, indent=2), flush=True)
         if len({round(r['y'], 1) for r in shortcut['lines']}) > 1:

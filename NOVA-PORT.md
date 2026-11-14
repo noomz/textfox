@@ -1491,3 +1491,55 @@ Found and fixed on the way:
 Run on macOS or Windows with `FIREFOX` set to the Firefox binary, for example `FIREFOX=/tmp/Firefox.app/Contents/MacOS/firefox python test-surface-paint-live.py` from `tools/firefox-chrome`. On Windows, run it from a scheduled task in the desktop session (`/IT`). New-tab feeds are on, so the profile may make network requests.
 
 Bounds: one VM display per platform (macOS 1024x768 points at DPR 2; Windows 1024x768 at 100%) and LTR only. Only T15's 9 surfaces run on macOS and Windows; the T20 surfaces and the T21 focus, RTL and motion checks remain Linux-only. One contrast theme (High Contrast Black). The macOS run is in a VM, not on physical display hardware or a physical GPU. Nova support stays unclaimed.
+
+## T23 closing T18's weaker-than-recorded proofs
+
+T18 listed painted and delivery proofs that claimed more than they showed. Four of them are now covered. Nova support stays unclaimed. T24 makes the support decision.
+
+### Default Nova new tab in pixels, widgets not hidden
+
+Marionette's `RecommendedPreferences.sys.mjs` writes `widgets.enabled`, `showSponsoredTopSites`, `testing.shouldInitializeFeeds` and `asrouter.userprefs.cfr.features` as `false` to the default branch. A runtime read of the default branch therefore reports the automation values, not Firefox's. Firefox 159's own defaults (`ActivityStream.sys.mjs` `PREFS_CONFIG`) are `true` for the first three. The widgets market gate restricts no region for `widgets.enabled`. The region decides which widgets ship. In the US, the clocks, lists, focus timer and picture-of-the-day widgets are region-blocked, and weather showed its error state. In GB, the page renders weather (opt-in state), clocks, crossword, focus timer, lists and stories. The probes therefore set those three preferences back to `true` and `browser.search.region` to `GB`. Then they assert that `Region.home` is GB and that `showWeather`, `system.showWeather`, `feeds.weatherfeed`, `feeds.section.topstories`, `feeds.system.topstories`, `widgets.system.enabled` and `widgets.weather.enabled` are effective true with no user value. `cfr.features` stays off: it is a chrome recommendation, not new-tab content (§C, probe-only).
+
+- `test-surface-paint-live.py --newtab-defaults` runs T15's 9 surfaces with that new tab. Before measuring, the weather, clocks and widget-row articles and at least one story card must be rendered, and no image in the viewport may be pending. The widgets must paint at least 5000 pixels, measured by hiding them in one capture. They painted 161,172 to 161,190 pixels per launch. Each launch had 77 story cards and the widgets `weather-widget`, `crossword`, `clocks-widget` and `focus-timer`. Exit 0: 9 surfaces pass in both browser Nova states (defaults, sentinel), and the known-bad config fails every one.
+- `test-nova-layout-live.py` no longer hides `.sidebar-inline-end` and `.content-full-width`. It uses the same default new tab and the same 5000-pixel widgets guard. Exit 0 on Firefox 159.0 build `20261022150525`. The logo painted 3052 pixels, the search box 44,304, and 0 logo pixels fell inside the search region. The injected overlap fixture put 1414 there. The widgets painted 161,179 pixels.
+- Live widgets: the clocks tick each minute. A capture set whose controls changed is retried up to 4 times and then fails the run. It is never accepted. The tile measurement retried twice (358 and 310 changed pixels) and settled.
+- The first layout run failed every attempt on 7 pixels. They were the antialiasing of a shortcut title glyph, differing by 1/255 between identical frames. The layout test's stability controls now ignore per-channel differences up to 2/255, the same allowance T21 and T22 use. Exact comparison still applies to every measured mask.
+- Subtraction: a copy of the layout test with T16's widget-hiding freeze restored exits 1 (`default new-tab widgets paint 0 pixels, fewer than 5000`).
+
+Observation for T24, not a failure under any §V: textfox styles the logo, search box and shortcut tiles. The widgets (rounded cards, purple buttons) and the story cards (`.ds-card`) keep Firefox's own styling. textfox's `.card-outer .card` rule matches nothing on the Nova new tab.
+
+### Painted run on Firefox 159.0.1
+
+`FIREFOX` may now be a command line (`paint_display.py`, split with `shlex` outside Windows). `--expect-version` fails a run that reached another Firefox. The run used the nixpkgs build the VMs deliver, launched through nix-portable:
+
+```
+FIREFOX="sh $PWD/nix-portable-run.sh /nix/store/1sq19d9y3ccsb2pm1pb4y5i2zf6z7i2v-firefox-159.0.1 firefox" \
+  python test-surface-paint-live.py --expect-version 159.0.1
+```
+
+Exit 0 on Firefox 159.0.1 build `20261102144711`, Linux Wayland: 9 surfaces pass in both browser Nova states, and the known-bad config fails every one. The first attempt failed in cleanup with `Directory not empty: …/profile/cache2/entries`. Terminating the launcher ended bwrap but not the Firefox under it, which kept writing the profile. Firefox now starts in its own session, and `stop_firefox` ends the whole process group, SIGTERM then SIGKILL, waiting until the group is empty. No probe Firefox was left running after the passing run.
+
+### Home-manager-delivered Firefox on Darwin
+
+`test-home-manager-standalone.sh` takes `FIREFOX=home-manager`, which launches the Firefox that the activated generation delivers: `home-path/Applications/Firefox.app/Contents/MacOS/firefox` on Darwin, `home-path/bin/firefox` on Linux. Tart VM `mac_jr`, macOS 27.2 (26B123) arm64, the same nixpkgs and home-manager sources as T17:
+
+```
+FIREFOX=home-manager sh tools/firefox-chrome/test-home-manager-standalone.sh \
+  /nix/store/lw9n2gsykqbq10cxmfwj2lnij4c7v6a2-nixpkgs \
+  /nix/store/0nzi19bqisn1y1h2kha03gbdn1b7cbvl-home-manager
+```
+
+The log printed `Standalone home-manager activation passed`. Generations: seeded `/nix/store/9sii2pzbyhfszwvv8pi9ibkkfjf7m4n9-home-manager-generation`, fresh `/nix/store/i766yhsbcwxkr86zv16w5s8sw381bfyx-home-manager-generation`. Both generations' Firefox reported 159.0.1 build `20261102144711`, with a navbar border of `7px` at `Library/Application Support/Firefox/Profiles/test`. On the seeded profile, `browser.nova.enabled` was effective false, default true, with a user value. `browser.newtabpage.activity-stream.nova.enabled` was effective true with no user value, and `tf.test.sentinel` survived. The generation's `Firefox.app` is a link farm into `firefox-unwrapped-159.0.1`. The launch is headless, as in T17: it proves delivery and preference state, not painting.
+
+Host notes: the guest stopped during a file copy for this run, for an unknown cause, and was restarted with `tart run`. macOS cleared the guest's `/tmp` at boot, so T19's and T22's `/tmp/Firefox.app` (159.0) and `/tmp/tf-t19/venv` are gone. The tree and the `marionette_driver` venv now live in `~/tf-t23` and `~/tf-t23-venv`.
+
+### X11 painted run
+
+`TF_PAINT_X11=1` starts the disposable Sway with `xwayland force`, reads the `DISPLAY` Sway gives its clients, and launches Firefox with `GDK_BACKEND=x11`, `MOZ_ENABLE_WAYLAND=0` and no `WAYLAND_DISPLAY`. The run fails unless Firefox's `nsIGfxInfo.windowProtocol` is `x11`. `grim` still captures the compositor output. Exit 0 on Firefox 159.0: 9 surfaces pass in both browser Nova states, and the known-bad config fails every one. The window protocol was `x11` and the layer manager `WebRender (Software)`.
+
+Bounds:
+
+- No GPU rendering run. Every painted proof, including this X11 one, uses software WebRender over a pixman compositor.
+- The default new tab is one region (GB) and one locale (en-US), with the weather widget in its opt-in state, not showing a forecast. Stories render below the 800-pixel fold. They are asserted rendered, not painted.
+- The 159.0.1 painted run is on Linux only. On Darwin, 159.0.1 is the home-manager launch, headless.
+- The T20 and T21 painted tests were not run on 159.0.1, on X11 or with the default new tab.

@@ -5,11 +5,16 @@ Firefox there, and captures what the OS composited for the Firefox window:
 
 - Linux: a disposable headless Sway compositor, captured with grim (see
   test-nova-layout-live.py). The capture is the whole 1280x800 output.
+  Firefox is a Wayland client, or with TF_PAINT_X11=1 an X11 client of the
+  compositor's Xwayland (asserted from Firefox's own window protocol).
 - macOS: the logged-in desktop, captured with `screencapture -R` over the
   Firefox window. The capturing process needs Screen Recording permission.
 - Windows: the interactive desktop, captured with GDI BitBlt (CAPTUREBLT, so
   layered popups are included) over the Firefox window. Run inside the desktop
   session (a scheduled task); a service or SSH session has no desktop.
+
+FIREFOX names the Firefox to launch. Outside Windows it is split like a shell
+command line, so it may be a launcher with arguments (a nix-portable store path).
 
 Captures are binary PPM files. `diff` compares two captures in pure Python, so
 macOS and Windows need no ImageMagick.
@@ -17,6 +22,8 @@ macOS and Windows need no ImageMagick.
 import os
 from pathlib import Path
 import runpy
+import shlex
+import signal
 import subprocess
 import sys
 import time
@@ -126,9 +133,16 @@ class Display:
 
     def __init__(self, directory, env):
         self.directory, self.env = Path(directory), env
-        self.firefox = os.environ.get('FIREFOX', 'firefox')
+        command = os.environ.get('FIREFOX', 'firefox')
+        # A command list; Windows paths keep their backslashes as one word.
+        self.firefox = [command] if sys.platform == 'win32' else shlex.split(command)
         self.rect = None  # device-pixel capture rect, set by bind()
         self.dpr = 1
+
+    @property
+    def firefox_env(self):
+        """Environment Firefox launches with; captures use self.env."""
+        return self.env
 
     @property
     def size(self):
@@ -156,31 +170,78 @@ class Display:
         return dict(w, captured=self.rect)
 
     def stop_firefox(self, process):
-        process.terminate()
+        """End Firefox and everything in its process group.
+
+        Firefox starts in its own session (popen_options), so a launcher such as
+        nix-portable's bwrap cannot leave it running and writing the profile."""
         try:
-            process.wait(timeout=15)
-        except subprocess.TimeoutExpired:
-            process.kill()
-            process.wait()
+            group = os.getpgid(process.pid)
+        except ProcessLookupError:
+            group = None
+        if group is None or group != process.pid:  # not our own session: the launched process only
+            process.terminate()
+            try:
+                process.wait(timeout=15)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait()
+            return
+        for sig, timeout in ((signal.SIGTERM, 15), (signal.SIGKILL, 10)):
+            try:
+                os.killpg(group, sig)
+            except ProcessLookupError:
+                break
+            deadline = time.monotonic() + timeout
+            while time.monotonic() < deadline:
+                process.poll()
+                try:
+                    os.killpg(group, 0)
+                except ProcessLookupError:
+                    break  # group empty
+                time.sleep(.2)
+            else:
+                continue
+            break
+        process.wait()
+
+    @staticmethod
+    def popen_options():
+        """Popen keyword arguments for launching Firefox."""
+        return {} if sys.platform == 'win32' else {'start_new_session': True}
 
     def close(self):
         pass
 
 
 class SwayDisplay(Display):
-    platform = 'linux-wayland'
     expected_os = 'Linux'
 
     def __init__(self, directory, env):
         super().__init__(directory, env)
+        self.x11 = os.environ.get('TF_PAINT_X11') == '1'
+        self.platform = 'linux-x11' if self.x11 else 'linux-wayland'
         layout = runpy.run_path(str(HERE / 'test-nova-layout-live.py'))
         self._stop, self.output = layout['stop'], layout['OUTPUT']
-        self.sway = layout['start_sway'](self.directory, env)
+        self.sway = layout['start_sway'](self.directory, env, xwayland=self.x11)
+
+    @property
+    def firefox_env(self):
+        if not self.x11:
+            return self.env
+        # No Wayland socket: GTK and Firefox can only reach the compositor through Xwayland.
+        env = {k: v for k, v in self.env.items() if k != 'WAYLAND_DISPLAY'}
+        return dict(env, MOZ_ENABLE_WAYLAND='0', GDK_BACKEND='x11')
 
     def check(self, meta):
         problems = super().check(meta)
-        if not meta.get('wayland') or meta.get('dpr') != 1:
-            problems.append('not on the Sway Wayland display at scale 1')
+        if meta.get('dpr') != 1:
+            problems.append('not at scale 1')
+        if self.x11:
+            if meta.get('windowProtocol') != 'x11' or meta.get('wayland'):
+                problems.append(f'not an X11 client: protocol {meta.get("windowProtocol")}, '
+                                f'WAYLAND_DISPLAY {meta.get("wayland")}')
+        elif not meta.get('wayland') or meta.get('windowProtocol') not in (None, 'wayland'):
+            problems.append('not on the Sway Wayland display')
         return problems
 
     def bind(self, m):

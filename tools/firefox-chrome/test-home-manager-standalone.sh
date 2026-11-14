@@ -10,6 +10,8 @@
 #
 # On Linux, Nix is nix-portable with NP_RUNTIME=bwrap. On Darwin, Nix is the
 # host install and Firefox is $FIREFOX or `firefox` on PATH.
+# FIREFOX=home-manager launches the Firefox the activated generation itself
+# delivers (programs.firefox's package in home-path), not a host Firefox.
 set -eu
 if [ "$#" -ne 2 ]; then
   echo "Usage: $0 /nix/store/<nixpkgs-source> /nix/store/<home-manager-source>" >&2
@@ -358,6 +360,14 @@ firefox_check() {
   output=$3
   shift 3
   firefox_bin=${FIREFOX:-firefox}
+  if [ "$firefox_bin" = home-manager ]; then
+    if [ "$os" = Darwin ]; then
+      firefox_bin=$gen/home-path/Applications/Firefox.app/Contents/MacOS/firefox
+    else
+      firefox_bin=$gen/home-path/bin/firefox
+    fi
+    echo "Firefox delivered by $gen: $firefox_bin" >&2
+  fi
   command -v "$firefox_bin" >/dev/null || test -x "$firefox_bin" || fail 'firefox is not on PATH'
   if [ "$os" = Darwin ]; then
     profile=$(CDPATH= cd -- "$profile" && pwd -P)
