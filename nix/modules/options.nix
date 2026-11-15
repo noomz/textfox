@@ -44,6 +44,8 @@ in
         description = "If titles (tabs, navbar, main etc.) should be shown";
       };
 
+      containerFrame = mkEnableOption "frames that follow the container color of the tab they show (content box and split-view panels)";
+
       newtabLogo = mkOption {
         type = str;
         default = "   __            __  ____          \n  / /____  _  __/ /_/ __/___  _  __\n / __/ _ \\| |/_/ __/ /_/ __ \\| |/_/\n/ /_/  __/>  </ /_/ __/ /_/ />  <  \n\\__/\\___/_/|_|\\__/_/  \\____/_/|_|  ";
@@ -183,6 +185,7 @@ in
           --tf-display-urlbar-icons: ${if cfg.displayUrlbarIcons then "flex" else "none"};
           --tf-display-sidebar-tools: ${if cfg.displaySidebarTools then "flex" else "none"};
           --tf-display-titles: ${if cfg.displayTitles then "flex" else "none"};
+          --tf-container-frame: ${if cfg.containerFrame then "1" else "0"};
           --tf-newtab-logo: "${cfg.newtabLogo}";
           --tf-navbar-margin: ${cfg.navbar.margin};
           --tf-navbar-padding: ${cfg.navbar.padding};

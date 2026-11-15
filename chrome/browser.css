@@ -8,8 +8,12 @@ browser {
 
 #tabbrowser-tabbox,
 .split-view-panel {
+  /* --tf-container-frame 1: the container color of the tab shown (chrome/overwrites.css sets
+     --identity-tab-color here); no container, or 0: --tf-border (V18). */
+  --tf-frame-color: color-mix(in srgb, var(--identity-tab-color, var(--tf-border))
+    calc(var(--tf-container-frame) * 100%), var(--tf-border));
   margin: 8px !important;
-  border: var(--border-width) solid var(--tf-border);
+  border: var(--border-width) solid var(--tf-frame-color);
   border-radius: var(--tf-rounding);
   padding: 8px !important;
   transition: border-color var(--tf-border-transition);
@@ -79,8 +83,14 @@ body {
   --toolbox-background-image: none;
 }
 
+/* A split view's other panel inherits the selected tab's color from the content box; its own
+   tab's container, if any, replaces this (chrome/overwrites.css). */
+.split-view-panel:not(.deck-selected) {
+  --identity-tab-color: initial !important;
+}
+
 .split-view-panel {
-  --splitborder: var(--tf-border);
+  --splitborder: var(--tf-frame-color);
   border-color: var(--splitborder);
   margin: 4px 0 0 !important;
   transition: border-color var(--tf-border-transition), outline-color var(--tf-border-transition);

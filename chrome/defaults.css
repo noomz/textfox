@@ -16,6 +16,7 @@
   --tf-display-urlbar-icons: none; /* If the icons inside the url bar should be shown, none = hidden, flex = shown */
   --tf-display-sidebar-tools: flex; /* If the "Customize sidebar" button on the sidebar should be shown, none = hidden, flex = shown */
   --tf-display-titles: flex; /* If titles (tabs, navbar, main etc.) should be shown, none = hidden, flex = shown */
+  --tf-container-frame: 0; /* If the main and split-view frames take the container color of the tab they show, 0 = --tf-border, 1 = container color */
   --tf-newtab-logo: "   __            __  ____          \A   / /____  _  __/ /_/ __/___  _  __\A  / __/ _ \\| |/_/ __/ /_/ __ \\| |/_/\A / /_/  __/>  </ /_/ __/ /_/ />  <  \A \\__/\\___/_/|_|\\__/_/  \\____/_/|_|  ";
   --tf-navbar-margin: 8px 8px 2px; /* navbar margin */
   --tf-navbar-padding: 4px; /* navbar padding */

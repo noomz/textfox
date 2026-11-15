@@ -16,6 +16,7 @@ MANUAL_CONFIG_CSS = ''':root {
   --tf-text-transform: uppercase;
   --tf-display-horizontal-tabs: block;
   --tf-display-titles: none;
+  --tf-container-frame: 1;
   --tf-newtab-logo: "hi";
 }
 '''
@@ -26,6 +27,7 @@ NIX_OPTIONS = '''{
   textfox.config.textTransform = "uppercase";
   textfox.config.tabs.horizontal.enable = true;
   textfox.config.displayTitles = false;
+  textfox.config.containerFrame = true;
   textfox.config.newtabLogo = "hi";
   system.stateVersion = "26.05";
 }'''
@@ -69,6 +71,8 @@ def main():
         failures.append('horizontal tabs do not show as block')
     if manual['--tf-display-titles'] != 'none':
         failures.append('titles are not hidden')
+    if manual['--tf-container-frame'] != '1':
+        failures.append('container frames are not on')
     if manual['--tf-font-size'] != '17px' or manual['--tf-rounding'] != '4px':
         failures.append('sizes do not follow configuration')
     if manual['--tf-newtab-logo-rendered'] != '"hi"':
