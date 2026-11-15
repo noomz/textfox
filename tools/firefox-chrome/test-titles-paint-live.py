@@ -23,9 +23,16 @@ headed inside it, `grim` captures. For each title present:
   just right of the title and below the top border, the dominant painted color
   must match the title's background color. A Firefox theme painting its toolbar
   color or images under the box shows the title as a patch.
+  Over theme art (`--art`, V19) the box's paint is not one color, so the title
+  with its text (and text shadow) made transparent must paint what the capture with it hidden
+  shows, pixel for pixel within BLEND, across the title's glyph box except the
+  border rows it covers; and in those border rows it must differ from that
+  capture (which shows the line) in HIDES of the pixels: the title hides the line.
 
 `--theme ID[:light|dark]` (repeatable) or `--themes default|every` runs the matrix
-with that Firefox theme active (ff_themes.py, V15).
+with that Firefox theme active (ff_themes.py, V15). `--art images|gradient` turns
+the theme-art option on (ff_themes.ART_CONFIG); `--themes art` is the image themes
+and nova-ash. The art check applies where Firefox itself has that art.
 
 Matrix: browser Nova on and off, classic layout (horizontal tabs, bookmarks
 sidebar) and revamp layout (vertical tabs and the tools launcher), device pixel
@@ -126,7 +133,7 @@ ref.id = 'tf-title-reference';
 ref.textContent = cs.content.replace(/^"|"$/g, '');
 for (const p of ['font-family', 'font-size', 'font-weight', 'font-style', 'line-height', 'letter-spacing',
                  'text-transform', 'padding-left', 'padding-right', 'padding-top', 'padding-bottom', 'color',
-                 'background-color'])
+                 'background-color', 'text-shadow'])
   ref.style.setProperty(p, cs.getPropertyValue(p));
 Object.assign(ref.style, {position: 'fixed', left: 'REF_Xpx', top: 'REF_Ypx', zIndex: '2147483647', margin: '0',
                           whiteSpace: 'pre'});
@@ -198,7 +205,40 @@ def dominant(path, region):
     return max(tally, key=tally.get) if tally else None
 
 
-def measure(m, shooter, name, selector, geometry, dpr):
+def line_hidden(clear, hidden, here, top, bottom):
+    """(pixels, rows total) of the border rows top..bottom-1 under the title's glyph box where the title
+    with transparent text differs from the capture without the title, which shows the border line."""
+    width, height, a = paint_display.read_ppm(clear)
+    _, _, b = paint_display.read_ppm(hidden)
+    count = total = 0
+    for y in range(top, bottom):
+        for x in range(here['x'], here['x'] + here['width']):
+            i = (y * width + x) * 3
+            total += 1
+            count += max(abs(a[i + k] - b[i + k]) for k in range(3)) > BLEND
+    return count, total
+
+
+HIDES = 0.9  # share of the border line under a title the title must cover
+
+
+def patch_pixels(clear, hidden, here, top, bottom):
+    """Pixels of the title's glyph box, outside the border rows top..bottom it covers, where the
+    title with transparent text differs from the capture with the title hidden by more than BLEND."""
+    width, height, a = paint_display.read_ppm(clear)
+    _, _, b = paint_display.read_ppm(hidden)
+    count = total = 0
+    for y in range(here['y'], here['y'] + here['height']):
+        if top - 1 <= y <= bottom:
+            continue
+        for x in range(here['x'], here['x'] + here['width']):
+            i = (y * width + x) * 3
+            total += 1
+            count += max(abs(a[i + k] - b[i + k]) for k in range(3)) > BLEND
+    return count, total
+
+
+def measure(m, shooter, name, selector, geometry, dpr, art=False):
     in_shadow = geometry['inShadow']
     hide = f'{selector}::before {{ visibility: hidden !important; }}'
 
@@ -242,6 +282,21 @@ def measure(m, shooter, name, selector, geometry, dpr):
     if hits:
         failures.append(f'{name}: title overlaps {hits[:3]}')
     record['overlaps'] = hits
+    if art:
+        clear = shooter.shoot(*css(f'{selector}::before {{ color: transparent !important; '
+                                         'text-shadow: none !important; }}'))
+        count, total = patch_pixels(clear, hidden, here, top, bottom)
+        record['patch'] = {'pixels': count, 'of': total}
+        if not total:
+            raise RuntimeError(f'{name}: no title pixels outside the border rows to compare')
+        if count:
+            failures.append(f'{name}: title paints a patch over the theme art: {count} of {total} pixels differ '
+                            'from the paint without it')
+        covered, line = line_hidden(clear, hidden, here, top, bottom)
+        record['lineHidden'] = {'pixels': covered, 'of': line}
+        if covered < HIDES * line:
+            failures.append(f'{name}: title shows the border line under it: covers {covered} of {line} pixels')
+        return record, failures
     # Beside the title, inside the box: right of its padding, below the top border, above its bottom.
     x0 = here['x'] + here['width'] + round(8 * dpr)
     y0 = bottom + round(2 * dpr)
@@ -255,7 +310,7 @@ def measure(m, shooter, name, selector, geometry, dpr):
     return record, failures
 
 
-def run(display, nova, layout, dpp, expect_version, theme=None):
+def run(display, nova, layout, dpp, expect_version, theme=None, art='none'):
     port = free_port()
     with tempfile.TemporaryDirectory(prefix='tf-titles-') as name:
         directory = Path(name)
@@ -264,7 +319,10 @@ def run(display, nova, layout, dpp, expect_version, theme=None):
         shutil.copytree(ROOT / 'chrome', profile / 'chrome')
         if layout == 'classic':
             # textfox hides the horizontal strip by default; the README's option shows it.
-            (profile / 'chrome' / 'config.css').write_text(':root { --tf-display-horizontal-tabs: block; }\n')
+            (profile / 'chrome' / 'config.css').write_text(':root { --tf-display-horizontal-tabs: block; }\n'
+                                                           + ff_themes.ART_CONFIG[art])
+        elif ff_themes.ART_CONFIG[art]:
+            (profile / 'chrome' / 'config.css').write_text(ff_themes.ART_CONFIG[art])
         prefs = {
             'toolkit.legacyUserProfileCustomizations.stylesheets': True,
             'browser.nova.enabled': nova,
@@ -300,6 +358,8 @@ def run(display, nova, layout, dpp, expect_version, theme=None):
                 raise RuntimeError(f'Firefox {meta["version"]}, expected {expect_version}')
             if theme:
                 meta['theme'] = ff_themes.apply(m, theme)
+            meta['art'] = ff_themes.art_expected(m, art)
+            ff_themes.hold_still(m, art)
             m.execute_script("gBrowser.addTrustedTab('about:blank')", sandbox='system')
             if layout == 'classic':
                 m.execute_script("SidebarController.show('viewBookmarksSidebar')", sandbox='system')
@@ -315,7 +375,8 @@ def run(display, nova, layout, dpp, expect_version, theme=None):
                 geometry = m.execute_script(HOSTS_JS + GEOMETRY_JS, script_args=[title], sandbox='system')
                 if geometry is None:
                     raise RuntimeError(f'{title}: box or title not shown in the {layout} layout')
-                record, problems = measure(m, shooter, title, selector, geometry, meta['dpr'])
+                record, problems = measure(m, shooter, title, selector, geometry, meta['dpr'],
+                                           art=meta['art']['expected'])
                 records.append(record)
                 failures += problems
             return meta, records, failures
@@ -334,23 +395,27 @@ def main():
     parser.add_argument('--dpp', default='1,2', help='device pixel ratios, comma-separated')
     parser.add_argument('--expect-version')
     parser.add_argument('--theme', action='append', default=[], help='Firefox theme ID[:light|dark] (repeatable)')
-    parser.add_argument('--themes', choices=('default', 'every'), help='theme set (see ff_themes.py)')
+    parser.add_argument('--themes', choices=('default', 'every', 'art'), help='theme set (see ff_themes.py)')
+    parser.add_argument('--art', choices=tuple(ff_themes.ART_CONFIG), default='none',
+                        help='turn --tf-theme-images or --tf-theme-gradient on (V19)')
     args = parser.parse_args()
     themes = args.theme + {'default': ff_themes.DEFAULT_THEMES, 'every': ff_themes.EVERY_THEME,
-                           None: []}[args.themes]
+                           'art': ff_themes.ART_THEMES, None: []}[args.themes]
     for spec in themes:
         ff_themes.parse(spec)
     novas = [args.nova == 'true'] if args.nova else [False, True]
     layouts = [args.layout] if args.layout else list(LAYOUTS)
     dpps = [float(v) for v in args.dpp.split(',')]
-    failures = []
+    failures, judged_art = [], False
     with tempfile.TemporaryDirectory(prefix='tf-titles-sway-') as name:
         display = paint_display.open_display(name, dict(os.environ))
         try:
             runs = [(t, d, n, la) for t in themes or [None] for d in dpps for n in novas for la in layouts]
             for theme, dpp, nova, layout in runs:
-                meta, records, problems = run(display, nova, layout, dpp, args.expect_version, theme)
-                print(json.dumps({'nova': nova, 'layout': layout, 'dpp': dpp, 'theme': theme, 'firefox': meta,
+                meta, records, problems = run(display, nova, layout, dpp, args.expect_version, theme, args.art)
+                judged_art = judged_art or meta['art']['expected']
+                print(json.dumps({'nova': nova, 'layout': layout, 'dpp': dpp, 'theme': theme, 'art': args.art,
+                                  'firefox': meta,
                                   'titles': records}), flush=True)
                 failures += [f'nova={nova} {layout} dpp={dpp} theme={theme}: {p}' for p in problems]
         except Exception as error:  # noqa: BLE001 - any harness failure fails the run
@@ -360,6 +425,8 @@ def main():
             return 1
         finally:
             display.close()
+    if args.art != 'none' and not judged_art:  # an --art run that judged nothing over art proves nothing
+        failures.append(f'--art {args.art}: Firefox had no such art in any run; nothing was judged over art')
     if failures:
         for failure in failures:
             print(f'FAIL {failure}', flush=True)
@@ -367,6 +434,7 @@ def main():
     states = '/'.join('on' if nova else 'off' for nova in novas)
     print('PASS: every section title paints whole on its top border, clear of controls, on its box\'s paint '
           f'(browser Nova {states}, {", ".join(layouts)}, dpr {args.dpp}'
+          + (f', --art {args.art}' if args.art != 'none' else '')
           + (f', themes {", ".join(themes)}' if themes else '') + ')', flush=True)
     return 0
 

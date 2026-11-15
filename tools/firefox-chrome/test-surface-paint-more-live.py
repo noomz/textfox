@@ -34,6 +34,11 @@ never inconclusive.
 
 `--theme ID[:light|dark]` (repeatable) or `--themes default|every` runs every
 case with that Firefox theme active, as test-surface-paint-live.py does (V15).
+`--art images|gradient` and `--themes art` work as there (V19): where Firefox itself
+has that art, window boxes (sidebar, content box, split panels, tab strips, the
+private window's boxes) are judged over the art (shown, text against the paint under
+it), and the one-frame check compares each gap with a capture whose
+`.browserContainer` is hidden instead of with --tf-bg. Popups keep the --tf-bg judge.
 
 Requires sway, grim, ImageMagick, and the live-tool venv Python. Set
 TF_SURFACE_ARTIFACTS to a directory to keep captures and masks.
@@ -57,9 +62,9 @@ import ff_themes
 ROOT = Path(__file__).resolve().parents[2]
 HERE = Path(__file__).resolve().parent
 _paint = runpy.run_path(str(HERE / 'test-surface-paint-live.py'))
-(Capture, Image, judge, wait, near, ratio, dominant, inflate, start_sway, stop, changed_mask, count,
+(Capture, Image, judge, art_under_some, wait, near, ratio, dominant, inflate, start_sway, stop, changed_mask, count,
  painted_box, RESOLVE_JS, CHROME_STYLE_JS, FREEZE, MIN_RATIO, MIN_TEXT_PIXELS, OUTPUT, EDGE_MATCH) = (
-    _paint[k] for k in ('Capture', 'Image', 'judge', 'wait', 'near', 'ratio', 'dominant', 'inflate',
+    _paint[k] for k in ('Capture', 'Image', 'judge', 'art_under_some', 'wait', 'near', 'ratio', 'dominant', 'inflate',
                         'start_sway', 'stop', 'changed_mask', 'count', 'painted_box', 'RESOLVE_JS',
                         'CHROME_STYLE_JS', 'FREEZE', 'MIN_RATIO', 'MIN_TEXT_PIXELS', 'OUTPUT', 'EDGE_MATCH'))
 
@@ -128,12 +133,13 @@ return {pad:{left:r.left + parseFloat(s.borderLeftWidth), right:r.right - parseF
 """
 
 
-def frame_lines(image, gap, background):
+def frame_lines(image, gap, background, reference=None):
     """Sides whose gap between padding edge and web content holds a line that is not background.
 
     Left and right use the middle half of the content's rows; bottom uses columns 10% to 50% of
     its width, clear of textfox's split-view footer in the bottom-right corner; top uses 50% to
-    90%, clear of the section title at the top-left."""
+    90%, clear of the section title at the top-left. With a reference capture (theme art), a
+    pixel counts where it differs from the reference rather than from background."""
     pad, stack = gap['pad'], gap['stack']
     top, height = stack['top'], stack['bottom'] - stack['top']
     left, width = stack['left'], stack['right'] - stack['left']
@@ -146,9 +152,10 @@ def frame_lines(image, gap, background):
         'right': [[(x, y) for y in rows] for x in range(math.ceil(stack['right']), math.floor(pad['right']))],
         'bottom': [[(x, y) for x in columns] for y in range(math.ceil(stack['bottom']), math.floor(pad['bottom']))],
     }
+    def off(x, y):
+        return not near(image.pixel(x, y), reference.pixel(x, y) if reference else background)
     return {side: sum(1 for line in lines
-                      if line and sum(not near(image.pixel(x, y), background) for x, y in line)
-                      >= EDGE_MATCH * len(line))
+                      if line and sum(off(x, y) for x, y in line) >= EDGE_MATCH * len(line))
             for side, lines in strips.items()}
 
 
@@ -228,11 +235,11 @@ def judge_font(name, shot):
 
 
 class Run:
-    def __init__(self, m, capture):
-        self.m, self.capture = m, capture
+    def __init__(self, m, capture, art=False):
+        self.m, self.capture, self.art = m, capture, art
         self.records, self.failures = [], {}
 
-    def chrome(self, surface, prefix=''):
+    def chrome(self, surface, prefix='', over_art=True):
         name, selector, border_var, text_selector, skip = surface
         name = prefix + name
         self.m.set_context('chrome')
@@ -243,7 +250,10 @@ class Run:
             colors['skip'] = self.m.execute_script(SKIP_JS, script_args=[skip], sandbox='system')
             if not colors['skip']:
                 raise RuntimeError(f'{name}: {skip} missing')
+        # Only over art: a popup's --tf-bg can sit within noise of faint art behind it.
+        self.capture.noise = _paint['CONTROL_NOISE'] if self.art and over_art else 0
         shot = self.capture.surface(name, selector, text_selector)
+        self.capture.noise = 0
         box = shot['box']
         # Client rects are used as compositor pixels; Wayland's mozInnerScreenX counts the CSD shadow, so
         # check placement directly: the skipped web content must sit inside the surface's painted box.
@@ -254,7 +264,7 @@ class Run:
                                  and colors['skip']['x'] + colors['skip']['width'] <= box['x'] + box['width']
                                  and colors['skip']['y'] + colors['skip']['height'] <= box['y'] + box['height'])):
             raise RuntimeError(f'{name}: content rect {colors["skip"]} outside painted box {box}')
-        record, self.failures[name] = judge(name, shot, colors, border_var=border_var)
+        record, self.failures[name] = judge(name, shot, colors, border_var=border_var, art=self.art and over_art)
         self.records.append(record)
 
     def single_frame(self, surface, state='', record_name=None):
@@ -270,7 +280,11 @@ class Run:
             raise RuntimeError(f'{name}: {selector} .browserStack missing')
         background = self.m.execute_script(RESOLVE_JS, script_args=[selector], sandbox='system')['--tf-bg']
         image = Image(self.capture.shoot('', False), self.capture.size)
-        lines = frame_lines(image, gap, tuple(background))
+        reference = None
+        if self.art:
+            reference = Image(self.capture.shoot(f'{selector} .browserContainer {{ visibility: hidden !important; }}',
+                                                 False), self.capture.size)
+        lines = frame_lines(image, gap, tuple(background), reference)
         pad, stack = gap['pad'], gap['stack']
         widths = {'left': stack['left'] - pad['left'], 'right': pad['right'] - stack['right'],
                   'top': stack['top'] - pad['top'], 'bottom': pad['bottom'] - stack['bottom']}
@@ -361,7 +375,7 @@ def classic(m, run):
     for name, selector, border_var, text_selector, opener, is_open, closer in POPUPS:
         m.execute_script(opener, sandbox='system')
         wait_open(m, is_open, f'{name} open')
-        run.chrome((name, selector, border_var, text_selector, None))
+        run.chrome((name, selector, border_var, text_selector, None), over_art=False)
         m.execute_script(closer, sandbox='system')
         wait_open(m, is_open.replace("== 'open'", "!= 'open'"), f'{name} closed')
 
@@ -374,7 +388,7 @@ def classic(m, run):
     neutral_pointer(m)  # the menu opens under the pointer; keep its first item unhovered
     wait(m, "return document.getElementById('contentAreaContextMenu').state == 'open' && "
          "!document.querySelector('#contentAreaContextMenu > [_moz-menuactive]')", 'context menu unhovered')
-    run.chrome(PAGE_CONTEXT)
+    run.chrome(PAGE_CONTEXT, over_art=False)
     m.execute_script("document.getElementById('contentAreaContextMenu').hidePopup()", sandbox='system')
     wait_open(m, "return document.getElementById('contentAreaContextMenu').state == 'closed'", 'context menu closed')
     neutral_pointer(m)
@@ -396,7 +410,7 @@ def revamp(m, run):
     run.single_frame(CONTENT_BOX)
 
 
-def private(m, run, layout):
+def private(m, run, layout, art='none'):
     """Open a private window, close the normal one so it fills the output, and measure it."""
     neutral_pointer(m)
     normal = m.current_chrome_window_handle
@@ -419,6 +433,10 @@ def private(m, run, layout):
                   "gBrowser.tabs.length == 2", 'private vertical tabs')
     else:
         wait_open(m, "return gBrowser.tabs.length == 2", 'private second tab')
+    ff_themes.hold_still(m, art)
+    # Whether Firefox has the art in this window too (V19): its own value, as for the first window.
+    run.private_art = ff_themes.art_expected(m, art)
+    run.art = run.private_art['expected']
     # The new window focuses its URL bar, whose focus ring (B12) would come and go between captures.
     m.execute_script("gBrowser.selectedBrowser.focus()", sandbox='system')
     time.sleep(.5)
@@ -427,7 +445,7 @@ def private(m, run, layout):
     run.font('about:privatebrowsing', prefix='private ')
 
 
-def launch(env, nova, layout, config, kind, theme=None):
+def launch(env, nova, layout, config, kind, theme=None, art='none'):
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0))
         port = sock.getsockname()[1]
@@ -481,13 +499,19 @@ def launch(env, nova, layout, config, kind, theme=None):
             wait(m, 'return gBrowserInit.delayedStartupFinished', 'Firefox startup')
             if theme:
                 meta['theme'] = ff_themes.apply(m, theme)
+            meta['art'] = ff_themes.art_expected(m, art)
+            ff_themes.hold_still(m, art)
             m.execute_script("document.documentElement.removeAttribute('remotecontrol'); "
                              "gBrowser.addTrustedTab('about:blank')", sandbox='system')
             wait_open(m, 'return gBrowser.tabs.length == 2', 'second tab')
             neutral_pointer(m)
-            run = Run(m, Shots(m, shots, env))
+            run = Run(m, Shots(m, shots, env), art=meta['art']['expected'])
             (classic if layout == 'classic' else revamp)(m, run)
-            private(m, run, layout)
+            private(m, run, layout, art)
+            meta['privateArt'] = run.private_art
+            missing_art = art_under_some(run.records)
+            if missing_art:
+                run.failures[next(r['surface'] for r in run.records if 'art' in r)].append(missing_art)
             return meta, run.records, run.failures
         finally:
             try:
@@ -503,19 +527,22 @@ def main():
     parser.add_argument('--layout', choices=list(LAYOUTS), action='append', help='limit to a layout (repeatable)')
     parser.add_argument('--nova', choices=['false', 'true'], action='append', help='limit to a browser Nova state')
     parser.add_argument('--theme', action='append', default=[], help='Firefox theme ID[:light|dark] (repeatable)')
-    parser.add_argument('--themes', choices=('default', 'every'), help='theme set (see ff_themes.py)')
+    parser.add_argument('--themes', choices=('default', 'every', 'art'), help='theme set (see ff_themes.py)')
+    parser.add_argument('--art', choices=tuple(ff_themes.ART_CONFIG), default='none',
+                        help='turn --tf-theme-images or --tf-theme-gradient on (V19)')
     args = parser.parse_args()
     themes = args.theme + {'default': ff_themes.DEFAULT_THEMES, 'every': ff_themes.EVERY_THEME,
-                           None: []}[args.themes]
+                           'art': ff_themes.ART_THEMES, None: []}[args.themes]
     for spec in themes:
         ff_themes.parse(spec)
     configs = dict(CONFIGS)
     if args.config:
         del configs['sentinel']
         configs['given'] = args.config.read_text()
+    configs = {k: v + ff_themes.ART_CONFIG[args.art] for k, v in configs.items()}
     layouts = args.layout or list(LAYOUTS)
     novas = [n == 'true' for n in args.nova] if args.nova else [False, True]
-    failures, surfaces = [], {}
+    failures, surfaces, judged_art = [], {}, False
     with tempfile.TemporaryDirectory(prefix='tf-surface-sway-') as name:
         directory = Path(name)
         directory.chmod(0o700)
@@ -525,16 +552,23 @@ def main():
             runs = [(t, n, la, k) for t in themes or [None] for n in novas for la in layouts for k in configs]
             for theme, nova, layout, kind in runs:
                 config = configs[kind]
-                meta, records, found = launch(env, nova, layout, config, kind, theme)
-                print(json.dumps({'nova': nova, 'layout': layout, 'config': kind, 'theme': theme,
+                meta, records, found = launch(env, nova, layout, config, kind, theme, args.art)
+                judged_art = judged_art or meta['art']['expected']
+                print(json.dumps({'nova': nova, 'layout': layout, 'config': kind, 'theme': theme, 'art': args.art,
                                   'firefox': meta, 'surfaces': records}), flush=True)
                 surfaces.setdefault(layout, list(found))
                 if list(found) != surfaces[layout]:
                     raise RuntimeError(f'{layout}: surfaces measured differ: {list(found)}')
                 if kind == 'known-bad':
                     # The known-bad config hides text, borders and the font; other failures do not count.
+                    # Over theme art (V19) a box drops its --tf-bg: on a theme whose frame is black like
+                    # its text, it then paints nothing at all, and its border, the color of the
+                    # background, reads as indistinguishable from it.
+                    over_art = meta['art']['expected']
                     undetected = [s for s, problems in found.items()
-                                  if not any(KNOWN_BAD_SIGNS & set(p.split()) for p in problems)]
+                                  if not any(KNOWN_BAD_SIGNS & set(p.split()) or over_art and (
+                                      p.endswith('paints no pixels') or 'indistinguishable from its background' in p)
+                                             for p in problems)]
                     if undetected:
                         raise RuntimeError(f'nova={nova} layout={layout} theme={theme}: known-bad config.css not '
                                            'detected on ' + ', '.join(undetected))
@@ -543,6 +577,8 @@ def main():
                              for problems in found.values() for p in problems]
         finally:
             stop(sway, 10)
+    if args.art != 'none' and not judged_art:  # an --art run that judged nothing over art proves nothing
+        failures.append(f'--art {args.art}: Firefox had no such art in any run; nothing was judged over art')
     if failures:
         for failure in failures:
             print(f'FAIL {failure}', file=sys.stderr)
@@ -550,7 +586,9 @@ def main():
     total = sum(len(v) for v in surfaces.values())
     good = ', '.join(k for k in configs if k != 'known-bad')
     print(f'PASS: {total} surfaces across {", ".join(layouts)} paint textfox styling in browser Nova '
-          f'{"/".join(str(n).lower() for n in novas)} ({good}); the known-bad config.css fails every one')
+          f'{"/".join(str(n).lower() for n in novas)} ({good})'
+          + (f' with --art {args.art}' if args.art != 'none' else '')
+          + '; the known-bad config.css fails every one')
     return 0
 
 

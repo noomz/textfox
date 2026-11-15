@@ -57,6 +57,18 @@ pinned AMO file, which the run downloads once); `--themes default` runs a dark a
 a light classic and Nova theme, `--themes every` all theme-picker themes in both
 schemes (V15). Surfaces must paint --tf-bg under the theme, as without one.
 
+`--art images|gradient` (V19) turns --tf-theme-images or --tf-theme-gradient on in
+every config.css (gradient: with a visible stand-in for Linux's transparent browser
+Nova gradient, ff_themes.ART_CONFIG) and holds animated images still. Where Firefox
+itself has that art (its own `--toolbox-background-image` at :root: a theme's layers
+for images, browser Nova's gradient without a theme for gradient), each window box
+(navbar, URL bar text, tabs, findbar) is judged over the art instead of on --tf-bg:
+where the art paints with the box hidden, the box must show it (ART_SHOWN of those
+pixels unchanged; and under at least one of them ART_MIN_PIXELS art pixels, since a
+gradient can equal the frame color under a whole box), and its text must reach 4.5:1
+against the paint under each text pixel (the capture with the text hidden). Popups
+keep the --tf-bg judge. `--themes art` is the image themes and nova-ash.
+
 `--expect-version` fails the run unless Firefox reports that version. FIREFOX may
 be a command line (paint_display.py), for example a nix-portable launch of a
 store Firefox; TF_PAINT_X11=1 runs Firefox as an X11 client on Linux.
@@ -100,6 +112,8 @@ SLACK = 48         # px a surface may paint beyond its element box (section titl
 # popup's rounded corners one unit differently between frames. Below TOLERANCE, so such noise
 # cannot make a surface pass or fail (test-a11y-paint-live.py's StableCapture does the same).
 CONTROL_NOISE = 2
+ART_MIN_PIXELS = 100  # pixels (scaled by dpr squared) where the art must paint under a box
+ART_SHOWN = 0.6       # share of those a box must leave showing: text and controls cover the rest
 # Windows: a file Firefox's last child still holds must not fail the run (Python 3.10+ only; macOS ships 3.9).
 KEEP_LOCKED = {'ignore_cleanup_errors': True} if sys.platform == 'win32' else {}
 
@@ -337,6 +351,9 @@ class Capture:
         self.m, self.directory, self.env, self.shots = m, directory, env, 0
         self.display, self.retries = display, retries
         self.size = display.size if display else OUTPUT
+        # Over theme art (V19) a large image rasterizes 1 unit differently where a region
+        # repaints; such noise must not join a surface's painted pixels.
+        self.noise = 0
 
     def shoot(self, css, content):
         self.m.execute_async_script(CONTENT_STYLE_JS if content else CHROME_STYLE_JS,
@@ -374,21 +391,41 @@ class Capture:
                     'restored': diff(base, restored, f'{stem}-restored.pgm', CONTROL_NOISE)[0]}
         if any(controls.values()):
             raise UnstableCapture(f'{name}: captures unstable {controls}')
-        changed, box = diff(base, hidden, f'{stem}-{name}.pgm')
+        changed, box = diff(base, hidden, f'{stem}-{name}.pgm', self.noise)
         return {'image': Image(base, self.size), 'box': box, 'changed': changed,
-                'text': Image(text, self.size) if text else None}
+                'text': Image(text, self.size) if text else None, 'hidden': Image(hidden, self.size)}
 
 
 class UnstableCapture(RuntimeError):
     pass
 
 
-def judge(name, shot, colors, border_var=None, border_color=None, dpr=1, readable_only=False):
+def art_shown(shot, box, flat, skip=None):
+    """(art pixels, shown): pixels in box where the capture with the surface hidden is not flat
+    --tf-bg, and how many of them the surface leaves unchanged. The surface's text target is
+    hidden too (its own capture), so text does not count as covering the art."""
+    image, hidden = shot['text'] or shot['image'], shot['hidden']
+    art = shown = 0
+    for x, y in image.coordinates(box):
+        if skip and inside(x, y, skip):
+            continue
+        under = hidden.pixel(x, y)
+        if near(under, flat):
+            continue
+        art += 1
+        shown += near(image.pixel(x, y), under)
+    return art, shown
+
+
+def judge(name, shot, colors, border_var=None, border_color=None, dpr=1, readable_only=False, art=False):
     """Return (record, failures) for one surface; raise when the measurement is not of that surface.
 
     Device-pixel sizes scale with dpr: the element box and slack by dpr, the text floor by its square.
     readable_only (OS high contrast): Firefox's system colors may replace textfox's background and
-    chrome borders, as high contrast intends; only the text must reach MIN_RATIO on what painted."""
+    chrome borders, as high contrast intends; only the text must reach MIN_RATIO on what painted.
+    art (V19): the surface sits over theme art; it must show the art, and text is judged against
+    the paint under each text pixel. Whether any art paints under a box at all is the run's
+    check (art_under_some), since a gradient can equal the frame color under a whole box."""
     image, box, dom = shot['image'], shot['box'], colors['dom']
     record = {'surface': name, 'paintedBox': box, 'changedPixels': shot['changed'], 'colors': colors}
     if not box:
@@ -398,7 +435,13 @@ def judge(name, shot, colors, border_var=None, border_color=None, dpr=1, readabl
     failures = []
     background = None
     size = (image.width, image.height)
-    if shot['text']:
+    if art:
+        background = tuple(colors['--tf-bg'])
+        pixels, shown = art_shown(shot, inflate(box, -4, size), background, colors.get('skip'))
+        record['art'] = {'pixels': pixels, 'shown': shown, 'least': round(ART_MIN_PIXELS * dpr * dpr)}
+        if shown < ART_SHOWN * pixels:
+            failures.append(f'{name} covers the theme art: shows {shown} of {pixels} art pixels')
+    elif shot['text']:
         background = dominant(image, inflate(box, 4, size), colors.get('skip'))
         record['background'] = background
         if not readable_only and not near(background, colors['--tf-bg']):
@@ -421,12 +464,28 @@ def judge(name, shot, colors, border_var=None, border_color=None, dpr=1, readabl
         exclude = [decoration] if decoration else [colors['--tf-border'], colors['--tf-accent']]
         text = [image.pixel(x, y) for x, y in image.coordinates(inflate(box, 4, size))
                 if image.pixel(x, y) != shot['text'].pixel(x, y)]
-        strong = sum(1 for p in text if ratio(p, background) >= MIN_RATIO and not any(near(p, c, 16) for c in exclude))
+        if art:  # each text pixel against what paints under it
+            pairs = [(image.pixel(x, y), shot['text'].pixel(x, y)) for x, y in image.coordinates(inflate(box, 4, size))
+                     if image.pixel(x, y) != shot['text'].pixel(x, y)]
+            strong = sum(1 for p, under in pairs
+                         if ratio(p, under) >= MIN_RATIO and not any(near(p, c, 16) for c in exclude))
+        else:
+            strong = sum(1 for p in text
+                         if ratio(p, background) >= MIN_RATIO and not any(near(p, c, 16) for c in exclude))
         record['textPixels'] = {'changed': len(text), 'atRatio': strong}
         least = round(MIN_TEXT_PIXELS * dpr * dpr)
         if strong < least:
             failures.append(f'{name} text paints {strong} pixels at {MIN_RATIO}:1, fewer than {least}')
     return record, failures
+
+
+def art_under_some(records):
+    """None, or the failure when no surface judged over art had at least its least art pixels under it."""
+    over = [r for r in records if 'art' in r]
+    if over and not any(r['art']['pixels'] >= r['art']['least'] for r in over):
+        return (f'theme art paints under none of {", ".join(r["surface"] for r in over)} '
+                f'(art pixels {[r["art"]["pixels"] for r in over]})')
+    return None
 
 
 def wait(m, script, what, timeout=30, sandbox='system'):
@@ -445,12 +504,14 @@ def neutral_pointer(m):
     m.actions.sequence('pointer', 'mouse', {'pointerType': 'mouse'}).pointer_move(2, 2, origin='viewport').perform()
 
 
-def run(display, nova, config, kind, high_contrast=None, newtab_defaults=False, expect_version=None, theme=None):
+def run(display, nova, config, kind, high_contrast=None, newtab_defaults=False, expect_version=None, theme=None,
+        art='none'):
     """Launch Firefox with config on display and return (metadata, records, failures by surface).
 
     high_contrast: the OS high-contrast state the run set (Windows), or None where not set.
     newtab_defaults: the new tab as Firefox ships it (widgets, stories, weather), nothing hidden.
-    theme: a ff_themes spec enabled before any capture, or None for no theme."""
+    theme: a ff_themes spec enabled before any capture, or None for no theme.
+    art: an ff_themes.ART_CONFIG mode; config already carries its config.css lines."""
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0))
         port = sock.getsockname()[1]
@@ -545,6 +606,8 @@ def run(display, nova, config, kind, high_contrast=None, newtab_defaults=False, 
                 raise RuntimeError(f'unexpected Firefox process, profile, display or preference {problems}: {meta}')
             if theme:
                 meta['theme'] = ff_themes.apply(m, theme)
+            meta['art'] = ff_themes.art_expected(m, art)
+            ff_themes.hold_still(m, art)
             meta['window'] = display.bind(m)
             meta['platform'] = display.platform
             # Marionette stripes the URL bar while under remote control; that is not textfox's paint.
@@ -569,11 +632,18 @@ def run(display, nova, config, kind, high_contrast=None, newtab_defaults=False, 
                 colors = m.execute_script(RESOLVE_JS, script_args=[selector], sandbox='system')
                 if not colors:
                     raise RuntimeError(f'{name}: {selector} missing')
+                # Only over art: a popup's --tf-bg can sit within noise of faint art behind it.
+                capture.noise = CONTROL_NOISE if meta['art']['expected'] and not opener else 0
                 shot = capture.surface(name, selector, text_selector)
+                capture.noise = 0
                 record, failures[name] = judge(name, shot, colors, border_var=border_var, dpr=display.dpr,
-                                               readable_only=bool(high_contrast))
+                                               readable_only=bool(high_contrast),
+                                               art=meta['art']['expected'] and not opener)
                 records.append(record)
 
+            missing_art = art_under_some(records)
+            if missing_art:
+                failures['navbar'].append(missing_art)
             m.execute_script("document.getElementById('toolbar-context-menu').hidePopup(); "
                              "gBrowser.getFindBar().then(f => f.close(true)); "
                              "gBrowser.selectedTab = gBrowser.addTrustedTab('about:newtab')", sandbox='system')
@@ -625,8 +695,10 @@ def main():
                         help="new tab as Firefox ships it: widgets, stories and weather on, nothing hidden")
     parser.add_argument('--expect-version', help='fail unless Firefox reports this version, e.g. 159.0.1')
     parser.add_argument('--theme', action='append', default=[], help='Firefox theme ID[:light|dark] (repeatable)')
-    parser.add_argument('--themes', choices=('default', 'every'), help='theme set: default (dark and light, classic '
-                        'and Nova) or every theme-picker theme in both schemes')
+    parser.add_argument('--themes', choices=('default', 'every', 'art'), help='theme set: default (dark and light, '
+                        'classic and Nova), every theme-picker theme in both schemes, or art (image themes, nova-ash)')
+    parser.add_argument('--art', choices=tuple(ff_themes.ART_CONFIG), default='none',
+                        help='turn --tf-theme-images or --tf-theme-gradient on (V19)')
     parser.add_argument('--high-contrast', action='store_true',
                         help='Windows only: run with real OS high contrast on (High Contrast Black)')
     args = parser.parse_args()
@@ -636,14 +708,15 @@ def main():
     if sys.platform == 'win32':  # set OS high contrast either way: a state left on would skew a plain run
         hc = runpy.run_path(str(HERE / 'test-high-contrast-windows.py'))
     themes = args.theme + {'default': ff_themes.DEFAULT_THEMES, 'every': ff_themes.EVERY_THEME,
-                           None: []}[args.themes]
+                           'art': ff_themes.ART_THEMES, None: []}[args.themes]
     for spec in themes:
         ff_themes.parse(spec)
     configs = dict(CONFIGS)
     if args.config:
         del configs['sentinel']
         configs['given'] = args.config.read_text()
-    failures, surfaces, hc_kept = [], None, {}
+    configs = {k: v + ff_themes.ART_CONFIG[args.art] for k, v in configs.items()}
+    failures, surfaces, hc_kept, judged_art = [], None, {}, False
     with tempfile.TemporaryDirectory(prefix='tf-surface-display-', **KEEP_LOCKED) as name:
         directory = Path(name)
         directory.chmod(0o700)
@@ -657,8 +730,9 @@ def main():
                 meta, records, found = run(display, nova, config, kind,
                                             high_contrast=args.high_contrast if hc else None,
                                             newtab_defaults=args.newtab_defaults,
-                                            expect_version=args.expect_version, theme=theme)
-                print(json.dumps({'nova': nova, 'config': kind, 'theme': theme, 'firefox': meta,
+                                            expect_version=args.expect_version, theme=theme, art=args.art)
+                judged_art = judged_art or meta['art']['expected']
+                print(json.dumps({'nova': nova, 'config': kind, 'theme': theme, 'art': args.art, 'firefox': meta,
                                   'surfaces': records}), flush=True)
                 nova = f'{nova} theme={theme}' if theme else nova
                 surfaces = surfaces or list(found)
@@ -683,12 +757,15 @@ def main():
                     hc['set_high_contrast'](initial)
             finally:
                 display.close()
+    if args.art != 'none' and not judged_art:  # an --art run that judged nothing over art proves nothing
+        failures.append(f'--art {args.art}: Firefox had no such art in any run; nothing was judged over art')
     if failures:
         for failure in failures:
             print(f'FAIL {failure}', file=sys.stderr)
         return 1
     good = ', '.join(k for k in configs if k != 'known-bad')
     where = display.platform + (' with OS high contrast' if args.high_contrast else '') + (
+        f' with --art {args.art}' if args.art != 'none' else '') + (
         f' with Firefox themes {", ".join(themes)}' if themes else '') + (
         ' with the default new tab (widgets, stories, weather)' if args.newtab_defaults else '')
     if args.high_contrast:
