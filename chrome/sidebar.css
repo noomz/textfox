@@ -99,9 +99,10 @@ sidebar-main {
     background-image: var(--lwt-accent-color) !important;
 }
 
-/* Over theme art (V19, chrome/browser.css) the splitter's own threedface paints a strip. */
-@container style(--textfox-box-bg: transparent) {
+/* Over theme art (V19, chrome/browser.css) the splitter's own threedface paints a strip.
+   Firefox's splitter.css is an author sheet, so a normal user rule loses to it. */
+@container style(--textfox-art-on: 1) {
   #sidebar-splitter {
-    background-color: transparent;
+    background-color: transparent !important;
   }
 }

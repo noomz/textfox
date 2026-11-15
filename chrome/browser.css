@@ -100,6 +100,7 @@ body {
 }
 @container style(--tf-theme-gradient >= 1) {
   :root:not([lwtheme]) body {
+    --textfox-art-on: 1;
     --textfox-art: var(--textfox-root-art);
     --textfox-scrim: color-mix(in srgb, var(--tf-bg) 80%, transparent);
     --textfox-box-bg: transparent;
@@ -107,6 +108,7 @@ body {
 }
 @container style(--tf-theme-images >= 1) {
   :root[lwtheme] body {
+    --textfox-art-on: 1;
     --textfox-art: var(--textfox-root-art);
     --textfox-scrim: color-mix(in srgb, var(--tf-bg) 80%, transparent);
     --textfox-box-bg: transparent;
