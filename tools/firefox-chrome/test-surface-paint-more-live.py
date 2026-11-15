@@ -17,10 +17,10 @@ Surfaces, in both browser Nova states:
 
 Chrome surfaces must paint --tf-bg as the dominant color (web content inside a
 box is skipped), a border of their variable on the left, right and bottom
-edges, and a textfox-colored text target at 4.5:1. Each split-view panel
-paints one frame (V17): between its padding edge and its web content, the left,
-right and bottom gaps paint only --tf-bg, no second line drawn by Firefox
-inside textfox's box. `about:` pages carry only
+edges, and a textfox-colored text target at 4.5:1. The content box (sidebar
+shown and hidden) and each split-view panel paint one frame (V17): between the
+box's padding edge and its web content, every side's gap paints only --tf-bg,
+no second line drawn by Firefox inside textfox's box. `about:` pages carry only
 textfox's font (chrome/content/about.css), so each page gets two injected
 probe runs, ten `i` and ten `W` with an inline serif font that textfox's
 user-level `!important` rule must override: the painted runs must be about
@@ -114,14 +114,16 @@ const r = e.getBoundingClientRect();
 return {x:Math.floor(r.x), y:Math.floor(r.y), width:Math.ceil(r.width), height:Math.ceil(r.height)};
 """
 
-# A panel's padding edge (inside its textfox border) and its web content, in client pixels.
+# A box's padding edge (inside its textfox border) and the web content it shows, in client pixels.
 GAP_JS = r"""
 const panel = document.querySelector(arguments[0]);
-const stack = panel?.querySelector('.browserStack');
+if (!panel) return null;
+const stack = panel.contains(gBrowser.selectedBrowser) ? gBrowser.selectedBrowser.closest('.browserStack')
+  : panel.querySelector('.browserStack');
 if (!stack) return null;
 const r = panel.getBoundingClientRect(), s = getComputedStyle(panel), q = stack.getBoundingClientRect();
 return {pad:{left:r.left + parseFloat(s.borderLeftWidth), right:r.right - parseFloat(s.borderRightWidth),
-             bottom:r.bottom - parseFloat(s.borderBottomWidth)},
+             top:r.top + parseFloat(s.borderTopWidth), bottom:r.bottom - parseFloat(s.borderBottomWidth)},
         stack:{left:q.left, right:q.right, top:q.top, bottom:q.bottom}};
 """
 
@@ -130,13 +132,16 @@ def frame_lines(image, gap, background):
     """Sides whose gap between padding edge and web content holds a line that is not background.
 
     Left and right use the middle half of the content's rows; bottom uses columns 10% to 50% of
-    its width, clear of textfox's split-view footer in the bottom-right corner."""
+    its width, clear of textfox's split-view footer in the bottom-right corner; top uses 50% to
+    90%, clear of the section title at the top-left."""
     pad, stack = gap['pad'], gap['stack']
     top, height = stack['top'], stack['bottom'] - stack['top']
     left, width = stack['left'], stack['right'] - stack['left']
     rows = range(math.ceil(top + height / 4), math.floor(top + height * 3 / 4))
     columns = range(math.ceil(left + width / 10), math.floor(left + width / 2))
+    top_columns = range(math.ceil(left + width / 2), math.floor(left + width * 9 / 10))
     strips = {
+        'top': [[(x, y) for x in top_columns] for y in range(math.ceil(pad['top']), math.floor(stack['top']))],
         'left': [[(x, y) for y in rows] for x in range(math.ceil(pad['left']), math.floor(stack['left']))],
         'right': [[(x, y) for y in rows] for x in range(math.ceil(stack['right']), math.floor(pad['right']))],
         'bottom': [[(x, y) for x in columns] for y in range(math.ceil(stack['bottom']), math.floor(pad['bottom']))],
@@ -252,9 +257,13 @@ class Run:
         record, self.failures[name] = judge(name, shot, colors, border_var=border_var)
         self.records.append(record)
 
-    def single_frame(self, surface):
-        """V17: no line inside the panel's textfox border other than its web content's own pixels."""
+    def single_frame(self, surface, state='', record_name=None):
+        """V17: no line inside the box's textfox border other than its web content's own pixels.
+
+        Failures go on record_name's surface (default: this one), so the known-bad rule still sees
+        the same surfaces."""
         name, selector = surface[0], surface[1]
+        record_name = record_name or name
         self.m.set_context('chrome')
         gap = self.m.execute_script(GAP_JS, script_args=[selector], sandbox='system')
         if not gap:
@@ -264,15 +273,16 @@ class Run:
         lines = frame_lines(image, gap, tuple(background))
         pad, stack = gap['pad'], gap['stack']
         widths = {'left': stack['left'] - pad['left'], 'right': pad['right'] - stack['right'],
-                  'bottom': pad['bottom'] - stack['bottom']}
+                  'top': stack['top'] - pad['top'], 'bottom': pad['bottom'] - stack['bottom']}
         if any(w < 2 for w in widths.values()):
             raise RuntimeError(f'{name}: gap between padding edge and content too narrow to judge: {widths}')
-        record = next(r for r in self.records if r['surface'] == name)
-        record['frame'] = {'gap': gap, 'lines': lines}
+        label = f'{name}{state}'
+        record = next(r for r in self.records if r['surface'] == record_name)
+        record.setdefault('frames', {})[label] = {'gap': gap, 'lines': lines}
         extra = [side for side, n in lines.items() if n]
         if extra:
-            self.failures[name].append(f'{name} paints a second frame inside its box on {", ".join(extra)} '
-                                       f'({lines} lines not --tf-bg {background})')
+            self.failures[record_name].append(f'{label} paints a second frame inside its box on '
+                                              f'{", ".join(extra)} ({lines} lines not --tf-bg {background})')
 
     def font(self, url, prefix=''):
         name = f'{prefix}font {url}'
@@ -329,9 +339,11 @@ def open_sidebar(m):
 def classic(m, run):
     open_sidebar(m)
     run.chrome(SIDEBAR)
+    run.single_frame(CONTENT_BOX, ' (sidebar shown)', record_name=SIDEBAR[0])
     m.execute_script("SidebarController.hide()", sandbox='system')
     wait_open(m, "return document.getElementById('sidebar-box').hidden", 'sidebar hidden')
     run.chrome(CONTENT_BOX)
+    run.single_frame(CONTENT_BOX)
     run.chrome(HORIZONTAL_TABS)
 
     m.execute_script("const first = gBrowser.selectedTab; "
@@ -377,9 +389,11 @@ def revamp(m, run):
     run.chrome(VERTICAL_TABS)
     open_sidebar(m)
     run.chrome(SIDEBAR)
+    run.single_frame(CONTENT_BOX, ' (sidebar shown)', record_name=SIDEBAR[0])
     m.execute_script("SidebarController.hide()", sandbox='system')
     wait_open(m, "return document.getElementById('sidebar-box').hidden", 'sidebar hidden')
     run.chrome(CONTENT_BOX)
+    run.single_frame(CONTENT_BOX)
 
 
 def private(m, run, layout):

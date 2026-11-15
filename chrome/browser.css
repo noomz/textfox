@@ -53,6 +53,16 @@ browser {
   }
 }
 
+/* Firefox frames the page inside textfox's box: browser Nova borders .browserContainer on the
+   top, on the sidebar's side, and all round in a split panel (focus color on the active one,
+   plus an outline); sidebar.revamp outlines it and adds a shadow (--content-area-shadow).
+   textfox's box is the only frame (V17). */
+#tabbrowser-tabbox .browserContainer {
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
+}
+
 /* Firefox paints #browser with --toolbar-background-color, not only under a theme. */
 #browser:not(.browser-toolbox-background) {
   background-color: var(--tf-bg) !important;
@@ -82,12 +92,6 @@ body {
   &::before {
     content: "split" !important;
     color: var(--tf-fg);
-  }
-  /* Browser Nova frames each panel's content with a separator border, and the active one
-     with a focus-colored border and outline. textfox's panel box is the only frame (V17). */
-  & > .browserContainer {
-    border: none !important;
-    outline: none !important;
   }
   &.deck-selected {
     outline: var(--border-width) solid var(--splitborder) !important;
