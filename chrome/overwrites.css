@@ -50,87 +50,62 @@
     --tab-hover-background-color
   ) !important;
 
-  /* containers; the content box takes the selected tab's color, a split view's other
-     panel its own tab's (--tf-container-frame, chrome/browser.css) */
+  /* containers; chrome/browser.css also reads the palette for --tf-container-frame */
+  --textfox-container-yellow: #f6c177;
+  --textfox-container-purple: #c4a7e7;
+  --textfox-container-blue: #9ccfd8;
+  --textfox-container-turquoise: #9ccfd8;
+  --textfox-container-green: #3e8fb0;
+  --textfox-container-orange: #f6c177;
+  --textfox-container-red: #eb6f92;
+  --textfox-container-pink: #ea9a97;
   [data-color="yellow"],
-  &:has(.tabbrowser-tab[selected].identity-color-yellow) #tabbrowser-tabbox,
-  &:has(tab-split-view-wrapper > .tabbrowser-tab[selected] ~ .identity-color-yellow,
-       tab-split-view-wrapper > .identity-color-yellow ~ .tabbrowser-tab[selected])
-    .split-view-panel:not(.deck-selected),
   .identity-color-yellow {
-    --color: #f6c177 !important;
-    --identity-tab-color: #f6c177 !important;
-    --identity-icon-color: #f6c177 !important;
+    --color: var(--textfox-container-yellow) !important;
+    --identity-tab-color: var(--textfox-container-yellow) !important;
+    --identity-icon-color: var(--textfox-container-yellow) !important;
   }
   [data-color="purple"],
-  &:has(.tabbrowser-tab[selected].identity-color-purple) #tabbrowser-tabbox,
-  &:has(tab-split-view-wrapper > .tabbrowser-tab[selected] ~ .identity-color-purple,
-       tab-split-view-wrapper > .identity-color-purple ~ .tabbrowser-tab[selected])
-    .split-view-panel:not(.deck-selected),
   .identity-color-purple {
-    --color: #c4a7e7 !important;
-    --identity-tab-color: #c4a7e7 !important;
-    --identity-icon-color: #c4a7e7 !important;
+    --color: var(--textfox-container-purple) !important;
+    --identity-tab-color: var(--textfox-container-purple) !important;
+    --identity-icon-color: var(--textfox-container-purple) !important;
   }
   [data-color="blue"],
-  &:has(.tabbrowser-tab[selected].identity-color-blue) #tabbrowser-tabbox,
-  &:has(tab-split-view-wrapper > .tabbrowser-tab[selected] ~ .identity-color-blue,
-       tab-split-view-wrapper > .identity-color-blue ~ .tabbrowser-tab[selected])
-    .split-view-panel:not(.deck-selected),
   .identity-color-blue {
-    --color: #9ccfd8 !important;
-    --identity-tab-color: #9ccfd8 !important;
-    --identity-icon-color: #9ccfd8 !important;
+    --color: var(--textfox-container-blue) !important;
+    --identity-tab-color: var(--textfox-container-blue) !important;
+    --identity-icon-color: var(--textfox-container-blue) !important;
   }
   [data-color="turquoise"],
-  &:has(.tabbrowser-tab[selected].identity-color-turquoise) #tabbrowser-tabbox,
-  &:has(tab-split-view-wrapper > .tabbrowser-tab[selected] ~ .identity-color-turquoise,
-       tab-split-view-wrapper > .identity-color-turquoise ~ .tabbrowser-tab[selected])
-    .split-view-panel:not(.deck-selected),
   .identity-color-turquoise {
-    --color: #9ccfd8 !important;
-    --identity-tab-color: #9ccfd8 !important;
-    --identity-icon-color: #9ccfd8 !important;
+    --color: var(--textfox-container-turquoise) !important;
+    --identity-tab-color: var(--textfox-container-turquoise) !important;
+    --identity-icon-color: var(--textfox-container-turquoise) !important;
   }
   [data-color="green"],
-  &:has(.tabbrowser-tab[selected].identity-color-green) #tabbrowser-tabbox,
-  &:has(tab-split-view-wrapper > .tabbrowser-tab[selected] ~ .identity-color-green,
-       tab-split-view-wrapper > .identity-color-green ~ .tabbrowser-tab[selected])
-    .split-view-panel:not(.deck-selected),
   .identity-color-green {
-    --color: #3e8fb0 !important;
-    --identity-tab-color: #3e8fb0 !important;
-    --identity-icon-color: #3e8fb0 !important;
+    --color: var(--textfox-container-green) !important;
+    --identity-tab-color: var(--textfox-container-green) !important;
+    --identity-icon-color: var(--textfox-container-green) !important;
   }
   [data-color="orange"],
-  &:has(.tabbrowser-tab[selected].identity-color-orange) #tabbrowser-tabbox,
-  &:has(tab-split-view-wrapper > .tabbrowser-tab[selected] ~ .identity-color-orange,
-       tab-split-view-wrapper > .identity-color-orange ~ .tabbrowser-tab[selected])
-    .split-view-panel:not(.deck-selected),
   .identity-color-orange {
-    --color: #f6c177 !important;
-    --identity-tab-color: #f6c177 !important;
-    --identity-icon-color: #f6c177 !important;
+    --color: var(--textfox-container-orange) !important;
+    --identity-tab-color: var(--textfox-container-orange) !important;
+    --identity-icon-color: var(--textfox-container-orange) !important;
   }
   [data-color="red"],
-  &:has(.tabbrowser-tab[selected].identity-color-red) #tabbrowser-tabbox,
-  &:has(tab-split-view-wrapper > .tabbrowser-tab[selected] ~ .identity-color-red,
-       tab-split-view-wrapper > .identity-color-red ~ .tabbrowser-tab[selected])
-    .split-view-panel:not(.deck-selected),
   .identity-color-red {
-    --color: #eb6f92 !important;
-    --identity-tab-color: #eb6f92 !important;
-    --identity-icon-color: #eb6f92 !important;
+    --color: var(--textfox-container-red) !important;
+    --identity-tab-color: var(--textfox-container-red) !important;
+    --identity-icon-color: var(--textfox-container-red) !important;
   }
   [data-color="pink"],
-  &:has(.tabbrowser-tab[selected].identity-color-pink) #tabbrowser-tabbox,
-  &:has(tab-split-view-wrapper > .tabbrowser-tab[selected] ~ .identity-color-pink,
-       tab-split-view-wrapper > .identity-color-pink ~ .tabbrowser-tab[selected])
-    .split-view-panel:not(.deck-selected),
   .identity-color-pink {
-    --color: #ea9a97 !important;
-    --identity-tab-color: #ea9a97 !important;
-    --identity-icon-color: #ea9a97 !important;
+    --color: var(--textfox-container-pink) !important;
+    --identity-tab-color: var(--textfox-container-pink) !important;
+    --identity-icon-color: var(--textfox-container-pink) !important;
   }
 
   /* opacity */

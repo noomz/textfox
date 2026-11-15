@@ -8,10 +8,14 @@ browser {
 
 #tabbrowser-tabbox,
 .split-view-panel {
-  /* --tf-container-frame 1: the container color of the tab shown (chrome/overwrites.css sets
-     --identity-tab-color here); no container, or 0: --tf-border (V18). */
-  --tf-frame-color: color-mix(in srgb, var(--identity-tab-color, var(--tf-border))
-    calc(var(--tf-container-frame) * 100%), var(--tf-border));
+  /* --tf-container-frame 1: the color the shown tab's container line paints (rules below);
+     no container, or 0: --tf-border (V18). The option is clamped to 0..1. */
+  --textfox-frame-container: var(--textfox-line-classic, var(--tf-border));
+  @media -moz-pref("browser.nova.enabled") {
+    --textfox-frame-container: var(--textfox-line-nova, var(--tf-border));
+  }
+  --tf-frame-color: color-mix(in srgb, var(--textfox-frame-container)
+    calc(clamp(0, var(--tf-container-frame), 1) * 100%), var(--tf-border));
   margin: 8px !important;
   border: var(--border-width) solid var(--tf-frame-color);
   border-radius: var(--tf-rounding);
@@ -83,10 +87,84 @@ body {
   --toolbox-background-image: none;
 }
 
-/* A split view's other panel inherits the selected tab's color from the content box; its own
-   tab's container, if any, replaces this (chrome/overwrites.css). */
+/* The color each tab's container line paints (tabs.css .tab-context-line): browser Nova,
+   Firefox's --identity-stroke-color (--color-<x>-40), which textfox does not recolor; classic,
+   --identity-icon-color, textfox's palette (chrome/overwrites.css) where it has the color, else
+   Firefox's token (gray: the tab's text color; Firefox defines --color-gray-40 for Nova only). The content box takes the selected tab's, a split view's other panel its own
+   tab's (V18). A split view's other panel first drops what it inherits from the content box. */
 .split-view-panel:not(.deck-selected) {
-  --identity-tab-color: initial !important;
+  --textfox-line-classic: initial !important;
+  --textfox-line-nova: initial !important;
+}
+:root:has(.tabbrowser-tab[selected].identity-color-blue) #tabbrowser-tabbox,
+:root:has(tab-split-view-wrapper > .tabbrowser-tab[selected] ~ .identity-color-blue,
+          tab-split-view-wrapper > .identity-color-blue ~ .tabbrowser-tab[selected])
+  .split-view-panel:not(.deck-selected) {
+  --textfox-line-classic: var(--textfox-container-blue) !important;
+  --textfox-line-nova: var(--color-blue-40) !important;
+}
+:root:has(.tabbrowser-tab[selected].identity-color-cyan) #tabbrowser-tabbox,
+:root:has(tab-split-view-wrapper > .tabbrowser-tab[selected] ~ .identity-color-cyan,
+          tab-split-view-wrapper > .identity-color-cyan ~ .tabbrowser-tab[selected])
+  .split-view-panel:not(.deck-selected) {
+  --textfox-line-classic: var(--color-cyan-40) !important;
+  --textfox-line-nova: var(--color-cyan-40) !important;
+}
+:root:has(.tabbrowser-tab[selected].identity-color-green) #tabbrowser-tabbox,
+:root:has(tab-split-view-wrapper > .tabbrowser-tab[selected] ~ .identity-color-green,
+          tab-split-view-wrapper > .identity-color-green ~ .tabbrowser-tab[selected])
+  .split-view-panel:not(.deck-selected) {
+  --textfox-line-classic: var(--textfox-container-green) !important;
+  --textfox-line-nova: var(--color-green-40) !important;
+}
+:root:has(.tabbrowser-tab[selected].identity-color-yellow) #tabbrowser-tabbox,
+:root:has(tab-split-view-wrapper > .tabbrowser-tab[selected] ~ .identity-color-yellow,
+          tab-split-view-wrapper > .identity-color-yellow ~ .tabbrowser-tab[selected])
+  .split-view-panel:not(.deck-selected) {
+  --textfox-line-classic: var(--textfox-container-yellow) !important;
+  --textfox-line-nova: var(--color-yellow-40) !important;
+}
+:root:has(.tabbrowser-tab[selected].identity-color-orange) #tabbrowser-tabbox,
+:root:has(tab-split-view-wrapper > .tabbrowser-tab[selected] ~ .identity-color-orange,
+          tab-split-view-wrapper > .identity-color-orange ~ .tabbrowser-tab[selected])
+  .split-view-panel:not(.deck-selected) {
+  --textfox-line-classic: var(--textfox-container-orange) !important;
+  --textfox-line-nova: var(--color-orange-40) !important;
+}
+:root:has(.tabbrowser-tab[selected].identity-color-red) #tabbrowser-tabbox,
+:root:has(tab-split-view-wrapper > .tabbrowser-tab[selected] ~ .identity-color-red,
+          tab-split-view-wrapper > .identity-color-red ~ .tabbrowser-tab[selected])
+  .split-view-panel:not(.deck-selected) {
+  --textfox-line-classic: var(--textfox-container-red) !important;
+  --textfox-line-nova: var(--color-red-40) !important;
+}
+:root:has(.tabbrowser-tab[selected].identity-color-pink) #tabbrowser-tabbox,
+:root:has(tab-split-view-wrapper > .tabbrowser-tab[selected] ~ .identity-color-pink,
+          tab-split-view-wrapper > .identity-color-pink ~ .tabbrowser-tab[selected])
+  .split-view-panel:not(.deck-selected) {
+  --textfox-line-classic: var(--textfox-container-pink) !important;
+  --textfox-line-nova: var(--color-pink-40) !important;
+}
+:root:has(.tabbrowser-tab[selected].identity-color-purple) #tabbrowser-tabbox,
+:root:has(tab-split-view-wrapper > .tabbrowser-tab[selected] ~ .identity-color-purple,
+          tab-split-view-wrapper > .identity-color-purple ~ .tabbrowser-tab[selected])
+  .split-view-panel:not(.deck-selected) {
+  --textfox-line-classic: var(--textfox-container-purple) !important;
+  --textfox-line-nova: var(--color-purple-40) !important;
+}
+:root:has(.tabbrowser-tab[selected].identity-color-violet) #tabbrowser-tabbox,
+:root:has(tab-split-view-wrapper > .tabbrowser-tab[selected] ~ .identity-color-violet,
+          tab-split-view-wrapper > .identity-color-violet ~ .tabbrowser-tab[selected])
+  .split-view-panel:not(.deck-selected) {
+  --textfox-line-classic: var(--color-violet-40) !important;
+  --textfox-line-nova: var(--color-violet-40) !important;
+}
+:root:has(.tabbrowser-tab[selected].identity-color-gray) #tabbrowser-tabbox,
+:root:has(tab-split-view-wrapper > .tabbrowser-tab[selected] ~ .identity-color-gray,
+          tab-split-view-wrapper > .identity-color-gray ~ .tabbrowser-tab[selected])
+  .split-view-panel:not(.deck-selected) {
+  --textfox-line-classic: var(--tf-fg) !important;  /* classic gray line: the tab's text color */
+  --textfox-line-nova: var(--color-gray-40) !important;
 }
 
 .split-view-panel {
