@@ -1865,3 +1865,70 @@ Bounds:
 - Linux only. Themes on macOS and Windows, and GPU rendering, are not checked.
 - Surfaces outside T15, T20 and T27 under themes are not checked.
 - A theme's toolbar, tab and text colors are not used. `--tf-fg` is `contrast-color(--tf-bg)`; users who want the theme's text color set `var(--lwt-text-color)`.
+
+## T33 theme gradient and theme images (issue #1)
+
+Requested in issue #1: show a Firefox theme's art, which T28 switched off to fix B19. User decisions (2026-11-15): split by source, a scrim behind text, art behind the whole window.
+
+Facts (Firefox release `browser/themes/shared/browser-shared.css`, Firefox 160.0 here):
+
+- `:root` sets `--toolbox-background-image: none`; with browser Nova `var(--toolbox-background-gradient)`; `[lwtheme]` `var(--lwt-additional-images)`; `[lwtheme-image]` `var(--lwt-header-image), var(--lwt-additional-images)`; `[mini-window]` none. A theme replaces browser Nova's gradient, so the two never stack. A Nova theme's gradients are its `additional_backgrounds`, in the same list as image layers; CSS cannot split that list per layer.
+- Firefox paints that list on `:root:not([theme-image-in-toolbox]) body` or `:root[theme-image-in-toolbox] #navigator-toolbox`, with `--toolbox-background-repeat/position/size`; the findbar under a theme layers it too.
+- Linux's native tokens set `--toolbox-background-gradient: image(transparent)` (`tokens-platform.css`); macOS and Windows paint `linear-gradient(96deg, …50% violet… 39.84%, …50% orange… 101.72%)`.
+- Style queries are on in release (`layout.css.style-queries.enabled: true`, `StaticPrefList.yaml`), with range syntax (`servo/components/style/queries/feature_expression.rs` `QueryStyleRange`, numbers compare). `:root` has no query container, so a query reads the option from body's parent.
+
+Design (`chrome/browser.css`, `sidebar.css`, `findbar.css`, `defaults.css`):
+
+- `--tf-theme-gradient`, `--tf-theme-images`: 0 (default) or 1. `:root { --textfox-root-art: var(--toolbox-background-image) }` keeps Firefox's own list; body still sets Firefox's variable to none, so Firefox paints nothing itself.
+- `@container style(--tf-theme-gradient >= 1) { :root:not([lwtheme]) body {…} }` and `@container style(--tf-theme-images >= 1) { :root[lwtheme] body {…} }` set `--textfox-art` to that list, `--textfox-scrim` to `color-mix(in srgb, var(--tf-bg) 80%, transparent)` and `--textfox-box-bg` to transparent. Values 1 and above count as on (a clamp like `--tf-container-frame`'s); only 0 and 1 are documented.
+- body and every section title `::before` paint `background-image: var(--textfox-art)` with Firefox's repeat, position and size lists, `background-attachment: fixed`, over their `--tf-bg` color, and the scrim as `box-shadow: inset 0 0 0 100vmax`. An inset shadow paints above the background, so the scrim covers the art without adding a layer that would shift Firefox's per-layer lists. A title stays opaque (hides the border line) and paints exactly the window's paint beside it.
+- Boxes that painted `--tf-bg` take `--textfox-box-bg`: `.browserContainer`, `.browser-toolbox-background`, `#browser`, `#sidebar-box` and its `--sidebar-background-color`, `sidebar-main` under a theme, the findbar and its field. The sidebar splitter's `ThreeDFace` (toolkit `splitter.css`, an author sheet, so the rule needs `!important`) goes transparent under `@container style(--textfox-art-on: 1)`, a flag only the two option blocks set.
+- Both 0: no image, a transparent shadow, every box `--tf-bg`; pixel-identical to `c2c4b79` (below).
+- Scrim 80%: at 70% the URL bar text over Rosy Sky's darker sky reached about 4.4:1 (0 pixels at 4.5:1). At 80% every T15 text target passes over all art setups; Rosy Sky's URL bar text is the thinnest, 56 pixels at 4.5:1 against a floor of 30.
+- APNG animation is shared by every user of the image, so titles and window stay on the same frame (checked below).
+
+Probes:
+
+- `ff_themes.py`: image themes pinned by AMO file path and sha256 (AMO API `addons/addon/{guid}`; versions match the issue): Purple starfield - Animated 1.0 (`4061627`, APNG 540×115), Rosy Sky 4.0 (`4660468`, `theme_frame` JPEG), Topo! Black 1.0 (`5117135`, PNG 480×270). The issue's profile copies were not on this machine; the files come from AMO only. `ART_THEMES` (`--themes art`) is those three and nova-ash light and dark. `ART_CONFIG` holds the config.css lines per `--art` mode; `gradient` also stands in `TEST_GRADIENT`, a visible 50% violet-to-orange gradient shaped like macOS's, because Linux paints the real one transparent. `art_expected` reads Firefox's own `--toolbox-background-image` at `:root` (never textfox's CSS) to decide whether a setup has art. `hold_still` stops animated images for capture comparisons through `windowUtils.imageAnimationMode` (the pref `image.animation_mode` does not reach chrome windows) and repaints all art once, since a region repainted later showed another frame.
+- `--art none|images|gradient` on T15 (`test-surface-paint-live.py`), T20 (`test-surface-paint-more-live.py`) and T27 (`test-titles-paint-live.py`). Where Firefox has the art, window boxes are judged over it: with the box hidden the art paints, and the box must leave at least 60% of those pixels unchanged; at least one box per run must have 100 art pixels under it (a gradient can equal the frame color under a whole box, as nova-ash light's does on the left); text must reach 4.5:1 against the paint under each text pixel (the capture with the text hidden). Popups keep the `--tf-bg` judge. T20's one-frame check compares each gap with a capture whose `.browserContainer` is hidden. T27's blend check becomes: the title with its text (and text shadow) transparent paints what the capture without the title paints, across its glyph box except the border rows, and in those rows differs from it (hides the line) in 90% of the pixels. An `--art` run in which Firefox had the art nowhere fails rather than passing on the plain judge; Linux's `image(transparent)` gradient counts as no art. The surface diff of a box judged over art (not of popups, whose `--tf-bg` can sit within noise of faint art behind them) ignores noise up to 2 (Rosy Sky's 8k JPEG rasterizes 1 unit differently where a region repaints). The judge without `--art` is unchanged, so §V V13 owes no cross-platform rerun.
+- `test-theme-art-live.py` (new): per setup, both browser Nova states, classic layout. Options 0 (an author sheet) must paint the same pixels as the chrome at `--baseline` (default `c2c4b79`); with the option on, pixels painting flat `--tf-bg` and the frame color must paint something else in every box (`FLAT` lists the one measured exception, nova-ash light's sidebar, where the gradient equals the frame color); the starfield must animate with the refresh driver running and across paused frames; at three paused frames (`advanceTimeAndRefresh`) every title with transparent text must equal the window without it, and must cover 90% of the border line under it. `--identity`: with no option in config.css, the window paints as `--baseline` for no theme and the default theme set, both Nova states, classic and revamp.
+- Harness gaps fixed on the way: T27's reference title now copies `text-shadow` (B24); T20's known-bad rule, over art only, also counts a box that paints nothing and a border "indistinguishable from its background" (over art a box drops its `--tf-bg`; on Topo's black frame the known-bad config then paints nothing, and Rosy Sky's text shadow keeps the known-bad text legible); T20 decides art for the private window from that window.
+
+
+Red (harness at `9faf97f` copied into a worktree at `c2c4b79`; Topo! Black unless named):
+
+- `test-theme-art-live.py --art images --nova false --baseline ''`: art paints 0 of 52460 `--tf-bg` pixels in every box. Exit 1.
+- T15 `--art images`: navbar, URL bar text, tabs, findbar "theme art paints 0 pixels under it". T20 `--art images --nova false --layout classic` (final harness): "theme art paints under none of sidebar, content-box, tabs, split panels, private boxes" in defaults and sentinel. Exit 1.
+- T27 `--art images --nova false` on the T33 CSS with titles left out of the art rule (mutation): every title "paints a patch over the theme art" (20 to 47 pixels). Exit 1.
+
+Green (Firefox 160.0, Linux, Sway, headed; `TMPDIR=~/.cache/tfx`, `/tmp` was near its quota):
+
+- `test-theme-art-live.py`: 11 setups (three image themes and nova-ash light and dark, both Nova states; gradient, Nova on). Options 0 paint 0 pixels unlike `c2c4b79`; art in every box but nova-ash light's sidebar; titles cover 100% of the line under them and patch 0 pixels at 3 paused frames; the starfield animates (34645 pixels free-running, 223 between paused frames). Exit 0.
+- `test-theme-art-live.py --identity`: 20 setups (no theme and the 4 default themes, both Nova states, classic and revamp), no option set, 0 pixels unlike `c2c4b79`. Exit 0.
+- Both options 0: T15 `--themes every` 156 runs, exit 0; T15 without a theme, exit 0; T27 `--dpp 1 --themes every` 104 runs, exit 0; T27 without a theme at ratio 1 and 2, exit 0; T20 `--themes default` 48 runs and without a theme, exit 0.
+- Images on: T15 `--art images --themes art` 30 runs, exit 0 (scrim 80%); T20 `--art images` per theme (starfield, Rosy Sky, Topo, nova-ash light and dark) 60 runs, exit 0; T27 `--dpp 1 --art images --themes art` 20 runs: only B24 (Rosy Sky navbar title overlaps the first button, 4 runs), the same as without art at `c2c4b79`; T27 `--dpp 1 --art images --themes every` 104 runs (one "captures unstable" abort at run 61, its remaining 44 rerun), exit 0.
+- T15 `--art images --themes every` 156 runs (138 judged over art): 154 pass; nova-smoke light, defaults config, both Nova states fails "theme art paints under none of navbar, urlbar-text, tabs, findbar". Its gradient differs from the frame color by at most 1/255 in the navbar once the 80% scrim covers it (measured), under the 4/255 floor: there is no visible art. Exit 1; left strict.
+- Gradient on: T15 `--art gradient` 6 runs, exit 0; T20 `--art gradient --nova true` classic and revamp, exit 0; T27 `--dpp 1 --art gradient` and `--art gradient --themes every` (104 runs; art judged where Firefox has it, compact Light and Dark with Nova on), exit 0.
+- `check-option-wiring.py` (28 options), `check-option-parity.py` (9), `check-config-defaults.py`, `nixfmt-tree --ci` (0 changed): exit 0. nixpkgs `/nix/store/0ya4nbmac3fw13w4hmqyc41svdf7z352-source` (26.11).
+- Not run: T20 `--themes every` (312 runs, about 15 hours here); options 0 there rest on T20 `--themes default`, the T15 and T27 every runs and the pixel identity runs.
+
+Resume:
+
+```sh
+P="$HOME/.cache/textfox-firefox-live/venv/bin/python"; export TMPDIR="$HOME/.cache/tfx"
+$P tools/firefox-chrome/test-theme-art-live.py            # and --identity
+$P tools/firefox-chrome/test-surface-paint-live.py --art images --themes art
+$P tools/firefox-chrome/test-surface-paint-more-live.py --art images --theme '{2140e74f-2373-4cd1-85dd-984632a6abc7}'
+$P tools/firefox-chrome/test-titles-paint-live.py --dpp 1 --art images --themes art
+$P tools/firefox-chrome/test-surface-paint-live.py --art gradient
+```
+
+Bounds:
+
+- Linux only. The macOS and Windows gradient (`--tf-theme-gradient` with the default theme) is shown only through the Linux stand-in; macOS by eye is not checked (no Mac here).
+- B24: header-image themes give titles Firefox's text shadow, which reaches 1px onto the first toolbar button (T27 fails on Rosy Sky, with or without the options). Open; needs a decision.
+- Private windows: with browser Nova on and no theme, Firefox gives a private window its own lwtheme without images, so `--tf-theme-gradient` shows nothing there; T20 reads that from the private window.
+- Faint art vanishes under the scrim: nova-smoke light's gradient paints within 1/255 of `--tf-bg` with images on.
+- A gradient can equal the frame color over a whole box (nova-ash light at the sidebar and URL bar); nothing shows there.
+- The art runs behind the whole window even when Firefox would paint it on the toolbox only (`:root[theme-image-in-toolbox]`), as decided.
+- Not handled: Nova's expand-on-hover sidebar launcher (`[sidebar-launcher-expanded]`) paints its own opaque toolbox color; the selected and hovered tab, Nova's vertical-tab scroll fade and tab badges keep opaque tints; web pages paint their own background (about:blank is transparent and shows the art).
