@@ -17,6 +17,8 @@
   --tf-display-sidebar-tools: flex; /* If the "Customize sidebar" button on the sidebar should be shown, none = hidden, flex = shown */
   --tf-display-titles: flex; /* If titles (tabs, navbar, main etc.) should be shown, none = hidden, flex = shown */
   --tf-container-frame: 0; /* If the main and split-view frames take the container line color of the tab they show: 0 = --tf-border, 1 = container color (0 or 1 only) */
+  --tf-theme-gradient: 0; /* If browser Nova's own window gradient shows (no Firefox theme; Linux paints it transparent): 0 = hidden, 1 = shown (0 or 1 only) */
+  --tf-theme-images: 0; /* If a Firefox theme's images and gradients show behind the window: 0 = hidden, 1 = shown (0 or 1 only) */
   --tf-newtab-logo: "   __            __  ____          \A   / /____  _  __/ /_/ __/___  _  __\A  / __/ _ \\| |/_/ __/ /_/ __ \\| |/_/\A / /_/  __/>  </ /_/ __/ /_/ />  <  \A \\__/\\___/_/|_|\\__/_/  \\____/_/|_|  ";
   --tf-navbar-margin: 8px 8px 2px; /* navbar margin */
   --tf-navbar-padding: 4px; /* navbar padding */

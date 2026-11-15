@@ -46,6 +46,10 @@ in
 
       containerFrame = mkEnableOption "frames that follow the container color of the tab they show (content box and split-view panels)";
 
+      themeGradient = mkEnableOption "browser Nova's own window gradient behind the window, without a Firefox theme (macOS and Windows; Linux paints it transparent)";
+
+      themeImages = mkEnableOption "a Firefox theme's images and gradients behind the window";
+
       newtabLogo = mkOption {
         type = str;
         default = "   __            __  ____          \n  / /____  _  __/ /_/ __/___  _  __\n / __/ _ \\| |/_/ __/ /_/ __ \\| |/_/\n/ /_/  __/>  </ /_/ __/ /_/ />  <  \n\\__/\\___/_/|_|\\__/_/  \\____/_/|_|  ";
@@ -186,6 +190,8 @@ in
           --tf-display-sidebar-tools: ${if cfg.displaySidebarTools then "flex" else "none"};
           --tf-display-titles: ${if cfg.displayTitles then "flex" else "none"};
           --tf-container-frame: ${if cfg.containerFrame then "1" else "0"};
+          --tf-theme-gradient: ${if cfg.themeGradient then "1" else "0"};
+          --tf-theme-images: ${if cfg.themeImages then "1" else "0"};
           --tf-newtab-logo: "${cfg.newtabLogo}";
           --tf-navbar-margin: ${cfg.navbar.margin};
           --tf-navbar-padding: ${cfg.navbar.padding};

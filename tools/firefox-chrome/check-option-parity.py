@@ -17,6 +17,8 @@ MANUAL_CONFIG_CSS = ''':root {
   --tf-display-horizontal-tabs: block;
   --tf-display-titles: none;
   --tf-container-frame: 1;
+  --tf-theme-gradient: 1;
+  --tf-theme-images: 1;
   --tf-newtab-logo: "hi";
 }
 '''
@@ -28,6 +30,8 @@ NIX_OPTIONS = '''{
   textfox.config.tabs.horizontal.enable = true;
   textfox.config.displayTitles = false;
   textfox.config.containerFrame = true;
+  textfox.config.themeGradient = true;
+  textfox.config.themeImages = true;
   textfox.config.newtabLogo = "hi";
   system.stateVersion = "26.05";
 }'''
@@ -73,6 +77,8 @@ def main():
         failures.append('titles are not hidden')
     if manual['--tf-container-frame'] != '1':
         failures.append('container frames are not on')
+    if manual['--tf-theme-gradient'] != '1' or manual['--tf-theme-images'] != '1':
+        failures.append('theme gradient and images are not on')
     if manual['--tf-font-size'] != '17px' or manual['--tf-rounding'] != '4px':
         failures.append('sizes do not follow configuration')
     if manual['--tf-newtab-logo-rendered'] != '"hi"':

@@ -12,7 +12,7 @@
 
 sidebar-main {
   :root[lwtheme] & {
-    background-color: var(--tf-bg) !important;
+    background-color: var(--textfox-box-bg) !important;
     background-image: unset !important;
   }
 }
@@ -24,9 +24,10 @@ sidebar-main {
   border: var(--border-width) solid var(--tf-border) !important;
   border-radius: var(--tf-rounding) !important;
   transition: border-color var(--tf-border-transition);
-  background: var(--tf-bg) !important;
+  /* --tf-bg, or transparent over theme art (V19, chrome/browser.css). */
+  background: var(--textfox-box-bg) !important;
   /* Nova paints the panel browser (#sidebar) with this variable. */
-  --sidebar-background-color: var(--tf-bg) !important;
+  --sidebar-background-color: var(--textfox-box-bg) !important;
   &:hover {
     border-color: var(--tf-accent) !important;
   }
@@ -96,4 +97,11 @@ sidebar-main {
 #sidebar-select-box {
     background-color: var(--lwt-accent-color) !important;
     background-image: var(--lwt-accent-color) !important;
+}
+
+/* Over theme art (V19, chrome/browser.css) the splitter's own threedface paints a strip. */
+@container style(--textfox-box-bg: transparent) {
+  #sidebar-splitter {
+    background-color: transparent;
+  }
 }

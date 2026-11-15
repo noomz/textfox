@@ -46,8 +46,13 @@ _a firefox theme for the tui enthusiast_
 > Dark, Alpenglow and the Nova themes) are checked on Linux for the same
 > surfaces and the section titles: textfox takes the theme's frame color as its
 > background and paints every box with it, so the theme's toolbar color and
-> background images do not show. Other panels, themes on macOS and Windows, and
-> GPU rendering are not checked yet.
+> background images do not show. `--tf-theme-images: 1` shows a theme's images
+> and gradients behind the whole window, `--tf-theme-gradient: 1` browser Nova's
+> own gradient without a theme; boxes then paint a translucent `--tf-bg` wash over
+> the art so text stays readable. Both are checked on Linux with three image
+> themes (an animated one among them) and a Nova theme; the gradient only as a
+> stand-in, since Linux paints it transparent. Other panels, themes on macOS and
+> Windows, and GPU rendering are not checked yet.
 >
 > Earlier textfox versions turned Nova off. Updating gives Firefox's own setting
 > back once:
@@ -230,6 +235,8 @@ All configuration options are optional and can be set as this example shows (rea
         displaySidebarTools = false;
         displayTitles = false;
         containerFrame = true;
+        themeGradient = true;
+        themeImages = true;
         newtabLogo = "   __            __  ____          \A   / /____  _  __/ /_/ __/___  _  __\A  / __/ _ \\| |/_/ __/ /_/ __ \\| |/_/\A / /_/  __/>  </ /_/ __/ /_/ />  <  \A \\__/\\___/_/|_|\\__/_/  \\____/_/|_|  ";
         font = {
           family = "Fira Code";
@@ -354,6 +361,8 @@ The theme ships with a `defaults.css`, this file can be overridden by creating a
   --tf-display-sidebar-tools: flex; /* If the "Customize sidebar" button on the sidebar should be shown, none = hidden, flex = shown */ 
   --tf-display-titles: flex; /* If titles (tabs, navbar, main etc.) should be shown, none = hidden, flex = shown */
   --tf-container-frame: 0; /* If the main and split-view frames take the container line color of the tab they show: 0 = --tf-border, 1 = container color (0 or 1 only) */
+  --tf-theme-gradient: 0; /* If browser Nova's own window gradient shows (no Firefox theme; Linux paints it transparent): 0 = hidden, 1 = shown (0 or 1 only) */
+  --tf-theme-images: 0; /* If a Firefox theme's images and gradients show behind the window: 0 = hidden, 1 = shown (0 or 1 only) */
   --tf-newtab-logo: "   __            __  ____          \A   / /____  _  __/ /_/ __/___  _  __\A  / __/ _ \\| |/_/ __/ /_/ __ \\| |/_/\A / /_/  __/>  </ /_/ __/ /_/ />  <  \A \\__/\\___/_/|_|\\__/_/  \\____/_/|_|  ";
   --tf-navbar-margin: 8px 8px 2px; /* navbar margin */
   --tf-navbar-padding: 4px; /* navbar padding */

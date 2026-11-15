@@ -1,5 +1,5 @@
 .browserContainer, .browser-toolbox-background {
-  background: var(--tf-bg) !important;
+  background: var(--textfox-box-bg) !important;
 }
 
 browser {
@@ -73,18 +73,57 @@ browser {
 
 /* Firefox paints #browser with --toolbar-background-color, not only under a theme. */
 #browser:not(.browser-toolbox-background) {
-  background-color: var(--tf-bg) !important;
+  background-color: var(--textfox-box-bg) !important;
   background-image: none !important;
 }
 
 /* body's background-image paints above --tf-bg: browser Nova's half-transparent gradient
    (--toolbox-background-gradient; macOS and Windows, Linux's native theme sets it transparent),
    and a Firefox theme's header and additional images (--toolbox-background-image), such as a
-   Nova theme's window gradient. Every box paints --tf-bg, so neither paints. Set on body,
-   these beat the values inherited from :root. */
+   Nova theme's window gradient. By default every box paints --tf-bg, so neither paints. Set on
+   body, these beat the values inherited from :root. */
 body {
   --toolbox-background-gradient: none;
   --toolbox-background-image: none;
+  --textfox-art: none;
+  --textfox-scrim: transparent;
+  --textfox-box-bg: var(--tf-bg);
+}
+
+/* Theme art (V19): --tf-theme-gradient 1 keeps browser Nova's own gradient (no Firefox theme),
+   --tf-theme-images 1 every layer a Firefox theme ships. Firefox's own value at :root, before
+   body clears it, holds exactly one of them (a theme replaces the gradient). textfox paints it
+   once on body for the whole window; boxes over it drop their --tf-bg, and a --tf-bg scrim
+   keeps text readable. The style queries read the option on :root, body's container. */
+:root {
+  --textfox-root-art: var(--toolbox-background-image);
+}
+@container style(--tf-theme-gradient >= 1) {
+  :root:not([lwtheme]) body {
+    --textfox-art: var(--textfox-root-art);
+    --textfox-scrim: color-mix(in srgb, var(--tf-bg) 80%, transparent);
+    --textfox-box-bg: transparent;
+  }
+}
+@container style(--tf-theme-images >= 1) {
+  :root[lwtheme] body {
+    --textfox-art: var(--textfox-root-art);
+    --textfox-scrim: color-mix(in srgb, var(--tf-bg) 80%, transparent);
+    --textfox-box-bg: transparent;
+  }
+}
+/* The art and the scrim over it (an inset shadow paints above the background). Titles paint the
+   same, fixed to the window like body, so a title hides the border under it yet matches the paint
+   beside it (B19). Both off: no image and a transparent shadow, as before. */
+body,
+:is(#nav-bar, #PersonalToolbar, #TabsToolbar, box#vertical-tabs, #tabbrowser-tabbox, .split-view-panel,
+    #sidebar-box, .buttons-wrapper, findbar)::before {
+  background-image: var(--textfox-art) !important;
+  background-repeat: var(--toolbox-background-repeat) !important;
+  background-position: var(--toolbox-background-position) !important;
+  background-size: var(--toolbox-background-size) !important;
+  background-attachment: fixed !important;
+  box-shadow: inset 0 0 0 100vmax var(--textfox-scrim);
 }
 
 /* The color each tab's container line paints (tabs.css .tab-context-line): browser Nova,

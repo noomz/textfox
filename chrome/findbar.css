@@ -1,7 +1,7 @@
 findbar {
   margin: 1rem 0rem 0rem !important;
   border: var(--border-width) solid var(--tf-border) !important;
-  background: var(--tf-bg) !important;
+  background: var(--textfox-box-bg) !important;
   border-radius: var(--tf-rounding);
   padding: 8px 0 !important;
   transition: border-color var(--tf-border-transition);
@@ -37,7 +37,7 @@ findbar {
 
 .findbar-textbox {
   border: var(--border-width) solid var(--tf-border) !important;
-  background: var(--tf-bg) !important;
+  background: var(--textfox-box-bg) !important;
 }
 
 .findbar-container>checkbox {
