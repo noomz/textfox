@@ -83,11 +83,14 @@ body {
     content: "split" !important;
     color: var(--tf-fg);
   }
+  /* Browser Nova frames each panel's content with a separator border, and the active one
+     with a focus-colored border and outline. textfox's panel box is the only frame (V17). */
+  & > .browserContainer {
+    border: none !important;
+    outline: none !important;
+  }
   &.deck-selected {
     outline: var(--border-width) solid var(--splitborder) !important;
-    & > .browserContainer {
-      outline: none !important;
-    }
     &::before {
       content: "active split" !important;
     }

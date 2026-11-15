@@ -17,7 +17,10 @@ Surfaces, in both browser Nova states:
 
 Chrome surfaces must paint --tf-bg as the dominant color (web content inside a
 box is skipped), a border of their variable on the left, right and bottom
-edges, and a textfox-colored text target at 4.5:1. `about:` pages carry only
+edges, and a textfox-colored text target at 4.5:1. Each split-view panel
+paints one frame (V17): between its padding edge and its web content, the left,
+right and bottom gaps paint only --tf-bg, no second line drawn by Firefox
+inside textfox's box. `about:` pages carry only
 textfox's font (chrome/content/about.css), so each page gets two injected
 probe runs, ten `i` and ten `W` with an inline serif font that textfox's
 user-level `!important` rule must override: the painted runs must be about
@@ -37,6 +40,7 @@ TF_SURFACE_ARTIFACTS to a directory to keep captures and masks.
 """
 import argparse
 import json
+import math
 import os
 from pathlib import Path
 import runpy
@@ -54,10 +58,10 @@ ROOT = Path(__file__).resolve().parents[2]
 HERE = Path(__file__).resolve().parent
 _paint = runpy.run_path(str(HERE / 'test-surface-paint-live.py'))
 (Capture, Image, judge, wait, near, ratio, dominant, inflate, start_sway, stop, changed_mask, count,
- painted_box, RESOLVE_JS, CHROME_STYLE_JS, FREEZE, MIN_RATIO, MIN_TEXT_PIXELS, OUTPUT) = (
+ painted_box, RESOLVE_JS, CHROME_STYLE_JS, FREEZE, MIN_RATIO, MIN_TEXT_PIXELS, OUTPUT, EDGE_MATCH) = (
     _paint[k] for k in ('Capture', 'Image', 'judge', 'wait', 'near', 'ratio', 'dominant', 'inflate',
                         'start_sway', 'stop', 'changed_mask', 'count', 'painted_box', 'RESOLVE_JS',
-                        'CHROME_STYLE_JS', 'FREEZE', 'MIN_RATIO', 'MIN_TEXT_PIXELS', 'OUTPUT'))
+                        'CHROME_STYLE_JS', 'FREEZE', 'MIN_RATIO', 'MIN_TEXT_PIXELS', 'OUTPUT', 'EDGE_MATCH'))
 
 KNOWN_BAD_SIGNS = {'border', 'text', 'proportional'}  # words in the failures the known-bad config must cause
 MONOSPACE = 0.8  # painted width of ten `i` over ten `W`; a proportional font paints about 0.3
@@ -109,6 +113,39 @@ if (!e) return null;
 const r = e.getBoundingClientRect();
 return {x:Math.floor(r.x), y:Math.floor(r.y), width:Math.ceil(r.width), height:Math.ceil(r.height)};
 """
+
+# A panel's padding edge (inside its textfox border) and its web content, in client pixels.
+GAP_JS = r"""
+const panel = document.querySelector(arguments[0]);
+const stack = panel?.querySelector('.browserStack');
+if (!stack) return null;
+const r = panel.getBoundingClientRect(), s = getComputedStyle(panel), q = stack.getBoundingClientRect();
+return {pad:{left:r.left + parseFloat(s.borderLeftWidth), right:r.right - parseFloat(s.borderRightWidth),
+             bottom:r.bottom - parseFloat(s.borderBottomWidth)},
+        stack:{left:q.left, right:q.right, top:q.top, bottom:q.bottom}};
+"""
+
+
+def frame_lines(image, gap, background):
+    """Sides whose gap between padding edge and web content holds a line that is not background.
+
+    Left and right use the middle half of the content's rows; bottom uses columns 10% to 50% of
+    its width, clear of textfox's split-view footer in the bottom-right corner."""
+    pad, stack = gap['pad'], gap['stack']
+    top, height = stack['top'], stack['bottom'] - stack['top']
+    left, width = stack['left'], stack['right'] - stack['left']
+    rows = range(math.ceil(top + height / 4), math.floor(top + height * 3 / 4))
+    columns = range(math.ceil(left + width / 10), math.floor(left + width / 2))
+    strips = {
+        'left': [[(x, y) for y in rows] for x in range(math.ceil(pad['left']), math.floor(stack['left']))],
+        'right': [[(x, y) for y in rows] for x in range(math.ceil(stack['right']), math.floor(pad['right']))],
+        'bottom': [[(x, y) for x in columns] for y in range(math.ceil(stack['bottom']), math.floor(pad['bottom']))],
+    }
+    return {side: sum(1 for line in lines
+                      if line and sum(not near(image.pixel(x, y), background) for x, y in line)
+                      >= EDGE_MATCH * len(line))
+            for side, lines in strips.items()}
+
 
 # Two runs with an inline serif font; textfox's user-level !important font rule must win.
 PROBE_JS = r"""
@@ -215,6 +252,28 @@ class Run:
         record, self.failures[name] = judge(name, shot, colors, border_var=border_var)
         self.records.append(record)
 
+    def single_frame(self, surface):
+        """V17: no line inside the panel's textfox border other than its web content's own pixels."""
+        name, selector = surface[0], surface[1]
+        self.m.set_context('chrome')
+        gap = self.m.execute_script(GAP_JS, script_args=[selector], sandbox='system')
+        if not gap:
+            raise RuntimeError(f'{name}: {selector} .browserStack missing')
+        background = self.m.execute_script(RESOLVE_JS, script_args=[selector], sandbox='system')['--tf-bg']
+        image = Image(self.capture.shoot('', False), self.capture.size)
+        lines = frame_lines(image, gap, tuple(background))
+        pad, stack = gap['pad'], gap['stack']
+        widths = {'left': stack['left'] - pad['left'], 'right': pad['right'] - stack['right'],
+                  'bottom': pad['bottom'] - stack['bottom']}
+        if any(w < 2 for w in widths.values()):
+            raise RuntimeError(f'{name}: gap between padding edge and content too narrow to judge: {widths}')
+        record = next(r for r in self.records if r['surface'] == name)
+        record['frame'] = {'gap': gap, 'lines': lines}
+        extra = [side for side, n in lines.items() if n]
+        if extra:
+            self.failures[name].append(f'{name} paints a second frame inside its box on {", ".join(extra)} '
+                                       f'({lines} lines not --tf-bg {background})')
+
     def font(self, url, prefix=''):
         name = f'{prefix}font {url}'
         select_content(self.m)
@@ -282,6 +341,7 @@ def classic(m, run):
               "document.querySelectorAll('.split-view-panel').length === 2", 'split view')
     for surface in SPLIT_PANELS:
         run.chrome(surface)
+        run.single_frame(surface)
     m.execute_script("const t = gBrowser.selectedTab; gBrowser.selectedTab = gBrowser.addTrustedTab('about:blank'); "
                      "for (const s of t.splitview.tabs) gBrowser.removeTab(s)", sandbox='system')
     wait_open(m, "return !document.querySelector('.split-view-panel')", 'split view closed')
