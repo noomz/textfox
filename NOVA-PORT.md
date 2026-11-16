@@ -1942,4 +1942,5 @@ Bounds:
   - T27 `--dpp 1,2 --themes art --art images`: exit 0. T27 `--dpp 1,2` no theme: exit 0. T27 `--dpp 1 --themes every`: 104 runs, exit 0.
   - T15 `--themes art --art images`: exit 0.
   - `check-option-wiring.py` (29 options), `check-option-parity.py` (headless), `check-config-defaults.py`, `nixfmt-tree --ci`: exit 0.
-- Still owed for T33: macOS by eye; T20 `--themes every` with options 0; macOS and Windows reruns of the shared judge (V13).
+- T20 `--themes every`, options 0, at `373f274` (no CSS or harness change since `c612d6c`; Firefox 160.0 build `20261104181552`, Linux Sway, headed; `TMPDIR=~/.cache/tfx`): 312 runs (26 setups × both Nova states × classic and revamp × defaults, sentinel, known-bad), 2026-11-16 15:34–20:21. Exit 0: 23 surfaces paint textfox styling with defaults and sentinel; the known-bad config fails every one. A first attempt was stopped at 84 runs (0 failures) by the session's low-memory reaper, not by the test.
+- T33 closes on its Linux claim. Moved to §T.34 (needs other hosts): macOS and Windows reruns of the shared T15 judge (V13) and the real Nova gradient on macOS.
