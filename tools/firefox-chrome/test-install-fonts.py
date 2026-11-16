@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""Installer regressions using only disposable checkouts and profiles."""
 import os
 from pathlib import Path
 import shutil
@@ -70,6 +69,7 @@ class InstallerTests(unittest.TestCase):
                 before = self.snapshot()
                 result = self.run_install(*args)
                 self.assert_failed(result)
+                self.assertIn("Usage: bash tf-install.sh", result.stderr)
                 self.assertNotIn("Path to Firefox profile", result.stdout)
                 self.assertEqual(before, self.snapshot())
 

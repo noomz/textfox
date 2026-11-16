@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""Verify installer font precedence in headed Firefox, using a disposable profile."""
 import json
 import os
 from pathlib import Path

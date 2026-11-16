@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""Byte preservation and filesystem-failure tests for the installer config owner."""
 import importlib.util
 import os
 from pathlib import Path

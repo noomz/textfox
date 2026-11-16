@@ -357,4 +357,9 @@ tf_install() {
   printf '✓ Installation completed\n'
 }
 
-if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then tf_install "$@"; fi
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  tf_install "$@"
+  result=$?
+  if [[ "${result}" -eq 2 ]]; then usage >&2; fi
+  exit "${result}"
+fi
