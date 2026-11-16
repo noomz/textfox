@@ -85,7 +85,8 @@ KNOWN_BAD = {
     # Focus rings take --tf-accent: an accent the color of the background hides them.
     'focus': ('focus', f':root {{ {TABS} --tf-accent: var(--tf-bg); }}\n'
               'menu, menuitem { background: transparent !important; }\n',
-              lambda surface: True, ('paints no keyboard focus indicator', 'below 3.0:1', 'active background')),
+              lambda surface: True, ('paints no keyboard focus indicator', 'below 3.0:1',
+                                     'does not enclose its target', 'active background')),
     'motion': ('motion', f':root {{ {TABS} --tf-border-transition: 4s linear !important; }}\n',
                lambda surface: True, ('starts', 'lacks settled')),
     'rtl-paint': ('rtl', f':root {{ {TABS} --tf-fg: var(--tf-bg); --tf-border-width: 0px; }}\n',

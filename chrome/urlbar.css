@@ -7,6 +7,9 @@
   border: unset !important;
   box-shadow: unset !important;
 }
+#urlbar[focused] > :is(.urlbar-background, .urlbar-input-container) {
+  border-radius: var(--tf-rounding) !important;
+}
 /* Browser Nova draws the focused URL bar as a border, which the rule above
    removes; keep the focus ring (keyboard or pointer, as Firefox does) as an
    outline in both Nova states. */
