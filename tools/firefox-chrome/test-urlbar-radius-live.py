@@ -25,16 +25,18 @@ BACKGROUND = '#urlbar > .urlbar-background'
 MEASURE_JS = """
 const bar = document.getElementById('urlbar');
 const background = bar.querySelector(':scope > .urlbar-background');
+const input = bar.querySelector(':scope > .urlbar-input-container');
 const view = bar.querySelector(':scope > .urlbarView');
 const corners = s => [s.borderTopLeftRadius, s.borderTopRightRadius,
                       s.borderBottomRightRadius, s.borderBottomLeftRadius];
 const rect = e => { const r = e.getBoundingClientRect();
   return {x:r.x, y:r.y, width:r.width, height:r.height}; };
-const s = getComputedStyle(background), v = getComputedStyle(view);
+const s = getComputedStyle(background), i = getComputedStyle(input), v = getComputedStyle(view);
 return {focused:bar.hasAttribute('focused'), open:bar.hasAttribute('open'),
   active:document.activeElement.id, rounding:s.getPropertyValue('--tf-rounding').trim(),
   radius:corners(s), outline:{style:s.outlineStyle, width:s.outlineWidth, color:s.outlineColor},
-  background:rect(background), view:rect(view), viewRadius:corners(v),
+  background:rect(background), input:rect(input), inputRadius:corners(i),
+  inputOutline:i.outlineStyle, view:rect(view), viewRadius:corners(v),
   viewBorder:v.borderTopWidth, viewMarginTop:v.marginTop};
 """
 
@@ -122,8 +124,13 @@ def check(display, directory, artifacts, nova, rounding):
                 raise RuntimeError(f'{state}: wrong focus or open state: {actual}')
             if actual['rounding'] != f'{rounding}px':
                 raise RuntimeError(f'{state}: config.css not applied: {actual}')
-            if actual['radius'] != [f'{rounding}px'] * 4:
-                failures.append(f'{state}: focused radius expected {[f"{rounding}px"] * 4}, got {actual["radius"]}')
+            rings = {'background': actual['background']}
+            if opened and actual['inputOutline'] == 'solid':
+                rings['input'] = actual['input']
+            for ring in rings:
+                radius = actual['radius' if ring == 'background' else 'inputRadius']
+                if radius != [f'{rounding}px'] * 4:
+                    failures.append(f'{state}: {ring} focused radius expected {[f"{rounding}px"] * 4}, got {radius}')
             if actual['outline'] != {'style': 'solid', 'width': '2px', 'color': 'rgb(250, 200, 0)'}:
                 failures.append(f'{state}: focus outline changed: {actual["outline"]}')
             if opened and (actual['viewRadius'] != ['0px', '0px', f'{rounding}px', f'{rounding}px']
@@ -132,28 +139,44 @@ def check(display, directory, artifacts, nova, rounding):
 
             def capture(name, radius=None):
                 m.execute_script("""
-                    const e = document.querySelector(arguments[0]);
-                    if (arguments[1] === null) e.style.removeProperty('border-radius');
-                    else e.style.setProperty('border-radius', arguments[1] + 'px', 'important');
+                    const utils = window.windowUtils;
+                    if (window._tfRadiusSheet) {
+                      utils.removeSheetUsingURIString(window._tfRadiusSheet, utils.USER_SHEET);
+                      window._tfRadiusSheet = null;
+                    }
+                    if (arguments[1] !== null) {
+                      const css = ':root #urlbar[focused] > :is(.urlbar-background, .urlbar-input-container) '
+                        + '{ border-radius: ' + arguments[1] + 'px !important; }';
+                      window._tfRadiusSheet = 'data:text/css,' + encodeURIComponent(css);
+                      utils.loadSheetUsingURIString(window._tfRadiusSheet, utils.USER_SHEET);
+                      if (getComputedStyle(document.querySelector(arguments[0])).borderRadius !== arguments[1] + 'px')
+                        throw new Error('radius paint control did not override userChrome.css');
+                    }
                     """, script_args=[BACKGROUND, radius], sandbox='system')
                 time.sleep(.3)
                 path = artifacts / f'{state}-{name}.ppm'
                 display.capture(path)
-                return corner_pixels(path, actual['background'], meta['dpr'])
+                return {ring: corner_pixels(path, rect, meta['dpr']) for ring, rect in rings.items()}
 
             baseline = capture('actual')
             control = capture('control')
             expected = capture('expected', rounding)
             wrong = capture('wrong', 24 if rounding == 0 else 0)
             restored = capture('restored')
-            pixels = {'control': changed(baseline, control), 'expected': changed(baseline, expected),
-                      'wrongVsExpected': changed(expected, wrong), 'restored': changed(baseline, restored)}
-            if pixels['control'] or pixels['restored']:
-                raise RuntimeError(f'{state}: unstable corner captures: {pixels}')
-            if not pixels['wrongVsExpected']:
-                raise RuntimeError(f'{state}: wrong-radius paint control undetected: {pixels}')
-            if pixels['expected']:
-                failures.append(f'{state}: painted corners differ from configured radius at {pixels["expected"]} pixels')
+            pixels = {}
+            for ring in rings:
+                difference = {'control': changed(baseline[ring], control[ring]),
+                              'expected': changed(baseline[ring], expected[ring]),
+                              'wrongVsExpected': changed(expected[ring], wrong[ring]),
+                              'restored': changed(baseline[ring], restored[ring])}
+                pixels[ring] = difference
+                if difference['control'] or difference['restored']:
+                    raise RuntimeError(f'{state}: unstable {ring} corner captures: {difference}')
+                if not difference['wrongVsExpected']:
+                    raise RuntimeError(f'{state}: {ring} wrong-radius paint control undetected: {difference}')
+                if difference['expected']:
+                    failures.append(f'{state}: {ring} painted corners differ from configured radius '
+                                    f'at {difference["expected"]} pixels')
             print(json.dumps({'case': state, 'firefox': meta, 'actual': actual, 'cornerPixels': pixels}), flush=True)
         return failures
     finally:
