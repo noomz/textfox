@@ -50,6 +50,12 @@ in
 
       themeImages = mkEnableOption "a Firefox theme's images and gradients behind the window";
 
+      themeScrim = mkOption {
+        type = str;
+        default = "80%";
+        description = "How much the background color washes over theme art when themeGradient or themeImages is on (0% shows the art at full strength, 100% hides it). Below 80% text may fall under 4.5:1 contrast on bright art.";
+      };
+
       newtabLogo = mkOption {
         type = str;
         default = "   __            __  ____          \n  / /____  _  __/ /_/ __/___  _  __\n / __/ _ \\| |/_/ __/ /_/ __ \\| |/_/\n/ /_/  __/>  </ /_/ __/ /_/ />  <  \n\\__/\\___/_/|_|\\__/_/  \\____/_/|_|  ";
@@ -192,6 +198,7 @@ in
           --tf-container-frame: ${if cfg.containerFrame then "1" else "0"};
           --tf-theme-gradient: ${if cfg.themeGradient then "1" else "0"};
           --tf-theme-images: ${if cfg.themeImages then "1" else "0"};
+          --tf-theme-scrim: ${cfg.themeScrim};
           --tf-newtab-logo: "${cfg.newtabLogo}";
           --tf-navbar-margin: ${cfg.navbar.margin};
           --tf-navbar-padding: ${cfg.navbar.padding};

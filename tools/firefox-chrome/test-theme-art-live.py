@@ -284,6 +284,27 @@ def check(display, directory, chrome, baseline, art, theme, nova, animated):
                 failures.append(f'theme art paints fewer than {ART_MIN} pixels off --tf-bg and frame color {frame} '
                                 f'in {", ".join(bare)}: {record["art"]}')
 
+            # --tf-theme-scrim: 100% hides the art (the paint of options 0); a lighter wash shows it
+            # stronger than the default 80%, measured as mean channel distance from options 0.
+            def strength(px):
+                x0, y0, x1, y1 = interior(boxes['navbar'])
+                width = px[0]
+                total = n = 0
+                for y in range(y0, y1):
+                    for x in range(x0, x1):
+                        i = (y * width + x) * 3
+                        total += sum(abs(px[2][i + k] - off_px[2][i + k]) for k in range(3))
+                        n += 1
+                return total / max(n, 1)
+            full = pixels(window.shoot(':root { --tf-theme-scrim: 100% !important; }', 0))
+            light = pixels(window.shoot(':root { --tf-theme-scrim: 40% !important; }', 0))
+            record['scrim'] = {'80%': strength(on_px), '100%': strength(full), '40%': strength(light)}
+            hidden_art, _ = count(off_px, full, interior(boxes['navbar']), TOLERANCE)
+            if hidden_art:
+                failures.append(f'--tf-theme-scrim 100%: art still paints {hidden_art} navbar pixels off options 0')
+            if not record['scrim']['40%'] > record['scrim']['80%'] > 0:
+                failures.append(f'--tf-theme-scrim does not set the art strength: {record["scrim"]}')
+
             if old:
                 region = (0, 0, old[0], old[1])
                 changed, total = count(old, off_px, region, NOISE)

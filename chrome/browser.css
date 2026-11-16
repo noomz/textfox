@@ -103,7 +103,7 @@ body {
   :root:not([lwtheme]) body {
     --textfox-art-on: 1;
     --textfox-art: var(--textfox-root-art);
-    --textfox-scrim: color-mix(in srgb, var(--tf-bg) 80%, transparent);
+    --textfox-scrim: color-mix(in srgb, var(--tf-bg) clamp(0%, var(--tf-theme-scrim), 100%), transparent);
     --textfox-box-bg: transparent;
   }
 }
@@ -111,7 +111,7 @@ body {
   :root[lwtheme] body {
     --textfox-art-on: 1;
     --textfox-art: var(--textfox-root-art);
-    --textfox-scrim: color-mix(in srgb, var(--tf-bg) 80%, transparent);
+    --textfox-scrim: color-mix(in srgb, var(--tf-bg) clamp(0%, var(--tf-theme-scrim), 100%), transparent);
     --textfox-box-bg: transparent;
   }
 }

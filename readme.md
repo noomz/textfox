@@ -49,7 +49,7 @@ _a firefox theme for the tui enthusiast_
 > background images do not show. `--tf-theme-images: 1` shows a theme's images
 > and gradients behind the whole window, `--tf-theme-gradient: 1` browser Nova's
 > own gradient without a theme; boxes then paint a translucent `--tf-bg` wash over
-> the art so text stays readable. Both are checked on Linux with three image
+> the art so text stays readable (`--tf-theme-scrim`, 80% by default). Both are checked on Linux with three image
 > themes (an animated one among them) and a Nova theme; the gradient only as a
 > stand-in, since Linux paints it transparent. Other panels, themes on macOS and
 > Windows, and GPU rendering are not checked yet.
@@ -363,6 +363,7 @@ The theme ships with a `defaults.css`, this file can be overridden by creating a
   --tf-container-frame: 0; /* If the main and split-view frames take the container line color of the tab they show: 0 = --tf-border, 1 = container color (0 or 1 only) */
   --tf-theme-gradient: 0; /* If browser Nova's own window gradient shows (no Firefox theme; Linux paints it transparent): 0 = hidden, 1 = shown (0 or 1 only) */
   --tf-theme-images: 0; /* If a Firefox theme's images and gradients show behind the window: 0 = hidden, 1 = shown (0 or 1 only) */
+  --tf-theme-scrim: 80%; /* With --tf-theme-gradient or --tf-theme-images on: how much --tf-bg washes over the art, 0% = art at full strength, 100% = art hidden. Below 80% text may fall under 4.5:1 contrast on bright art */
   --tf-newtab-logo: "   __            __  ____          \A   / /____  _  __/ /_/ __/___  _  __\A  / __/ _ \\| |/_/ __/ /_/ __ \\| |/_/\A / /_/  __/>  </ /_/ __/ /_/ />  <  \A \\__/\\___/_/|_|\\__/_/  \\____/_/|_|  ";
   --tf-navbar-margin: 8px 8px 2px; /* navbar margin */
   --tf-navbar-padding: 4px; /* navbar padding */

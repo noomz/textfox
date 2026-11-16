@@ -19,6 +19,7 @@ MANUAL_CONFIG_CSS = ''':root {
   --tf-container-frame: 1;
   --tf-theme-gradient: 1;
   --tf-theme-images: 1;
+  --tf-theme-scrim: 60%;
   --tf-newtab-logo: "hi";
 }
 '''
@@ -32,6 +33,7 @@ NIX_OPTIONS = '''{
   textfox.config.containerFrame = true;
   textfox.config.themeGradient = true;
   textfox.config.themeImages = true;
+  textfox.config.themeScrim = "60%";
   textfox.config.newtabLogo = "hi";
   system.stateVersion = "26.05";
 }'''
@@ -79,6 +81,8 @@ def main():
         failures.append('container frames are not on')
     if manual['--tf-theme-gradient'] != '1' or manual['--tf-theme-images'] != '1':
         failures.append('theme gradient and images are not on')
+    if manual['--tf-theme-scrim'] != '60%':
+        failures.append('theme scrim does not follow configuration')
     if manual['--tf-font-size'] != '17px' or manual['--tf-rounding'] != '4px':
         failures.append('sizes do not follow configuration')
     if manual['--tf-newtab-logo-rendered'] != '"hi"':
