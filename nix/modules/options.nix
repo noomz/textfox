@@ -72,7 +72,7 @@ in
       font = {
         family = mkOption {
           type = str;
-          default = "\"SF Mono\", Consolas, monospace";
+          default = "\"SF Mono\", Menlo, Consolas, monospace";
           description = "Default font family";
         };
         size = mkOption {

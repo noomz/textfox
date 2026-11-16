@@ -1,4 +1,4 @@
-@-moz-document url-prefix(about:) {
+@-moz-document regexp("^about:(?!(?:blank|srcdoc)(?:[?#]|$)).*") {
   * {
     font-family: var(--tf-font-family) !important;
   }

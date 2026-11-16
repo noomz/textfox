@@ -343,7 +343,7 @@ The theme ships with a `defaults.css`, this file can be overridden by creating a
 #### Defaults
 ```css
 :root {
-  --tf-font-family: "SF Mono", Consolas, monospace; /* Font family of config */
+  --tf-font-family: "SF Mono", Menlo, Consolas, monospace; /* Font family of config */
   --tf-font-size: 14px; /* Font size of config */
   --tf-accent: var(--toolbarbutton-icon-fill); /* Accent color used, eg: color when hovering a container  */
   --tf-bg: var(--lwt-accent-color, -moz-dialog); /* Background color of all elements, tab colors derive from this */
