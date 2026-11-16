@@ -1932,3 +1932,14 @@ Bounds:
 - A gradient can equal the frame color over a whole box (nova-ash light at the sidebar and URL bar); nothing shows there.
 - The art runs behind the whole window even when Firefox would paint it on the toolbox only (`:root[theme-image-in-toolbox]`), as decided.
 - Not handled: Nova's expand-on-hover sidebar launcher (`[sidebar-launcher-expanded]`) paints its own opaque toolbox color; the selected and hovered tab, Nova's vertical-tab scroll fade and tab badges keep opaque tints; web pages paint their own background (about:blank is transparent and shows the art).
+
+### T33 follow-up (2026-11-16): B24 fix and `--tf-theme-scrim`
+
+- B24 fixed: every section title sets `text-shadow: none`. T27's line check read the border one device row off at dpr 2 (classic navbar, bookmarks) and now allows a one-row shift; a synthetic check confirms it still fails on a visible (0/60) or half-visible (30/60) line.
+- `--tf-theme-scrim` (default 80%, clamped 0%..100%; Nix `themeScrim`) sets the wash. `test-theme-art-live.py` navbar strength (mean channel distance from options 0): starfield 0 / 7.7 / 25.4 and Rosy Sky 0 / 37 / 113 at 100% / 80% / 40%.
+- Runs at `c612d6c` (Firefox 160.0, Linux Sway, headed; `TMPDIR=~/.cache/tfx`):
+  - T27 `--theme` Rosy Sky dpr 1,2: red before, green after (options off and `--art images`).
+  - T27 `--dpp 1,2 --themes art --art images`: exit 0. T27 `--dpp 1,2` no theme: exit 0. T27 `--dpp 1 --themes every`: 104 runs, exit 0.
+  - T15 `--themes art --art images`: exit 0.
+  - `check-option-wiring.py` (29 options), `check-option-parity.py` (headless), `check-config-defaults.py`, `nixfmt-tree --ci`: exit 0.
+- Still owed for T33: macOS by eye; T20 `--themes every` with options 0; macOS and Windows reruns of the shared judge (V13).
