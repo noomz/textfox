@@ -78,6 +78,9 @@ def check(display, profile, port, label, expected_family, computed_family, expec
 
 
 def main():
+    default_family = next(line.partition(":")[2].partition(";")[0].strip()
+                          for line in (ROOT / "chrome/defaults.css").read_text().splitlines()
+                          if line.lstrip().startswith("--tf-font-family:"))
     parent = Path(os.environ.get("TF_FONT_ARTIFACTS", tempfile.gettempdir()))
     parent.mkdir(parents=True, exist_ok=True)
     output = Path(tempfile.mkdtemp(prefix="tf-installer-fonts-live-", dir=parent))
@@ -99,7 +102,7 @@ def main():
         display_dir.mkdir(mode=0o700)
         display = open_display(display_dir, env)
         try:
-            results = [check(display, profile, port, "defaults", '"SF Mono", Consolas, monospace', "SF Mono, Consolas, monospace", "14px", output)]
+            results = [check(display, profile, port, "defaults", default_family, default_family.replace('"', ''), "14px", output)]
             install(profile, "--font-family", '"JetBrains Mono", monospace', "--font-size", "13px")
             results.append(check(display, profile, port, "flags", '"JetBrains Mono", monospace', "JetBrains Mono, monospace", "13px", output))
             with config.open("ab") as stream:
