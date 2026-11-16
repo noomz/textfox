@@ -20,12 +20,13 @@ PREF_END='// <<< textfox managed prefs <<<'
 
 clean_path() {
   local fp="$1"
-  fp="${fp/#\~/$HOME}" # Expand ~ to $HOME
-  fp="${fp%/}"         # Remove trailing slash if exists
-  fp="${fp/\/\//\/}"   # Remove double slashes
-  fp="${fp//\'/}"      # Remove single quotes
-  fp="${fp//\"/}"      # Remove double quotes
-  echo "$fp"
+  if [[ "${fp}" == *$'\n'* || "${fp}" == *$'\r'* ]]; then
+    echo '[!!] Profile paths cannot contain line breaks' >&2
+    return 1
+  fi
+  fp="${fp/#\~/$HOME}"
+  [[ "${fp}" == / ]] || fp="${fp%/}"
+  printf '%s\n' "$fp"
 }
 
 LOGO_LINE='\__/\___/_/|_|\__/_/  \____/_/|_|'
@@ -81,7 +82,6 @@ new_backup_dir() {
 # only the first kind.
 backup_existing_profile() {
   local fp="$1"
-  fp="$(clean_path "${fp}")"
   local mine="" theirs="" entry name installed=no
   if textfox_installed "${fp}"; then installed=yes; fi
   for entry in chrome/* chrome/.[!.]* chrome/..?*; do
@@ -107,7 +107,6 @@ backup_existing_profile() {
 
 copy_chrome() {
   local fp="$1"
-  fp="$(clean_path "${fp}")"
   if [[ -d "${fp}" ]]; then
     echo "Copying textfox/chrome/ -> ${fp}/chrome/"
     # Merge into the existing directory rather than copying the directory itself,
@@ -169,7 +168,6 @@ marker_count() {
 # file is backed up only when the content actually changes.
 merge_user_js() {
   local fp="$1"
-  fp="$(clean_path "${fp}")"
   local target="${fp}/user.js" block tmp begins ends
 
   block="$(extract_pref_block)" || return 1
@@ -226,28 +224,11 @@ nova_python() {
 nova_manual_step() {
   echo "[!!] To give Firefox its default Nova setting back, open about:config in this"
   echo "     profile and reset browser.nova.enabled (or install python3 and run"
-  echo "     sh tf-install.sh again)."
+  echo "     bash tf-install.sh again)."
 }
 
-tf_install() {
-  printf "\nInstalling textfox...\n"
-  local fp
-  if [[ "$#" -eq 1 ]]; then
-    fp="$(clean_path "$1")"
-  else
-    read -rp "Path to Firefox profile: " fp
-    fp="$(clean_path "${fp}")"
-  fi
-
-  ffpp="$(clean_path "${fp}")"
-  if [[ ! -d "${ffpp}" ]]; then
-    echo "[!!] Directory ${ffpp} does not exist"
-    while [[ ! -d "${ffpp}" ]]; do
-      read -rp "Path to Firefox profile: " fp
-      ffpp="$(clean_path "${fp}")"
-    done
-  fi
-
+install_profile() {
+  local ffpp="$1"
   echo "Using Firefox Profile @ ${ffpp}"
   # Decided before anything moves: the backup takes the logo-bearing CSS away.
   local clear_nova=no
@@ -282,8 +263,98 @@ tf_install() {
       return 1
     fi
   fi
-  printf "✓ Installation completed\n"
 }
 
-print_logo
-tf_install "$@"
+usage() {
+  printf '%s\n' \
+    'Usage: bash tf-install.sh [--profile PATH | PATH] [--font-family FAMILY] [--font-size SIZE]' \
+    '       bash tf-install.sh --help' \
+    'Without a profile path, prompts interactively. Use -- before a positional path starting with -.' \
+    'Font flags require Python 3.8 or newer. Other config.css bytes stay unchanged.'
+}
+
+tf_install() {
+  local fp="" profile_source=interactive family_given=no size_given=no script
+  local font_args=()
+  if [[ "$#" -eq 1 && "$1" == --help ]]; then usage; return 0; fi
+  while [[ "$#" -gt 0 ]]; do
+    case "$1" in
+    --profile | --font-family | --font-size)
+      if [[ "$#" -lt 2 || -z "$2" || "$2" == --* ]]; then
+        echo "[!!] $1 requires a nonempty value" >&2
+        return 2
+      fi
+      case "$1" in
+      --profile)
+        [[ "${profile_source}" == interactive ]] || { echo '[!!] Profile specified more than once' >&2; return 2; }
+        profile_source=named
+        fp="$2"
+        ;;
+      --font-family)
+        [[ "${family_given}" == no ]] || { echo '[!!] Repeated --font-family' >&2; return 2; }
+        family_given=yes
+        font_args+=("--font-family=$2")
+        ;;
+      --font-size)
+        [[ "${size_given}" == no ]] || { echo '[!!] Repeated --font-size' >&2; return 2; }
+        size_given=yes
+        font_args+=("--font-size=$2")
+        ;;
+      esac
+      shift 2
+      ;;
+    --)
+      shift
+      if [[ "$#" -ne 1 || "${profile_source}" != interactive || -z "$1" ]]; then
+        echo '[!!] Expected one unambiguous profile path after --' >&2
+        return 2
+      fi
+      fp="$1"
+      profile_source=positional
+      shift
+      ;;
+    -*) echo "[!!] Unknown option $1. Use --help." >&2; return 2 ;;
+    *)
+      [[ "${profile_source}" == interactive && -n "$1" ]] || { echo '[!!] Expected one profile path' >&2; return 2; }
+      profile_source=positional
+      fp="$1"
+      shift
+      ;;
+    esac
+  done
+  if [[ "${#font_args[@]}" -gt 0 ]] && ! nova_python; then
+    echo '[!!] Font flags require Python 3.8 or newer. Install without font flags to leave config.css untouched.' >&2
+    return 1
+  fi
+  print_logo
+  printf '\nInstalling textfox...\n'
+  fp="$(clean_path "${fp}")" || return 1
+  if [[ "${profile_source}" == positional && "${#font_args[@]}" -eq 0 && ! -d "${fp}" ]]; then
+    echo "[!!] Directory ${fp} does not exist" >&2
+    profile_source=interactive
+  fi
+  if [[ "${profile_source}" == interactive ]]; then
+    while :; do
+      read -rp 'Path to Firefox profile: ' fp || return 1
+      fp="$(clean_path "${fp}")" || return 1
+      [[ -d "${fp}" ]] && break
+      echo "[!!] Directory ${fp} does not exist" >&2
+    done
+  fi
+  if [[ ! -d "${fp}" ]]; then
+    echo "[!!] Directory ${fp} does not exist" >&2
+    return 1
+  fi
+  fp="$(cd -- "${fp}" && pwd -P)" || return 1
+  if [[ "${#font_args[@]}" -gt 0 ]]; then
+    script="${BASH_SOURCE[0]}"
+    [[ "${script}" == /* ]] || script="${PWD}/${script}"
+    python3 tools/config-fonts.py "${font_args[@]}" "${fp}/chrome/config.css" \
+      "${BASH}" -c 'source "$1"; install_profile "$2"' textfox-install "${script}" "${fp}" || return 1
+  else
+    install_profile "${fp}" || return 1
+  fi
+  printf '✓ Installation completed\n'
+}
+
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then tf_install "$@"; fi

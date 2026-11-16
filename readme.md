@@ -57,7 +57,7 @@ _a firefox theme for the tui enthusiast_
 > Earlier textfox versions turned Nova off. Updating gives Firefox's own setting
 > back once:
 >
-> - Installation script: run `sh tf-install.sh` again with Firefox closed. The
+> - Installation script: run `bash tf-install.sh` again with Firefox closed. The
 >   reset needs `python3`. Without it, the script tells you to reset
 >   `browser.nova.enabled` in `about:config` yourself.
 > - Home Manager: the next activation resets it. If Firefox is running, it
@@ -74,18 +74,71 @@ _a firefox theme for the tui enthusiast_
 ### Installation script
 
 1. Download/clone the repo.
-2. Inside the download run `sh tf-install.sh` and follow the script
-   instructions.
+2. Close Firefox. Inside the download, run `bash tf-install.sh` and follow
+   the script instructions. The installer requires Bash 3.2 or newer.
 
 > [!IMPORTANT]
 > This script automates file writes, use with caution.
 
 > [!NOTE]
-> The installation script copies to contents of the repos `chrome` directory to
-> the path specified, this way your `config.css` or any other `css`-files not
-> part of the repo will be kept. It merges textfox's settings into `user.js`
-> between the `textfox managed prefs` markers, so your own preferences in that
-> file keep working; keep them outside the markers.
+> The installation script copies the repo's `chrome` files to the specified
+> profile. It excludes `config.css` from the theme copy and theme backups, even
+> when the checkout holds one. Files the repo does not ship stay in place. It merges textfox's settings
+> into `user.js` between the `textfox managed prefs` markers, so your own
+> preferences in that file keep working; keep them outside the markers.
+
+#### Font options
+
+To set fonts during installation, pass either font flag or both. Font flags
+require Python 3.8 or newer. An install without font flags does not require
+Python for font configuration and leaves `config.css` untouched.
+
+```sh
+bash tf-install.sh --profile /path/to/profile \
+  --font-family '"JetBrains Mono", monospace' --font-size 13px
+bash tf-install.sh /path/to/profile
+bash tf-install.sh --help
+```
+
+`--profile PATH` and a positional path select the same profile. Without a path,
+the script prompts for one. Use `-- PATH` for a positional path starting with
+`-`. Pass each flag at most once, with its value as a separate argument. Unknown
+flags, empty values, and multiple profile paths are errors. Profile paths are
+literal; line breaks are not supported.
+
+`--font-family` accepts comma-separated family names. Unquoted names use ASCII
+letters, digits, underscores, hyphens, and spaces between words. Each word starts
+with a letter or underscore, optionally preceded by one hyphen. Quote names
+with other characters. Names cannot contain controls, escapes, comments,
+semicolons, braces, slashes, or `!important`. CSS-wide keywords and `default`
+need quotes when used as font names. `--font-size` accepts a positive decimal
+followed by `px`, `pt`, `em`, `rem`, `ex`, `ch`, or `%`, such as `13px` or `.9rem`.
+Functions such as `var()` and `calc()` are not supported by the flags.
+
+The installer writes a `textfox managed fonts` block at the beginning of
+`chrome/config.css`, after an optional UTF-8 BOM. Keep custom CSS outside those
+markers. The phrase `textfox managed fonts` is reserved for these markers.
+A partial update retains the other managed font value, if present;
+it does not copy a missing value from the theme defaults. Bytes outside the
+block stay unchanged, including line endings and a missing final newline.
+The block overrides theme defaults. Later unlayered, equally specific `:root`
+declarations override the block. This does not promise precedence over other
+selectors, `!important`, or cascade layers.
+
+Font flags refuse malformed or structurally edited managed blocks, symlinked
+`config.css` or `chrome`, non-UTF-8 files, NUL bytes, and unterminated comments
+or strings. The scanner also refuses `@charset`, `@import`, `@namespace`, and
+`@layer` outside comments and strings, ignoring case, and escaped at-keyword
+names. It is not a full CSS parser. For these configurations, install without
+font flags and edit `config.css` manually instead.
+
+When an existing config changes, its exact original bytes are kept in a
+collision-safe `chrome/config.css-<random>.bak`. Replacement is atomic and
+preserves file permissions. Identical managed values cause no config write,
+mtime change, or config backup. If theme installation fails, config stays
+unchanged. Completed config backups remain available if replacement fails.
+Theme files or preferences may already have changed. The installer does not
+roll back the whole profile or guarantee safety against concurrent edits.
 
 ### Manual
 
