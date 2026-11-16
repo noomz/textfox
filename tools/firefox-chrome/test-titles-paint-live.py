@@ -206,17 +206,23 @@ def dominant(path, region):
 
 
 def line_hidden(clear, hidden, here, top, bottom):
-    """(pixels, rows total) of the border rows top..bottom-1 under the title's glyph box where the title
-    with transparent text differs from the capture without the title, which shows the border line."""
+    """(pixels, rows total) of the border rows under the title's glyph box where the title with
+    transparent text differs from the capture without the title, which shows the border line. The
+    rows are top..bottom-1 shifted by at most one device row, whichever the title covers most:
+    rounded geometry can place the line a row off (dpr 2 classic navbar, bookmarks)."""
     width, height, a = paint_display.read_ppm(clear)
     _, _, b = paint_display.read_ppm(hidden)
-    count = total = 0
-    for y in range(top, bottom):
-        for x in range(here['x'], here['x'] + here['width']):
-            i = (y * width + x) * 3
-            total += 1
-            count += max(abs(a[i + k] - b[i + k]) for k in range(3)) > BLEND
-    return count, total
+    best = None
+    for shift in (0, -1, 1):
+        count = total = 0
+        for y in range(max(0, top + shift), min(height, bottom + shift)):
+            for x in range(here['x'], here['x'] + here['width']):
+                i = (y * width + x) * 3
+                total += 1
+                count += max(abs(a[i + k] - b[i + k]) for k in range(3)) > BLEND
+        if best is None or count > best[0]:
+            best = (count, total)
+    return best
 
 
 HIDES = 0.9  # share of the border line under a title the title must cover

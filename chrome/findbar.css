@@ -17,6 +17,7 @@ findbar {
 
   &::before {
     display: var(--tf-display-titles);
+    text-shadow: none; /* B24: header-image themes shadow toolbar text past the glyphs */
     content: "find";
     background-color: var(--tf-bg);
     position: absolute;
