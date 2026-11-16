@@ -8,21 +8,25 @@
     }
     --newtab-background-color-secondary: color-mix(
       in srgb,
-      var(--newtab-wallpaper-color) 90%,
+      var(--newtab-wallpaper-color, var(--newtab-background-color)) 90%,
       var(--newtab-contextual-text-primary-color)
     ) !important;
     --newtab-border-color: color-mix(
       in srgb,
-      var(--newtab-wallpaper-color) 50%,
+      var(--newtab-wallpaper-color, var(--newtab-background-color)) 50%,
       var(--newtab-contextual-text-primary-color)
     ) !important;
     --newtab-element-hover-color: color-mix(
       in srgb,
-      var(--newtab-wallpaper-color) 70%,
+      var(--newtab-wallpaper-color, var(--newtab-background-color)) 70%,
       var(--newtab-contextual-text-primary-color)
     ) !important;
 
     --newtab-weather-background-color: transparent !important;
+
+    @media (forced-colors: active) {
+      --newtab-border-color: CanvasText !important;
+    }
   }
 
   /* replace firefox logo */
@@ -44,11 +48,36 @@
     }
   }
 
+  /* nova: contain the generated logo in its grid area without replacing the configured font */
+  .container.nova-enabled {
+    grid-template-rows: minmax(var(--row-height), auto) var(--row-height) !important;
+  }
+  .nova-enabled {
+    .sidebar-inline-start {
+      grid-row: 1 !important;
+    }
+    .wordmark {
+      height: auto !important;
+      max-inline-size: calc(100cqi - var(--side-col-width) - 3 * var(--space-xlarge)) !important;
+      &::before {
+        overflow-wrap: anywhere !important;
+      }
+    }
+  }
+
   /* search bar */
+  /* The handoff search box lives in content-search-handoff-ui's shadow root;
+     only the host's variables reach it. */
+  content-search-handoff-ui {
+    --content-search-handoff-ui-border-width: var(--tf-border-width) !important;
+    --content-search-handoff-ui-border-radius: var(--tf-rounding) !important;
+    --content-search-handoff-ui-unfocused-border-color: var(--newtab-border-color) !important;
+    --box-shadow-level-3: none !important;
+  }
   .search-wrapper {
     .search-handoff-button,
     input {
-      border: var(--border-width) solid var(--newtab-border-color) !important;
+      border: var(--tf-border-width) solid var(--newtab-border-color) !important;
       border-radius: var(--tf-rounding) !important;
       box-shadow: none !important;
       &:hover {
@@ -62,7 +91,7 @@
     .tile {
       box-shadow: none !important;
       border-radius: var(--tf-rounding) !important;
-      border: var(--border-width) solid var(--newtab-border-color) !important;
+      border: var(--tf-border-width) solid var(--newtab-border-color) !important;
       &:hover {
         background-color: var(--newtab-element-hover-color) !important;
       }
@@ -74,13 +103,13 @@
   .context-menu {
     box-shadow: none !important;
     border-radius: var(--tf-rounding) !important;
-    border: var(--border-width) solid var(--newtab-border-color) !important;
+    border: var(--tf-border-width) solid var(--newtab-border-color) !important;
   }
 
   /* history */
   .card-outer {
     border-radius: var(--tf-rounding) !important;
-    border: var(--border-width) solid var(--newtab-border-color);
+    border: var(--tf-border-width) solid var(--newtab-border-color);
     .card {
       border-radius: var(--tf-rounding) !important;
     }

@@ -1,5 +1,5 @@
 .browserContainer, .browser-toolbox-background {
-  background: var(--tf-bg) !important;
+  background: var(--textfox-box-bg) !important;
 }
 
 browser {
@@ -8,8 +8,16 @@ browser {
 
 #tabbrowser-tabbox,
 .split-view-panel {
+  /* --tf-container-frame 1: the color the shown tab's container line paints (rules below);
+     no container, or 0: --tf-border (V18). The option is clamped to 0..1. */
+  --textfox-frame-container: var(--textfox-line-classic, var(--tf-border));
+  @media -moz-pref("browser.nova.enabled") {
+    --textfox-frame-container: var(--textfox-line-nova, var(--tf-border));
+  }
+  --tf-frame-color: color-mix(in srgb, var(--textfox-frame-container)
+    calc(clamp(0, var(--tf-container-frame), 1) * 100%), var(--tf-border));
   margin: 8px !important;
-  border: var(--border-width) solid var(--tf-border);
+  border: var(--border-width) solid var(--tf-frame-color);
   border-radius: var(--tf-rounding);
   padding: 8px !important;
   transition: border-color var(--tf-border-transition);
@@ -20,13 +28,18 @@ browser {
     }
   }
   &::before {
-    z-index: 1;
     display: var(--tf-display-titles);
+    text-shadow: none; /* B24: header-image themes shadow toolbar text past the glyphs */
     content: "main";
     background-color: var(--tf-bg);
     position: absolute;
-    margin: -1.75rem 0rem;
     padding: 0 4px;
+    /* Centered on the top border line (V14): the static position sits 8px below the
+       border (the box's top padding), so pull up by that, half the border and half a line. */
+    z-index: 1;
+    align-self: flex-start;
+    line-height: normal;
+    margin: calc(-1 * (8px + var(--border-width) / 2 + 0.5lh)) 0 0 8px;
   }
 }
 
@@ -49,15 +62,155 @@ browser {
   }
 }
 
+/* Firefox frames the page inside textfox's box: browser Nova borders .browserContainer on the
+   top, on the sidebar's side, and all round in a split panel (focus color on the active one,
+   plus an outline); sidebar.revamp outlines it and adds a shadow (--content-area-shadow).
+   textfox's box is the only frame (V17). */
+#tabbrowser-tabbox .browserContainer {
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+/* Firefox paints #browser with --toolbar-background-color, not only under a theme. */
 #browser:not(.browser-toolbox-background) {
-  :root[lwtheme] & {
-    background-color: var(--lwt-accent-color) !important;
-    background-image: var(--lwt-accent-color) !important;
+  background-color: var(--textfox-box-bg) !important;
+  background-image: none !important;
+}
+
+/* body's background-image paints above --tf-bg: browser Nova's half-transparent gradient
+   (--toolbox-background-gradient; macOS and Windows, Linux's native theme sets it transparent),
+   and a Firefox theme's header and additional images (--toolbox-background-image), such as a
+   Nova theme's window gradient. By default every box paints --tf-bg, so neither paints. Set on
+   body, these beat the values inherited from :root. */
+body {
+  --toolbox-background-gradient: none;
+  --toolbox-background-image: none;
+  --textfox-art: none;
+  --textfox-scrim: transparent;
+  --textfox-box-bg: var(--tf-bg);
+}
+
+/* Theme art (V19): --tf-theme-gradient 1 keeps browser Nova's own gradient (no Firefox theme),
+   --tf-theme-images 1 every layer a Firefox theme ships. Firefox's own value at :root, before
+   body clears it, holds exactly one of them (a theme replaces the gradient). textfox paints it
+   once on body for the whole window; boxes over it drop their --tf-bg, and a --tf-bg scrim
+   keeps text readable. The style queries read the option on :root, body's container. */
+:root {
+  --textfox-root-art: var(--toolbox-background-image);
+}
+@container style(--tf-theme-gradient >= 1) {
+  :root:not([lwtheme]) body {
+    --textfox-art-on: 1;
+    --textfox-art: var(--textfox-root-art);
+    --textfox-scrim: color-mix(in srgb, var(--tf-bg) clamp(0%, var(--tf-theme-scrim), 100%), transparent);
+    --textfox-box-bg: transparent;
   }
+}
+@container style(--tf-theme-images >= 1) {
+  :root[lwtheme] body {
+    --textfox-art-on: 1;
+    --textfox-art: var(--textfox-root-art);
+    --textfox-scrim: color-mix(in srgb, var(--tf-bg) clamp(0%, var(--tf-theme-scrim), 100%), transparent);
+    --textfox-box-bg: transparent;
+  }
+}
+/* The art and the scrim over it (an inset shadow paints above the background). Titles paint the
+   same, fixed to the window like body, so a title hides the border under it yet matches the paint
+   beside it (B19). Both off: no image and a transparent shadow, as before. */
+body,
+:is(#nav-bar, #PersonalToolbar, #TabsToolbar, box#vertical-tabs, #tabbrowser-tabbox, .split-view-panel,
+    #sidebar-box, .buttons-wrapper, findbar)::before {
+  background-image: var(--textfox-art) !important;
+  background-repeat: var(--toolbox-background-repeat) !important;
+  background-position: var(--toolbox-background-position) !important;
+  background-size: var(--toolbox-background-size) !important;
+  background-attachment: fixed !important;
+  box-shadow: inset 0 0 0 100vmax var(--textfox-scrim);
+}
+
+/* The color each tab's container line paints (tabs.css .tab-context-line): browser Nova,
+   Firefox's --identity-stroke-color (--color-<x>-40), which textfox does not recolor; classic,
+   --identity-icon-color, textfox's palette (chrome/overwrites.css) where it has the color, else
+   Firefox's token (gray: the tab's text color; Firefox defines --color-gray-40 for Nova only). The content box takes the selected tab's, a split view's other panel its own
+   tab's (V18). A split view's other panel first drops what it inherits from the content box. */
+.split-view-panel:not(.deck-selected) {
+  --textfox-line-classic: initial !important;
+  --textfox-line-nova: initial !important;
+}
+:root:has(.tabbrowser-tab[selected].identity-color-blue) #tabbrowser-tabbox,
+:root:has(tab-split-view-wrapper > .tabbrowser-tab[selected] ~ .identity-color-blue,
+          tab-split-view-wrapper > .identity-color-blue ~ .tabbrowser-tab[selected])
+  .split-view-panel:not(.deck-selected) {
+  --textfox-line-classic: var(--textfox-container-blue) !important;
+  --textfox-line-nova: var(--color-blue-40) !important;
+}
+:root:has(.tabbrowser-tab[selected].identity-color-cyan) #tabbrowser-tabbox,
+:root:has(tab-split-view-wrapper > .tabbrowser-tab[selected] ~ .identity-color-cyan,
+          tab-split-view-wrapper > .identity-color-cyan ~ .tabbrowser-tab[selected])
+  .split-view-panel:not(.deck-selected) {
+  --textfox-line-classic: var(--color-cyan-40) !important;
+  --textfox-line-nova: var(--color-cyan-40) !important;
+}
+:root:has(.tabbrowser-tab[selected].identity-color-green) #tabbrowser-tabbox,
+:root:has(tab-split-view-wrapper > .tabbrowser-tab[selected] ~ .identity-color-green,
+          tab-split-view-wrapper > .identity-color-green ~ .tabbrowser-tab[selected])
+  .split-view-panel:not(.deck-selected) {
+  --textfox-line-classic: var(--textfox-container-green) !important;
+  --textfox-line-nova: var(--color-green-40) !important;
+}
+:root:has(.tabbrowser-tab[selected].identity-color-yellow) #tabbrowser-tabbox,
+:root:has(tab-split-view-wrapper > .tabbrowser-tab[selected] ~ .identity-color-yellow,
+          tab-split-view-wrapper > .identity-color-yellow ~ .tabbrowser-tab[selected])
+  .split-view-panel:not(.deck-selected) {
+  --textfox-line-classic: var(--textfox-container-yellow) !important;
+  --textfox-line-nova: var(--color-yellow-40) !important;
+}
+:root:has(.tabbrowser-tab[selected].identity-color-orange) #tabbrowser-tabbox,
+:root:has(tab-split-view-wrapper > .tabbrowser-tab[selected] ~ .identity-color-orange,
+          tab-split-view-wrapper > .identity-color-orange ~ .tabbrowser-tab[selected])
+  .split-view-panel:not(.deck-selected) {
+  --textfox-line-classic: var(--textfox-container-orange) !important;
+  --textfox-line-nova: var(--color-orange-40) !important;
+}
+:root:has(.tabbrowser-tab[selected].identity-color-red) #tabbrowser-tabbox,
+:root:has(tab-split-view-wrapper > .tabbrowser-tab[selected] ~ .identity-color-red,
+          tab-split-view-wrapper > .identity-color-red ~ .tabbrowser-tab[selected])
+  .split-view-panel:not(.deck-selected) {
+  --textfox-line-classic: var(--textfox-container-red) !important;
+  --textfox-line-nova: var(--color-red-40) !important;
+}
+:root:has(.tabbrowser-tab[selected].identity-color-pink) #tabbrowser-tabbox,
+:root:has(tab-split-view-wrapper > .tabbrowser-tab[selected] ~ .identity-color-pink,
+          tab-split-view-wrapper > .identity-color-pink ~ .tabbrowser-tab[selected])
+  .split-view-panel:not(.deck-selected) {
+  --textfox-line-classic: var(--textfox-container-pink) !important;
+  --textfox-line-nova: var(--color-pink-40) !important;
+}
+:root:has(.tabbrowser-tab[selected].identity-color-purple) #tabbrowser-tabbox,
+:root:has(tab-split-view-wrapper > .tabbrowser-tab[selected] ~ .identity-color-purple,
+          tab-split-view-wrapper > .identity-color-purple ~ .tabbrowser-tab[selected])
+  .split-view-panel:not(.deck-selected) {
+  --textfox-line-classic: var(--textfox-container-purple) !important;
+  --textfox-line-nova: var(--color-purple-40) !important;
+}
+:root:has(.tabbrowser-tab[selected].identity-color-violet) #tabbrowser-tabbox,
+:root:has(tab-split-view-wrapper > .tabbrowser-tab[selected] ~ .identity-color-violet,
+          tab-split-view-wrapper > .identity-color-violet ~ .tabbrowser-tab[selected])
+  .split-view-panel:not(.deck-selected) {
+  --textfox-line-classic: var(--color-violet-40) !important;
+  --textfox-line-nova: var(--color-violet-40) !important;
+}
+:root:has(.tabbrowser-tab[selected].identity-color-gray) #tabbrowser-tabbox,
+:root:has(tab-split-view-wrapper > .tabbrowser-tab[selected] ~ .identity-color-gray,
+          tab-split-view-wrapper > .identity-color-gray ~ .tabbrowser-tab[selected])
+  .split-view-panel:not(.deck-selected) {
+  --textfox-line-classic: var(--tf-fg) !important;  /* classic gray line: the tab's text color */
+  --textfox-line-nova: var(--color-gray-40) !important;
 }
 
 .split-view-panel {
-  --splitborder: var(--tf-border);
+  --splitborder: var(--tf-frame-color);
   border-color: var(--splitborder);
   margin: 4px 0 0 !important;
   transition: border-color var(--tf-border-transition), outline-color var(--tf-border-transition);
@@ -68,13 +221,10 @@ browser {
   }
   &::before {
     content: "split" !important;
-    color: var(--lwt-text-color);
+    color: var(--tf-fg);
   }
   &.deck-selected {
     outline: var(--border-width) solid var(--splitborder) !important;
-    & > .browserContainer {
-      outline: none !important;
-    }
     &::before {
       content: "active split" !important;
     }

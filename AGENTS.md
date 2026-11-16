@@ -6,6 +6,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 textfox is a Firefox userChrome CSS theme for TUI enthusiasts. No JavaScript framework, no bundler — just CSS files, SVG icons, shell scripts, and a Nix flake.
 
+## Commits
+
+Commit each completed, verified slice before starting the next. Stage only files belonging to that slice; preserve unrelated changes.
+
 ## Commands
 
 **Nix formatting (CI enforced):**

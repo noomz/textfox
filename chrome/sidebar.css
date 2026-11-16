@@ -6,17 +6,13 @@
   display: none;
 }
 
-#sidebar-splitter {
-  display: none;
-}
-
 #sidebar {
   box-shadow: none !important;
 }
 
-#sidebar-main {
+sidebar-main {
   :root[lwtheme] & {
-    background-color: var(--tf-bg) !important;
+    background-color: var(--textfox-box-bg) !important;
     background-image: unset !important;
   }
 }
@@ -24,23 +20,32 @@
   font-size: unset !important;
   margin: 8px;
   padding: 8px !important;
-  border: var(--border-width) solid var(--tf-border);
+  /* Firefox's Nova rules for #sidebar-box are author styles; a normal user rule loses to them. */
+  border: var(--border-width) solid var(--tf-border) !important;
   border-radius: var(--tf-rounding) !important;
   transition: border-color var(--tf-border-transition);
-  background: var(--tf-bg) !important;
+  /* --tf-bg, or transparent over theme art (V19, chrome/browser.css). */
+  background: var(--textfox-box-bg) !important;
+  /* Nova paints the panel browser (#sidebar) with this variable. */
+  --sidebar-background-color: var(--textfox-box-bg) !important;
   &:hover {
     border-color: var(--tf-accent) !important;
   }
   &::before {
     display: var(--tf-display-titles);
-    z-index: 1;
+    text-shadow: none; /* B24: header-image themes shadow toolbar text past the glyphs */
     font-size: var(--tf-font-size);
     content: "tool";
-    color: var(--lwt-text-color);
+    color: var(--tf-fg);
     background-color: var(--tf-bg);
     position: absolute;
-    margin: -1.75rem 0rem;
     padding: 0 4px;
+    /* Centered on the top border line (V14): the static position sits 8px below the
+       border (the box's top padding), so pull up by that, half the border and half a line. */
+    z-index: 1;
+    align-self: flex-start;
+    line-height: normal;
+    margin: calc(-1 * (8px + var(--border-width) / 2 + 0.5lh)) 0 0 8px;
   }
   &:hover::before {
     color: var(--tf-accent);
@@ -48,12 +53,14 @@
 }
 
 #sidebar-tools-and-extensions-splitter {
-  display: none !important;
+  display: var(--tf-display-sidebar-tools) !important;
 }
 
 .buttons-wrapper {
   display: var(--tf-display-sidebar-tools) !important;
   margin: 8px;
+  /* Room for the lower half of the "tools" title, so it covers no launcher button (V14). */
+  padding-top: 0.5lh !important;
   border: var(--border-width) solid var(--tf-border);
   border-radius: var(--tf-rounding) !important;
   transition: border-color var(--tf-border-transition);
@@ -62,12 +69,18 @@
   }
   &::before {
     display: var(--tf-display-titles);
+    text-shadow: none; /* B24: header-image themes shadow toolbar text past the glyphs */
     position: absolute;
     content: "tools";
-    color: var(--lwt-text-color);
+    color: var(--tf-fg);
     background-color: var(--tf-bg);
-    margin: 3.25rem .4rem;
     padding: 0 4px;
+    /* Centered on the top border line (V14): the static position sits 0.5lh below the
+       border (the box's top padding), so pull up by that, half the border and half a line. */
+    z-index: 1;
+    align-self: flex-start;
+    line-height: normal;
+    margin: calc(-1 * (0.5lh + var(--border-width) / 2 + 0.5lh)) 0 0 8px;
   }
   &:hover::before {
     color: var(--tf-accent);
@@ -76,7 +89,7 @@
 
 #tabbrowser-tabs[orient="vertical"] {
   &:not([expanded]) {
-    #vertical-pinned-tabs-container, .tab-stack {
+    .tab-stack {
       width: 100% !important;
     }
   }
@@ -86,4 +99,12 @@
 #sidebar-select-box {
     background-color: var(--lwt-accent-color) !important;
     background-image: var(--lwt-accent-color) !important;
+}
+
+/* Over theme art (V19, chrome/browser.css) the splitter's own threedface paints a strip.
+   Firefox's splitter.css is an author sheet, so a normal user rule loses to it. */
+@container style(--textfox-art-on: 1) {
+  #sidebar-splitter {
+    background-color: transparent !important;
+  }
 }

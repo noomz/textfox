@@ -32,7 +32,7 @@
  * ─[ MONOCHROME EXTENSIONS - Monochrome icons for some extensions ]───────
 */
 
-@media (-moz-bool-pref: "shyfox.enable.ext.mono.toolbar.icons") {
+@media -moz-pref("shyfox.enable.ext.mono.toolbar.icons") {
   /* Userchrome Toggle => sidebar icon */
   :is(.webextension-browser-action, .eom-addon-button):is(
       [data-extensionid="userchrome-toggle-extended@n2ezr.ru"]
@@ -144,7 +144,7 @@
 
 /* context menu */
 
-@media (-moz-bool-pref: "shyfox.enable.ext.mono.context.icons") {
+@media -moz-pref("shyfox.enable.ext.mono.context.icons") {
   #contentAreaContextMenu,
   #toolbar-context-menu,
   #unified-extensions-context-menu {
@@ -535,22 +535,22 @@
   }
 }
 
-@media (-moz-bool-pref: "shyfox.enable.context.menu.icons") {
+@media -moz-pref("shyfox.enable.context.menu.icons") {
   /* in page context menu */
   #contentAreaContextMenu {
-    & > #context-back {
+    & #context-back {
       background-image: url("chrome://browser/skin/back.svg") !important;
     }
-    & > #context-forward {
+    & #context-forward {
       background-image: url("chrome://browser/skin/forward.svg") !important;
     }
-    & > #context-reload {
+    & #context-reload {
       background-image: url("chrome://global/skin/icons/reload.svg") !important;
     }
-    & > #context-stop {
+    & #context-stop {
       background-image: url("chrome://global/skin/icons/close.svg") !important;
     }
-    & > #context-bookmarkpage {
+    & #context-bookmarkpage {
       background-image: url("chrome://browser/skin/bookmark-hollow.svg") !important;
     }
 
@@ -560,7 +560,7 @@
     #context-openlinkintab {
       background-image: url("./icons/new-tab.svg") !important;
     }
-    context-openlinkincontainertab,
+    #context-openlinkincontainertab,
     #context-openlinkinusercontext-menu {
       background-image: url("./icons/container-openin-16.svg") !important;
     }
@@ -627,7 +627,7 @@
       background-image: url("./icons/trash.svg") !important;
     }
     #context-selectall,
-    #context-pdfjs-selectall {
+    #context-pdfjs-select-all {
       background-image: url("./icons/select-all-on.svg") !important;
     }
     #context-pdfjs-highlight-selection {
@@ -949,7 +949,7 @@
   }
 
   /* bookmarks button menu */
-  #main-window:has(#PersonalToolbar[collapsed="true"])
+  #main-window:has(#PersonalToolbar[collapsed])
     #BMB_bookmarksPopup
     #BMB_viewBookmarksToolbar {
     background-image: url("./icons/eye-show.svg") !important;

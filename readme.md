@@ -22,10 +22,54 @@ _a firefox theme for the tui enthusiast_
 
 ## Installation
 
-> [!WARNING]
-> textfox does not yet support Firefox's new "Nova" UI. Until it does, set
-> `browser.nova.enabled` to `false` in `about:config` (the provided `user.js`
-> and the Nix modules do this for you), then restart Firefox.
+> [!IMPORTANT]
+> **Updating textfox turns Firefox's new "Nova" UI on.** Earlier versions kept
+> Nova off, and Firefox saved that in each profile. The update resets that saved
+> setting once per profile, so Firefox's default (Nova on) applies again. This
+> happens even if you turned Nova off yourself, for example because an earlier
+> version of this README told you to: the reset cannot tell your choice from
+> textfox's. With Home Manager it also applies to every profile listed in
+> `textfox.profiles`, including ones textfox never ran in before.
+>
+> To keep the classic UI, set `browser.nova.enabled` to `false` in
+> `about:config` after updating and restart Firefox. textfox keeps that choice
+> from then on.
+
+> [!NOTE]
+> textfox supports Firefox's new "Nova" UI as well as the classic one, and no
+> longer sets `browser.nova.enabled`. Nova is checked on Firefox 159 and 160 with
+> textfox's default colors and a custom palette: on Linux for the toolbars, tabs,
+> sidebar, split view, private windows, menus, the extensions and all-tabs
+> panels, the new tab and `about:` pages, plus keyboard focus, right-to-left and
+> reduced motion; on macOS and Windows for the navigation bar, URL bar, tabs,
+> menus, findbar and new tab. Firefox themes from the theme picker (Light,
+> Dark, Alpenglow and the Nova themes) are checked on Linux for the same
+> surfaces and the section titles: textfox takes the theme's frame color as its
+> background and paints every box with it, so the theme's toolbar color and
+> background images do not show. `--tf-theme-images: 1` shows a theme's images
+> and gradients behind the whole window, `--tf-theme-gradient: 1` browser Nova's
+> own gradient without a theme; boxes then paint a translucent `--tf-bg` wash over
+> the art so text stays readable (`--tf-theme-scrim`, 80% by default). Both are checked on Linux with three image
+> themes (an animated one among them) and a Nova theme; the gradient only as a
+> stand-in, since Linux paints it transparent. Other panels, themes on macOS and
+> Windows, and GPU rendering are not checked yet.
+>
+> Earlier textfox versions turned Nova off. Updating gives Firefox's own setting
+> back once:
+>
+> - Installation script: run `sh tf-install.sh` again with Firefox closed. The
+>   reset needs `python3`. Without it, the script tells you to reset
+>   `browser.nova.enabled` in `about:config` yourself.
+> - Home Manager: the next activation resets it. If Firefox is running, it
+>   warns and resets on a later activation.
+> - NixOS: Firefox resets it on its next start.
+> - Manual copy: copy the new `user.js` first (the old one sets Nova off on every
+>   start), then close Firefox and run `python3 tools/clear-nova-pref.py <profile>`,
+>   or reset `browser.nova.enabled` in `about:config`. The script needs macOS or
+>   Linux; on Windows, use `about:config`.
+>
+> The reset happens once per profile (see the note above to keep the classic
+> UI).
 
 ### Installation script
 
@@ -39,7 +83,9 @@ _a firefox theme for the tui enthusiast_
 > [!NOTE]
 > The installation script copies to contents of the repos `chrome` directory to
 > the path specified, this way your `config.css` or any other `css`-files not
-> part of the repo will be kept.
+> part of the repo will be kept. It merges textfox's settings into `user.js`
+> between the `textfox managed prefs` markers, so your own preferences in that
+> file keep working; keep them outside the markers.
 
 ### Manual
 
@@ -188,11 +234,15 @@ All configuration options are optional and can be set as this example shows (rea
         displayUrlbarIcons = true;
         displaySidebarTools = false;
         displayTitles = false;
+        containerFrame = true;
+        themeGradient = true;
+        themeImages = true;
         newtabLogo = "   __            __  ____          \A   / /____  _  __/ /_/ __/___  _  __\A  / __/ _ \\| |/_/ __/ /_/ __ \\| |/_/\A / /_/  __/>  </ /_/ __/ /_/ />  <  \A \\__/\\___/_/|_|\\__/_/  \\____/_/|_|  ";
         font = {
           family = "Fira Code";
           size = "15px";
           accent = "#654321";
+          color = "var(--lwt-text-color)";
         };
         tabs = {
           horizontal.enable = true;
@@ -217,6 +267,22 @@ All configuration options are optional and can be set as this example shows (rea
 ```
 </details>
 
+<details><summary>NixOS module (`nixosModules.default`): when textfox refuses to install</summary>
+
+The NixOS module wraps Firefox and copies textfox into the profile's `chrome/`
+directory on every start. It only replaces files it can prove it wrote. If
+`chrome/userChrome.css` or `chrome/userContent.css` holds anything else (your
+own files, files you edited after installation, or an older textfox install
+whose Nix store path was garbage-collected), it changes nothing and shows no
+message on screen. Your old styles stay in place.
+
+To let textfox take over, either move those two files out of `chrome/`, or set
+`textfox.force-adopt` to `true` in `about:config` and restart Firefox. With
+`textfox.force-adopt` on, textfox copies the files into a
+`chrome/textfox-backup-*` directory before replacing them. Set it back to
+`false` afterwards, so later edits of your own are refused instead of replaced.
+</details>
+
 ## Uninstallation
 
 ### Uninstall script
@@ -228,27 +294,42 @@ All configuration options are optional and can be set as this example shows (rea
 > This script automates file removal, use with caution.
 
 > [!NOTE]
-> The uninstall script will offer to restore the most recent backup created by
-> the install script (e.g. `chrome-YYYYMMDD_HHMMSS.bak`) if one is found in
-> your Firefox profile directory.
+> The install script names each backup after whose files it holds:
+> `chrome-pre-textfox-YYYYMMDD_HHMMSS.bak` holds your files from before textfox,
+> `chrome-textfox-YYYYMMDD_HHMMSS.bak` the previous textfox files a reinstall
+> replaced. The uninstall script offers to restore the newest pre-textfox backup
+> (or, for profiles installed by older scripts, the oldest
+> `chrome-YYYYMMDD_HHMMSS.bak`), never a backup of textfox's own files, and puts
+> its files back beside anything you kept in `chrome/`. It removes only the files textfox ships from `chrome/`, so
+> your `chrome/config.css` and any files of your own stay, and it removes the
+> `chrome` directory only when nothing else is left in it. It removes only the
+> `textfox managed prefs` block from `user.js`, and deletes that file only when
+> nothing else was in it.
 
 ### Manual
 
 1. Go to `about:profiles`
 2. Open the root directory of the profile textfox was installed to
-3. Delete the `chrome` directory
-4. Delete `user.js` (only if it was placed there by textfox)
+3. Delete the `chrome` directory (keep a copy of `chrome/config.css` first if
+   you want your configuration back later)
+4. Remove the `textfox managed prefs` block from `user.js`, or delete the file
+   if it holds nothing else
 5. Restart Firefox
 
 > [!NOTE]
 > If you had a previous `chrome` directory before installing textfox, the
-> install script backed it up as `chrome-YYYYMMDD_HHMMSS.bak`. You can restore
-> it by renaming it back to `chrome`.
+> install script moved the files textfox replaced into
+> `chrome-pre-textfox-YYYYMMDD_HHMMSS.bak` (`chrome-YYYYMMDD_HHMMSS.bak` with
+> older scripts). You can restore them by moving them back into
+> `chrome`.
 
 ## Customization
 
 The icon configuration utilizes code that is originally from ShyFox, therefore
-the same settings are used (these can be set in about:config).
+the same settings are used. With a manual install, set them in about:config.
+With either Nix module, set them through `textfox.config.icons` instead: the
+module writes all three preferences on every Firefox start, so a value changed
+in about:config is reset at the next start.
 | Setting | true | false (default) |
 | -------------------------------------- | --------------------------------------------------------------------- | ------------------------- |
 | `shyfox.enable.ext.mono.toolbar.icons` | Supported extensions get monochrome icons as toolbar buttons | Standard icons used |
@@ -266,17 +347,23 @@ The theme ships with a `defaults.css`, this file can be overridden by creating a
   --tf-font-size: 14px; /* Font size of config */
   --tf-accent: var(--toolbarbutton-icon-fill); /* Accent color used, eg: color when hovering a container  */
   --tf-bg: var(--lwt-accent-color, -moz-dialog); /* Background color of all elements, tab colors derive from this */
-  --tf-border: var(--panel-border-color, var(--toolbar-field-background-color)); /* Border color when not hovered */
+  --tf-fg: contrast-color(var(--tf-bg)); /* Text color on --tf-bg; black or white, whichever reads better. var(--lwt-text-color) keeps the theme's text color */
+  --tf-border: color-mix(in srgb, var(--tf-fg) 20%, var(--tf-bg)); /* Border color when not hovered */
   --tf-border-transition: 0.2s ease; /* Smooth color transitions for borders */
   --tf-border-width: 2px; /* Width of borders */
   --tf-rounding: 0px; /* Border radius used through out the config */
   --tf-text-transform: none; /* Text transform to use */
   --tf-display-horizontal-tabs: none; /* If horizontal tabs should be shown, none = hidden, block = shown */
+  --tf-display-vertical-tabs: flex; /* If vertical tabs should be shown, none = hidden, flex = shown */
   --tf-display-window-controls: none; /* If the window controls should be shown (won't work with sidebery and hidden horizontal tabs), none = hidden, flex = shown */ 
   --tf-display-nav-buttons: none; /* If the navigation buttons (back, forward) should be shown, none = hidden, flex = shown */
   --tf-display-urlbar-icons: none; /* If the icons inside the url bar should be shown, none = hidden, flex = shown */
   --tf-display-sidebar-tools: flex; /* If the "Customize sidebar" button on the sidebar should be shown, none = hidden, flex = shown */ 
   --tf-display-titles: flex; /* If titles (tabs, navbar, main etc.) should be shown, none = hidden, flex = shown */
+  --tf-container-frame: 0; /* If the main and split-view frames take the container line color of the tab they show: 0 = --tf-border, 1 = container color (0 or 1 only) */
+  --tf-theme-gradient: 0; /* If browser Nova's own window gradient shows (no Firefox theme; Linux paints it transparent): 0 = hidden, 1 = shown (0 or 1 only) */
+  --tf-theme-images: 0; /* If a Firefox theme's images and gradients show behind the window: 0 = hidden, 1 = shown (0 or 1 only) */
+  --tf-theme-scrim: 80%; /* With --tf-theme-gradient or --tf-theme-images on: how much --tf-bg washes over the art, 0% = art at full strength, 100% = art hidden. Below 80% text may fall under 4.5:1 contrast on bright art */
   --tf-newtab-logo: "   __            __  ____          \A   / /____  _  __/ /_/ __/___  _  __\A  / __/ _ \\| |/_/ __/ /_/ __ \\| |/_/\A / /_/  __/>  </ /_/ __/ /_/ />  <  \A \\__/\\___/_/|_|\\__/_/  \\____/_/|_|  ";
   --tf-navbar-margin: 8px 8px 2px; /* navbar margin */
   --tf-navbar-padding: 4px; /* navbar padding */

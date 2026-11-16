@@ -1,0 +1,336 @@
+#!/usr/bin/env python3
+"""Inspect horizontal tab colors and current Firefox theme tokens."""
+import argparse
+import json
+import os
+import re
+from pathlib import Path
+import runpy
+import shutil
+import socket
+import subprocess
+import tempfile
+import time
+import zipfile
+
+from ff_inspect import connect
+
+ROOT = Path(__file__).resolve().parents[2]
+
+
+def contrast(background, foreground):
+    match = re.fullmatch(r'color\(srgb ([\d.]+) ([\d.]+) ([\d.]+)\)', background)
+    fg = re.fullmatch(r'rgb\((\d+), (\d+), (\d+)\)', foreground)
+    if not match or not fg:
+        return None
+    def luminance(channels):
+        def linear(c):
+            return c / 12.92 if c <= .04045 else ((c + .055) / 1.055) ** 2.4
+        return sum(w * linear(c) for w, c in zip((.2126, .7152, .0722), channels))
+    a = luminance(map(float, match.groups()))
+    b = luminance(int(c) / 255 for c in fg.groups())
+    return (max(a, b) + .05) / (min(a, b) + .05)
+
+
+def check(nova, dark, source, forced, mismatch):
+    selector_path=os.environ.get('TEXTFOX_SELECTOR_INVENTORY')
+    selector_records=None
+    selector_query=None
+    if selector_path:
+        selector_records=[r for r in json.loads(Path(selector_path).read_text()) if r['file']=='chrome/tabs.css']
+        if not selector_records:
+            raise ValueError('selector inventory has no tab records')
+        selector_query=runpy.run_path(str(ROOT / 'tools/firefox-chrome/probe-selector-dom.py'))['query']
+    with socket.socket() as sock:
+        sock.bind(('127.0.0.1', 0))
+        port = sock.getsockname()[1]
+    with tempfile.TemporaryDirectory(prefix='tf-tab-colors-') as directory:
+        profile = Path(directory)
+        shutil.copytree(source / 'chrome', profile / 'chrome')
+        bg = 'rgb(23, 47, 71)' if dark != mismatch else 'rgb(232, 240, 248)'
+        (profile / 'chrome' / 'config.css').write_text(
+            f':root {{ --tf-bg: {bg}; --tf-display-horizontal-tabs: block; --tf-text-transform: uppercase; '
+            '--tf-accent: rgb(19, 83, 137); --tf-rounding: 5px; }\n')
+        theme = profile / 'probe-theme.xpi'
+        manifest = {'manifest_version': 2, 'name': 'textfox tab probe', 'version': '1.0',
+                    'browser_specific_settings': {'gecko': {'id': 'textfox-tab-probe@example.invalid'}},
+                    'theme': {'colors': {'frame': '#172f47' if dark else '#e8f0f8',
+                                         'tab_background_text': '#ffffff' if dark else '#000000'}}}
+        with zipfile.ZipFile(theme, 'w') as archive:
+            archive.writestr('manifest.json', json.dumps(manifest))
+        prefs = {'marionette.port': port, 'browser.nova.enabled': nova, 'sidebar.verticalTabs': False,
+                 'toolkit.legacyUserProfileCustomizations.stylesheets': True,
+                 'browser.shell.checkDefaultBrowser': False,
+                 'ui.useAccessibilityTheme': 1 if forced else 0}
+        (profile / 'user.js').write_text(''.join(
+            f'user_pref({json.dumps(k)}, {json.dumps(v)});\n' for k, v in prefs.items()))
+        env = os.environ.copy()
+        env['MOZ_REMOTE_ALLOW_SYSTEM_ACCESS'] = '1'
+        process = subprocess.Popen(['firefox', '--marionette', '-remote-allow-system-access',
+                                    '--new-instance', '--profile', str(profile), 'about:blank'],
+                                   env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        m = None
+        try:
+            m = connect(port)
+            m.set_context('chrome')
+            meta = m.execute_script("return {profile:Services.dirsvc.get('ProfD',Ci.nsIFile).path,version:Services.appinfo.version,build:Services.appinfo.appBuildID,nova:Services.prefs.getBoolPref('browser.nova.enabled'),vertical:Services.prefs.getBoolPref('sidebar.verticalTabs')}", sandbox='system')
+            if process.poll() is not None or Path(meta['profile']).resolve() != profile.resolve() or meta['nova'] != nova or meta['vertical']:
+                raise RuntimeError('unexpected Firefox process, profile, or preferences')
+            enabled = m.execute_async_script("""
+                const done = arguments[arguments.length - 1];
+                const file = Cc['@mozilla.org/file/local;1'].createInstance(Ci.nsIFile);
+                file.initWithPath(arguments[0]);
+                AddonManager.installTemporaryAddon(file).then(a => done({id:a.id, active:a.isActive}), e => done({error:String(e)}));
+                """, script_args=[str(theme)], sandbox='system')
+            if enabled.get('id') != 'textfox-tab-probe@example.invalid' or not enabled.get('active'):
+                raise RuntimeError(f'temporary theme failed: {enabled}')
+            deadline = time.monotonic() + 20
+            while not m.execute_script("return document.documentElement.hasAttribute('lwtheme') && !!document.querySelector('#TabsToolbar .tabbrowser-tab[selected] .tab-background')", sandbox='system'):
+                if time.monotonic() >= deadline:
+                    raise RuntimeError('themed horizontal tab did not initialize')
+                time.sleep(.1)
+            browser_root = m.execute_script("""
+                const e=document.getElementById('browser'), root=document.documentElement;
+                if (!e || !root.hasAttribute('lwtheme')) throw new Error('themed browser root missing');
+                const measure=()=>{
+                  const s=getComputedStyle(e), rootStyle=getComputedStyle(root);
+                  return {matches:e.matches('#browser:not(.browser-toolbox-background)'),
+                    fullRuleMatches:e.matches(':root[lwtheme] #browser:not(.browser-toolbox-background)'),
+                    className:e.getAttribute('class'), backgroundColor:s.backgroundColor,
+                    backgroundImage:s.backgroundImage,
+                    accent:rootStyle.getPropertyValue('--lwt-accent-color').trim(),
+                    tfBackground:rootStyle.getPropertyValue('--tf-bg').trim(),
+                    accentIsImage:CSS.supports('background-image', rootStyle.getPropertyValue('--lwt-accent-color').trim())};
+                };
+                const initial=measure(), hadClass=e.classList.contains('browser-toolbox-background');
+                e.classList.toggle('browser-toolbox-background', !hadClass);
+                try { return {initial, classControl:measure()}; }
+                finally { e.classList.toggle('browser-toolbox-background', hadClass); }
+                """, sandbox='system')
+            initial, control = browser_root['initial'], browser_root['classControl']
+            if (not initial['matches'] or not initial['fullRuleMatches'] or control['matches'] or control['fullRuleMatches'] or initial['accentIsImage']
+                    or initial['backgroundColor'] != initial['accent']
+                    or control['backgroundColor'] != control['tfBackground']
+                    or (mismatch and initial['backgroundColor'] == control['backgroundColor'])):
+                raise RuntimeError(f'browser background class control was inconclusive: {browser_root}')
+            js = """
+                const tab = document.querySelector('#TabsToolbar .tabbrowser-tab[selected]');
+                const bg = getComputedStyle(tab.querySelector('.tab-background'));
+                const text = getComputedStyle(tab.querySelector('.tab-content'));
+                const root = getComputedStyle(document.documentElement);
+                const names = ['--tf-bg', '--toolbar-field-color', '--toolbar-bgcolor',
+                    '--tab-selected-bgcolor', '--tab-hover-background-color',
+                    '--tab-background-color-selected', '--tab-background-color-hover',
+                    '--tab-text-color-selected'];
+                return {background:bg.backgroundColor, color:text.color,
+                        backgroundRadius:bg.borderTopLeftRadius,
+                        backgroundRadiusToken:bg.getPropertyValue('--tab-border-radius').trim(),
+                        prefersContrast:matchMedia('(prefers-contrast)').matches,
+                        forcedColors:matchMedia('(forced-colors: active)').matches,
+                        targetSelected:bg.getPropertyValue('--tab-selected-bgcolor').trim(),
+                        props:Object.fromEntries(names.map(n => [n, root.getPropertyValue(n).trim()]))};
+                """
+            selector_states={}
+            if selector_query:
+                selector_states['horizontal']=selector_query(m,selector_records)
+            menubar_control = m.execute_script("""
+                const root=document.documentElement, menu=document.getElementById('toolbar-menubar');
+                const selector=':root[tabsintitlebar] #toolbar-menubar[autohide="true"]';
+                const measure=()=>{const s=getComputedStyle(menu),r=menu.getBoundingClientRect();
+                  return {rootHasAttribute:root.hasAttribute('tabsintitlebar'),autohide:menu.getAttribute('autohide'),
+                    matches:menu.matches(selector),tabMinHeight:s.getPropertyValue('--tab-min-height').trim(),
+                    minHeight:s.minHeight,paddingTop:s.paddingTop,width:r.width,height:r.height};};
+                const initial=measure(),saved=root.getAttribute('tabsintitlebar');
+                root.removeAttribute('tabsintitlebar');
+                const without=measure();
+                root.setAttribute('tabsintitlebar','true');
+                try { return {initial,without,control:measure()}; }
+                finally { if(saved===null) root.removeAttribute('tabsintitlebar'); else root.setAttribute('tabsintitlebar',saved); }
+                """,sandbox='system')
+            if (menubar_control['without']['matches'] or not menubar_control['control']['matches']
+                    or menubar_control['control']['tabMinHeight']!='fit-content'
+                    or menubar_control['control']['paddingTop']!='3px'):
+                raise RuntimeError(f'titlebar menubar selector control failed: {menubar_control}')
+            toolbar = m.execute_script("""
+                const tabs=document.getElementById('tabbrowser-tabs');
+                const items=document.querySelector('#TabsToolbar .toolbar-items');
+                if (!tabs || !items) throw new Error('tab toolbar fixture missing');
+                const label=document.querySelector('#TabsToolbar .tabbrowser-tab[selected] .tab-label');
+                if (!label) throw new Error('selected tab label missing');
+                const normalSelector=':root:not([privatebrowsingmode], [firefoxviewhidden]) :is(toolbarbutton, toolbarpaletteitem) + #tabbrowser-tabs';
+                const previous=tabs.previousElementSibling, root=document.documentElement;
+                const before=document.querySelectorAll(normalSelector).length;
+                const control=document.createXULElement('toolbarbutton');
+                tabs.before(control);
+                const controlMatches=document.querySelectorAll(normalSelector).length;
+                control.remove();
+                return {tag:tabs.localName, transform:getComputedStyle(tabs).textTransform,
+                  normalAdjacencyMatches:before, normalAdjacencyControl:controlMatches,
+                  firefoxViewHidden:root.hasAttribute('firefoxviewhidden'), privateRoot:root.hasAttribute('privatebrowsingmode'),
+                  previousSibling:previous && {tag:previous.localName,id:previous.id},
+                  labelTransform:getComputedStyle(label).textTransform, itemsMargin:getComputedStyle(items).margin};
+                """, sandbox='system')
+            if (toolbar['tag'] != 'tabs' or toolbar['transform'] != 'uppercase'
+                    or toolbar['labelTransform'] != 'uppercase' or toolbar['itemsMargin'] != '3px'
+                    or toolbar['privateRoot'] or toolbar['firefoxViewHidden']
+                    or toolbar['normalAdjacencyControl'] != 1):
+                raise RuntimeError(f'configured tab toolbar styles did not apply: {toolbar}')
+            m.execute_script("InspectorUtils.addPseudoClassLock(document.getElementById('TabsToolbar'), ':hover')", sandbox='system')
+            try:
+                deadline = time.monotonic() + 5
+                while True:
+                    toolbar_hover = m.execute_script("""
+                        const bar=document.getElementById('TabsToolbar'), s=getComputedStyle(bar), p=getComputedStyle(bar,'::before');
+                        return {hover:bar.matches(':hover'),border:s.borderTopColor,
+                          title:p.content,titleDisplay:p.display,titleColor:p.color};
+                        """, sandbox='system')
+                    if toolbar_hover['border'] == 'rgb(19, 83, 137)' or time.monotonic() >= deadline:
+                        break
+                    time.sleep(.1)
+            finally:
+                m.execute_script("InspectorUtils.removePseudoClassLock(document.getElementById('TabsToolbar'), ':hover')", sandbox='system')
+            if (not toolbar_hover['hover'] or toolbar_hover['border'] != 'rgb(19, 83, 137)'
+                    or toolbar_hover['title'] != '"tabs"' or toolbar_hover['titleDisplay'] != 'flex'
+                    or toolbar_hover['titleColor'] != 'rgb(19, 83, 137)'):
+                raise RuntimeError(f'horizontal tab toolbar hover styles did not apply: {toolbar_hover}')
+            bar = m.find_element('id', 'TabsToolbar')
+            m.actions.sequence('pointer', 'mouse', {'pointerType':'mouse'}).pointer_move(0, 0, origin=bar).perform()
+            deadline = time.monotonic() + 5
+            while True:
+                pointer_hover = m.execute_script("""
+                    const bar=document.getElementById('TabsToolbar');
+                    return {matches:bar.matches(':hover'),border:getComputedStyle(bar).borderTopColor};
+                    """, sandbox='system')
+                if pointer_hover['matches'] and pointer_hover['border'] == 'rgb(19, 83, 137)':
+                    break
+                if time.monotonic() >= deadline:
+                    raise RuntimeError(f'pointer did not reach horizontal tab toolbar: {pointer_hover}')
+                time.sleep(.1)
+            if selector_query:
+                selector_states['toolbarHover']=selector_query(m,selector_records)
+            m.actions.sequence('pointer', 'mouse', {'pointerType':'mouse'}).pointer_move(1, 1).perform()
+            if m.execute_script("return document.getElementById('TabsToolbar').matches(':hover')", sandbox='system'):
+                raise RuntimeError('pointer did not leave the horizontal tab toolbar')
+            before = m.execute_script(js, sandbox='system')
+            if before['backgroundRadiusToken'] != '5px' or before['backgroundRadius'] != '5px':
+                raise RuntimeError(f'configured tab radius missing: {before}')
+            hover = m.execute_script("""
+                const tab=gBrowser.addTrustedTab('about:blank');
+                tab.setAttribute('data-textfox-hover-probe','true');
+                InspectorUtils.addPseudoClassLock(tab, ':hover');
+                const bg=getComputedStyle(tab.querySelector('.tab-background'));
+                return {background:bg.backgroundColor, color:getComputedStyle(tab.querySelector('.tab-content')).color,
+                        hover:tab.matches(':hover')};
+                """, sandbox='system')
+            try:
+                if selector_query:
+                    selector_states['unselectedHover']=selector_query(m,selector_records)
+            finally:
+                m.execute_script("const tab=document.querySelector('.tabbrowser-tab[data-textfox-hover-probe]'); InspectorUtils.removePseudoClassLock(tab, ':hover'); tab.removeAttribute('data-textfox-hover-probe')",sandbox='system')
+            m.execute_script("""
+                const tab=gBrowser.addTrustedTab('about:blank');
+                tab.setAttribute('data-textfox-multi-probe','true');
+                gBrowser.addToMultiSelectedTabs(tab);
+                """, sandbox='system')
+            deadline = time.monotonic() + 10
+            while True:
+                multi = m.execute_script("""
+                    const tab=document.querySelector('.tabbrowser-tab[data-textfox-multi-probe]');
+                    const bg=tab?.querySelector('.tab-background');
+                    if (!tab || !bg) return null;
+                    const s=getComputedStyle(bg), r=bg.getBoundingClientRect();
+                    return {selected:tab.selected, multiselected:tab.multiselected,
+                      tabAttr:tab.hasAttribute('multiselected'), bgAttr:bg.hasAttribute('multiselected'),
+                      background:s.backgroundColor, width:r.width,height:r.height};
+                    """, sandbox='system')
+                if multi and multi['multiselected'] and multi['bgAttr'] and multi['width'] > 0 and multi['height'] > 0:
+                    break
+                if time.monotonic() >= deadline:
+                    raise RuntimeError(f'multiselected tab fixture did not initialize: {multi}')
+                time.sleep(.1)
+            if multi['selected']:
+                raise RuntimeError(f'multiselected fixture unexpectedly selected: {multi}')
+            multi_intervention = m.execute_script("""
+                const bg=document.querySelector('.tabbrowser-tab[data-textfox-multi-probe] .tab-background');
+                bg.style.setProperty('--tab-selected-bgcolor','rgb(19, 83, 137)','important');
+                const result=getComputedStyle(bg).backgroundColor;
+                bg.style.removeProperty('--tab-selected-bgcolor');
+                return result;
+                """, sandbox='system')
+            if multi_intervention != 'rgb(19, 83, 137)':
+                raise RuntimeError(f'multiselected background intervention failed: {multi_intervention}')
+            m.execute_script("""
+                const bg = document.querySelector('#TabsToolbar .tabbrowser-tab[selected] .tab-background');
+                bg.style.setProperty('--tab-selected-bgcolor', 'var(--tab-background-color-selected)', 'important');
+                """, sandbox='system')
+            after = m.execute_script(js, sandbox='system')
+            m.execute_script("CustomizableUI.addWidgetToArea('firefox-view-button', CustomizableUI.AREA_TABSTRIP)", sandbox='system')
+            deadline = time.monotonic() + 15
+            while not m.execute_script("return !!document.querySelector('#TabsToolbar #firefox-view-button .toolbarbutton-icon')", sandbox='system'):
+                if time.monotonic() >= deadline:
+                    raise RuntimeError('Firefox View button did not initialize in tab strip')
+                time.sleep(.1)
+            m.find_element('id', 'firefox-view-button').click()
+            deadline = time.monotonic() + 15
+            while True:
+                view = m.execute_script("""
+                    const button=document.querySelector('#TabsToolbar #firefox-view-button');
+                    const icon=button?.querySelector('.toolbarbutton-icon');
+                    if (!button || !icon || !button.hasAttribute('open')) return null;
+                    const s=getComputedStyle(icon), r=icon.getBoundingClientRect();
+                    return {open:button.hasAttribute('open'),pressed:button.getAttribute('aria-pressed'),
+                      uri:gBrowser.selectedBrowser.currentURI.spec,
+                      background:s.backgroundColor, token:s.getPropertyValue('--tab-selected-bgcolor').trim(),
+                      width:r.width,height:r.height};
+                    """, sandbox='system')
+                if (view and view['width'] > 0 and view['height'] > 0
+                        and view['pressed'] == 'true' and view['uri'].startswith('about:firefoxview')):
+                    break
+                if time.monotonic() >= deadline:
+                    raise RuntimeError(f'Firefox View button did not open: {view}')
+                time.sleep(.1)
+            if selector_query:
+                selector_states['firefoxView']=selector_query(m,selector_records)
+                hover_rule=[r for r in selector_states['unselectedHover'] if '.tabbrowser-tab:hover' in r['selector']]
+                if len(hover_rule)!=1 or hover_rule[0]['status']!='structural-match':
+                    raise RuntimeError(f'unselected tab hover selector did not match: {hover_rule}')
+            view_intervention = m.execute_script("""
+                const icon=document.querySelector('#TabsToolbar #firefox-view-button .toolbarbutton-icon');
+                icon.style.setProperty('--tab-selected-bgcolor','rgb(19, 83, 137)','important');
+                const color=getComputedStyle(icon).backgroundColor;
+                icon.style.removeProperty('--tab-selected-bgcolor');
+                return color;
+                """, sandbox='system')
+            if view_intervention != 'rgb(19, 83, 137)':
+                raise RuntimeError(f'Firefox View background intervention failed: {view_intervention}')
+            if before['prefersContrast'] != forced:
+                raise RuntimeError('requested contrast preference state not active')
+            print(json.dumps({'firefox': meta, 'dark': dark, 'forced':forced, 'mismatch':mismatch, 'before': before, 'hover':hover, 'after': after,
+                              'multi':multi, 'multiIntervention':multi_intervention, 'toolbar':toolbar, 'browserRoot':browser_root,
+                              'menubarControl':menubar_control,
+                              'toolbarHover':toolbar_hover, 'toolbarPointerHover':pointer_hover,
+                              'firefoxView':view, 'firefoxViewIntervention':view_intervention,'selectorStates':selector_states,
+                              'computedSelectedContrast':contrast(before['background'], before['color']),
+                              'computedHoverContrast':contrast(hover['background'], hover['color'])}), flush=True)
+        finally:
+            try:
+                if m:
+                    m.delete_session()
+            finally:
+                process.terminate()
+                try:
+                    process.wait(timeout=15)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait()
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--source', type=Path, default=ROOT)
+    parser.add_argument('--high-contrast', action='store_true')
+    parser.add_argument('--mismatch', action='store_true')
+    args = parser.parse_args()
+    for nova in (False, True):
+        for dark in (False, True):
+            check(nova, dark, args.source, args.high_contrast, args.mismatch)

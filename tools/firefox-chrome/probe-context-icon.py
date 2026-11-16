@@ -1,0 +1,462 @@
+#!/usr/bin/env python3
+"""Inspect link context-menu icon preference in disposable Firefox profiles."""
+import argparse
+import base64
+import json
+import os
+from pathlib import Path
+import shutil
+import socket
+import subprocess
+import tempfile
+import time
+from urllib.parse import quote
+
+from marionette_driver.keys import Keys
+
+from ff_inspect import connect
+
+ROOT = Path(__file__).resolve().parents[2]
+
+
+def check_context(m, selector, expected_id, expected_selection=None, action_id=None, keyboard=False):
+    m.set_context('content')
+    target = m.find_element('css selector', selector)
+    m.actions.sequence('pointer', 'mouse', {'pointerType':'mouse'}).click(target, button=2).perform()
+    if expected_selection is not None and m.execute_script('return window.getSelection().toString()') != expected_selection:
+        raise RuntimeError(f'context fixture {selector} lost its selected text')
+    m.set_context('chrome')
+    deadline = time.monotonic() + 15
+    while True:
+        result = m.execute_script("""
+            const popup=document.getElementById('contentAreaContextMenu');
+            const expected=popup.querySelector(`#${arguments[0]}`);
+            if (popup.state !== 'open' || !expected || expected.hidden) return null;
+            const r=expected.getBoundingClientRect();
+            if (r.width <= 0 || r.height <= 0) return null;
+            return {menuItems:[...popup.querySelectorAll('menuitem[id],menu[id]')].map(e=>{
+              const s=getComputedStyle(e),rect=e.getBoundingClientRect();
+              return {id:e.id,hidden:e.hidden,checked:e.hasAttribute('checked'),display:s.display,visibility:s.visibility,
+                image:s.backgroundImage,width:rect.width,height:rect.height};
+            })};
+            """, script_args=[expected_id], sandbox='system')
+        if result:
+            break
+        if time.monotonic() >= deadline:
+            raise RuntimeError(f'context fixture {selector} did not initialize: {result}')
+        time.sleep(.1)
+    if selector == '#page':
+        result['navigationSelectors'] = m.execute_script("""
+            const ids=['context-back','context-forward','context-reload','context-stop','context-bookmarkpage'];
+            const nodes=ids.map(id=>document.getElementById(id));
+            const snapshot=()=>nodes.map(e=>{const s=getComputedStyle(e),r=e.getBoundingClientRect();return {id:e.id,parent:e.parentElement?.id,
+              direct:e.matches('#contentAreaContextMenu > #'+e.id),hidden:e.hidden,display:s.display,
+              width:r.width,height:r.height,image:s.backgroundImage};});
+            const run=relation=>{
+              const selector=ids.map(id=>'#contentAreaContextMenu '+relation+' #'+id).join(',');
+              const uri='data:text/css,'+encodeURIComponent(`@media -moz-pref("shyfox.enable.context.menu.icons") { ${selector} { background-image:url("chrome://browser/skin/privateBrowsing.svg") !important; } }`);
+              window.windowUtils.loadSheetUsingURIString(uri,Ci.nsIDOMWindowUtils.USER_SHEET);
+              try{return snapshot();}finally{window.windowUtils.removeSheetUsingURIString(uri,Ci.nsIDOMWindowUtils.USER_SHEET);}
+            };
+            return {enabled:matchMedia('-moz-pref("shyfox.enable.context.menu.icons")').matches,
+              baseline:snapshot(),directControl:run('>'),descendantControl:run('')};
+            """, sandbox='system')
+        result['menuInternals'] = m.execute_script("""
+            const e=document.getElementById('context-savepage'),children=InspectorUtils.getChildrenForNode(e,true,false);
+            return {id:e.id,lightLegacyLeft:!!e.querySelector('.menu-iconic-left'),lightLegacyText:!!e.querySelector('.menu-iconic-text'),
+              children:children.filter(n=>n.nodeType===Node.ELEMENT_NODE).map(n=>{const s=getComputedStyle(n),r=n.getBoundingClientRect();
+                return {tag:n.localName,class:n.getAttribute('class'),width:r.width,height:r.height,display:s.display,marginStart:s.marginInlineStart};})};
+            """,sandbox='system')
+        if not any(item['class']=='menu-text' for item in result['menuInternals']['children']):
+            raise RuntimeError(f'page context menu internals unavailable: {result["menuInternals"]}')
+        navigation=result['navigationSelectors']
+        if (any(('chrome://browser/skin/privateBrowsing.svg' in item['image']) != (navigation['enabled'] and base['direct'])
+                for item,base in zip(navigation['directControl'],navigation['baseline'],strict=True))
+                or any(('chrome://browser/skin/privateBrowsing.svg' in item['image']) != navigation['enabled'] for item in navigation['descendantControl'])):
+            raise RuntimeError(f'context navigation selector control failed: {navigation}')
+    if action_id:
+        actionable = m.execute_script("const e=document.getElementById(arguments[0]); const r=e?.getBoundingClientRect(); return !!e && !e.hidden && !e.disabled && r.width > 0 && r.height > 0", script_args=[action_id], sandbox='system')
+        if not actionable:
+            raise RuntimeError(f'context action {action_id} is unavailable')
+        if keyboard:
+            for _ in range(80):
+                active = m.execute_script("return document.querySelector('#contentAreaContextMenu menuitem[_moz-menuactive=\"true\"]')?.id", sandbox='system')
+                if active == action_id:
+                    break
+                m.actions.sequence('key', 'keyboard').send_keys(Keys.ARROW_DOWN).perform()
+            else:
+                raise RuntimeError(f'keyboard did not reach context action {action_id}')
+            m.actions.sequence('key', 'keyboard').send_keys(Keys.ENTER).perform()
+        else:
+            action = m.find_element('id', action_id)
+            m.actions.sequence('pointer', 'mouse', {'pointerType':'mouse'}).click(action).perform()
+    else:
+        m.actions.sequence('key', 'keyboard').send_keys(Keys.ESCAPE).perform()
+    deadline = time.monotonic() + 10
+    while m.execute_script("return document.getElementById('contentAreaContextMenu').state", sandbox='system') != 'closed':
+        if time.monotonic() >= deadline:
+            raise RuntimeError(f'context fixture {selector} did not close after {action_id or "Escape"}')
+        time.sleep(.1)
+    result['activated'] = action_id
+    result['activatedBy'] = ('keyboard' if keyboard else 'pointer') if action_id else None
+    return result
+
+
+def check_media(m, kind, keyboard):
+    selector = f'#{kind}'
+    m.set_context('content')
+    m.execute_script("window.getSelection().removeAllRanges(); document.querySelector(arguments[0]).loop=true", script_args=[selector])
+    deadline = time.monotonic() + 15
+    while True:
+        initial = m.execute_script("""
+            const e=document.querySelector(arguments[0]), r=e.getBoundingClientRect();
+            return {ready:e.readyState,width:r.width,height:r.height,videoWidth:e.videoWidth || null,
+              videoHeight:e.videoHeight || null,paused:e.paused,muted:e.muted};
+            """, script_args=[selector])
+        if (initial['ready'] >= 2 and initial['width'] > 0 and initial['height'] > 0
+                and (kind != 'video' or (initial['videoWidth'] and initial['videoHeight']))):
+            break
+        if time.monotonic() >= deadline:
+            raise RuntimeError(f'{kind} fixture did not initialize: {initial}')
+        time.sleep(.1)
+    if not initial['paused'] or initial['muted']:
+        raise RuntimeError(f'{kind} fixture is not paused and unmuted: {initial}')
+    contexts = {}
+    save_id = 'context-savevideo' if kind == 'video' else 'context-saveaudio'
+    contexts[kind] = check_context(m, selector, save_id, '', 'context-media-play', keyboard)
+    contexts[kind]['mediaState'] = initial
+
+    def wait_media(paused, muted):
+        m.set_context('content')
+        deadline = time.monotonic() + 10
+        while True:
+            state = m.execute_script("const e=document.querySelector(arguments[0]); return {paused:e.paused,muted:e.muted,loop:e.loop}", script_args=[selector])
+            if state['paused'] == paused and state['muted'] == muted and state['loop']:
+                return state
+            if time.monotonic() >= deadline:
+                raise RuntimeError(f'{kind} command did not reach expected state: {state}')
+            time.sleep(.1)
+
+    playing_unmuted = wait_media(False, False)
+    contexts[f'{kind}-playing-unmuted'] = check_context(m, selector, 'context-media-pause', '', 'context-media-mute', keyboard)
+    contexts[f'{kind}-playing-unmuted']['mediaState'] = playing_unmuted
+    playing_muted = wait_media(False, True)
+    contexts[f'{kind}-playing'] = check_context(m, selector, 'context-media-unmute', '', 'context-media-unmute', keyboard)
+    contexts[f'{kind}-playing']['mediaState'] = playing_muted
+    wait_media(False, False)
+    contexts[f'{kind}-before-pause'] = check_context(m, selector, 'context-media-pause', '', 'context-media-pause', keyboard)
+    contexts[f'{kind}-before-pause']['afterMediaState'] = wait_media(True, False)
+    for name, required in ((kind, ('context-media-play', 'context-media-mute')),
+                           (f'{kind}-playing-unmuted', ('context-media-pause', 'context-media-mute')),
+                           (f'{kind}-playing', ('context-media-pause', 'context-media-unmute'))):
+        visible = {item['id'] for item in contexts[name]['menuItems']
+                   if not item['hidden'] and item['display'] != 'none'
+                   and item['visibility'] == 'visible' and item['width'] > 0 and item['height'] > 0}
+        if not set(required).issubset(visible):
+            raise RuntimeError(f'{name} context missing expected media actions: {visible}')
+    return contexts
+
+
+def check_pdf(m, profile, enabled):
+    source = profile / 'textfox-probe.ps'
+    pdf = profile / 'textfox-probe.pdf'
+    source.write_text('%!PS\n/Helvetica findfont 24 scalefont setfont\n100 700 moveto (Textfox PDF fixture) show\nshowpage\n')
+    subprocess.run(['ps2pdf', str(source), str(pdf)], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+    m.set_context('content')
+    m.navigate(pdf.as_uri())
+    deadline = time.monotonic() + 30
+    while not m.execute_script("return !!document.querySelector('#editorFreeTextButton') && !!document.querySelector('.page .textLayer')"):
+        if time.monotonic() >= deadline:
+            raise RuntimeError('PDF viewer did not initialize')
+        time.sleep(.2)
+    m.find_element('id', 'editorFreeTextButton').click()
+    deadline = time.monotonic() + 15
+    while not m.execute_script("return !!document.querySelector('.annotationEditorLayer.freetextEditing')"):
+        if time.monotonic() >= deadline:
+            raise RuntimeError('PDF free-text mode did not initialize')
+        time.sleep(.1)
+    layer = m.find_element('css selector', '.annotationEditorLayer.freetextEditing')
+    m.actions.sequence('pointer', 'mouse', {'pointerType':'mouse'}).click(layer).perform()
+    deadline = time.monotonic() + 15
+    while not m.execute_script("return !!document.querySelector('.freeTextEditor [contenteditable]')"):
+        if time.monotonic() >= deadline:
+            raise RuntimeError('PDF text editor did not initialize')
+        time.sleep(.1)
+    m.actions.sequence('key', 'keyboard').send_keys('textfox probe').perform()
+    deadline = time.monotonic() + 10
+    while not m.execute_script("return document.querySelector('.freeTextEditor [contenteditable]')?.textContent === 'textfox probe'"):
+        if time.monotonic() >= deadline:
+            raise RuntimeError('PDF editor did not receive fixture text')
+        time.sleep(.1)
+    m.actions.sequence('key', 'keyboard').send_keys(Keys.ESCAPE).perform()
+    editor = m.find_element('css selector', '.freeTextEditor')
+    m.actions.sequence('pointer', 'mouse', {'pointerType':'mouse'}).click(editor).perform()
+    point = m.execute_script("const e=document.querySelector('.freeTextEditor'), r=e.getBoundingClientRect(); return {x:r.x+1,y:r.y+1,selected:e.classList.contains('selectedEditor')}")
+    if not point['selected']:
+        raise RuntimeError(f'PDF editor was not selected: {point}')
+    m.actions.sequence('pointer', 'mouse', {'pointerType':'mouse'}).pointer_move(
+        round(point['x']), round(point['y'])).click(button=2).perform()
+    m.set_context('chrome')
+    deadline = time.monotonic() + 15
+    while True:
+        result = m.execute_script("""
+            const menu=document.getElementById('contentAreaContextMenu');
+            const item=menu.querySelector('#context-pdfjs-select-all');
+            if (menu.state !== 'open' || !item || item.hidden) return null;
+            const s=getComputedStyle(item),r=item.getBoundingClientRect();
+            const menuItems=[...menu.querySelectorAll('menuitem[id],menu[id]')].map(e=>{
+              const st=getComputedStyle(e),rect=e.getBoundingClientRect();
+              return {id:e.id,hidden:e.hidden,display:st.display,visibility:st.visibility,
+                image:st.backgroundImage,width:rect.width,height:rect.height};
+            });
+            return {hidden:item.hidden,disabled:item.disabled,display:s.display,image:s.backgroundImage,
+              width:r.width,height:r.height,legacyMatches:menu.querySelectorAll('#context-pdfjs-selectall').length,
+              menuItems};
+            """, sandbox='system')
+        if result and result['width'] > 0 and result['height'] > 0:
+            break
+        if time.monotonic() >= deadline:
+            raise RuntimeError(f'PDF editor context menu did not initialize: {result}')
+        time.sleep(.1)
+    if result['disabled']:
+        raise RuntimeError(f'PDF select-all item is disabled: {result}')
+    result['control'] = m.execute_script("""
+        const css='@media -moz-pref("shyfox.enable.context.menu.icons") { #contentAreaContextMenu #context-pdfjs-select-all { background-image: url("chrome://browser/skin/privateBrowsing.svg") !important; } }';
+        const uri='data:text/css,'+encodeURIComponent(css);
+        window.windowUtils.loadSheetUsingURIString(uri, Ci.nsIDOMWindowUtils.USER_SHEET);
+        try { return getComputedStyle(document.getElementById('context-pdfjs-select-all')).backgroundImage; }
+        finally { window.windowUtils.removeSheetUsingURIString(uri, Ci.nsIDOMWindowUtils.USER_SHEET); }
+        """, sandbox='system')
+    expected = 'url("chrome://browser/skin/privateBrowsing.svg")' if enabled else 'none'
+    if result['control'] != expected:
+        raise RuntimeError(f'PDF menu selector intervention failed: {result}')
+    m.execute_script("document.getElementById('context-pdfjs-select-all').addEventListener('command', e => e.currentTarget.setAttribute('data-textfox-command','true'), {once:true})", sandbox='system')
+    item = m.find_element('id', 'context-pdfjs-select-all')
+    m.actions.sequence('pointer', 'mouse', {'pointerType':'mouse'}).click(item).perform()
+    deadline = time.monotonic() + 10
+    while not m.execute_script("return document.getElementById('contentAreaContextMenu').state === 'closed' && document.getElementById('context-pdfjs-select-all').getAttribute('data-textfox-command') === 'true'", sandbox='system'):
+        if time.monotonic() >= deadline:
+            diagnostic = m.execute_script("const e=document.getElementById('context-pdfjs-select-all'); return {state:document.getElementById('contentAreaContextMenu').state,command:e.getAttribute('data-textfox-command'),hidden:e.hidden,disabled:e.disabled}", sandbox='system')
+            raise RuntimeError(f'PDF select-all activation did not dispatch and close menu: {diagnostic}')
+        time.sleep(.1)
+    m.set_context('content')
+    result['selectedEditors'] = m.execute_script("return document.querySelectorAll('.freeTextEditor.selectedEditor').length")
+    if result['selectedEditors'] < 1:
+        raise RuntimeError(f'PDF select-all left no editor selected: {result}')
+    m.set_context('chrome')
+    return result
+
+
+def check(nova, enabled, pdf, media, keyboard_media):
+    with socket.socket() as sock:
+        sock.bind(('127.0.0.1', 0))
+        port = sock.getsockname()[1]
+    with tempfile.TemporaryDirectory(prefix='tf-context-icon-') as directory:
+        profile = Path(directory)
+        shutil.copytree(ROOT / 'chrome', profile / 'chrome')
+        prefs = {'marionette.port': port, 'browser.nova.enabled': nova,
+                 'shyfox.enable.context.menu.icons': enabled,
+                 'shyfox.enable.ext.mono.context.icons': enabled,
+                 'shyfox.enable.ext.mono.toolbar.icons': enabled,
+                 'toolkit.legacyUserProfileCustomizations.stylesheets': True,
+                 'browser.shell.checkDefaultBrowser': False,
+                 'pdfjs.annotationEditorMode': 0}
+        (profile / 'user.js').write_text(''.join(
+            f'user_pref({json.dumps(k)}, {json.dumps(v)});\n' for k, v in prefs.items()))
+        env = os.environ.copy()
+        env['MOZ_REMOTE_ALLOW_SYSTEM_ACCESS'] = '1'
+        process = subprocess.Popen([os.environ.get('FIREFOX', 'firefox'), '--marionette', '-remote-allow-system-access',
+                                    '--new-instance', '--profile', str(profile), 'about:blank'],
+                                   env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        m = None
+        try:
+            m = connect(port)
+            m.set_context('chrome')
+            metadata = m.execute_script("""
+                return {profile:Services.dirsvc.get('ProfD',Ci.nsIFile).path,
+                  version:Services.appinfo.version,build:Services.appinfo.appBuildID,
+                  nova:Services.prefs.getBoolPref('browser.nova.enabled'),
+                  iconPref:Services.prefs.getBoolPref('shyfox.enable.context.menu.icons'),
+                  extensionContextPref:Services.prefs.getBoolPref('shyfox.enable.ext.mono.context.icons'),
+                  extensionToolbarPref:Services.prefs.getBoolPref('shyfox.enable.ext.mono.toolbar.icons')};
+                """, sandbox='system')
+            if (process.poll() is not None or Path(metadata['profile']).resolve() != profile.resolve()
+                    or metadata['nova'] != nova or metadata['iconPref'] != enabled
+                    or metadata['extensionContextPref'] != enabled or metadata['extensionToolbarPref'] != enabled):
+                raise RuntimeError('unexpected Firefox process, profile, or preferences')
+            m.set_context('content')
+            page = ('<a href="https://example.invalid/">textfox link fixture</a>'
+                    '<p id="page">textfox page fixture</p><input id="edit" value="textfox edit fixture">'
+                    '<input id="password" type="password" value="textfox-password-fixture">'
+                    '<img id="image" width="60" height="60" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==">')
+            if media:
+                page += (f'<video id="video" controls preload="auto" width="120" height="90" src="data:video/webm;base64,{media["video"]}"></video>'
+                         f'<audio id="audio" controls preload="auto" src="data:audio/webm;base64,{media["audio"]}"></audio>')
+            m.navigate('data:text/html,' + quote(page))
+            link = m.find_element('css selector', 'a')
+            m.actions.sequence('pointer', 'mouse', {'pointerType':'mouse'}).click(link, button=2).perform()
+            m.set_context('chrome')
+            deadline = time.monotonic() + 15
+            while True:
+                state = m.execute_script("""
+                    const popup=document.getElementById('contentAreaContextMenu');
+                    const item=document.getElementById('context-openlinkprivate');
+                    if (popup.state !== 'open' || !item || item.hidden) return null;
+                    const style=getComputedStyle(item), rect=item.getBoundingClientRect();
+                    const legacyPdf=popup.querySelectorAll('#context-pdfjs-selectall');
+                    const currentPdf=popup.querySelectorAll('#context-pdfjs-select-all');
+                    const menuItems=[...popup.querySelectorAll('menuitem[id],menu[id]')].map(e=>{
+                      const s=getComputedStyle(e),r=e.getBoundingClientRect();
+                      return {id:e.id,hidden:e.hidden,display:s.display,visibility:s.visibility,image:s.backgroundImage,
+                        width:r.width,height:r.height};
+                    });
+                    return {state:popup.state, hidden:item.hidden, image:style.backgroundImage, menuItems,
+                      fillOpacity:style.fillOpacity,
+                      opacityToken:style.getPropertyValue('--toolbarbutton-icon-fill-opacity').trim(),
+                      pdfSelectAll:{legacyCount:legacyPdf.length,currentCount:currentPdf.length,
+                        currentHidden:currentPdf[0]?.hidden},
+                      legacyMedia:matchMedia('(-moz-bool-pref: "shyfox.enable.context.menu.icons")').matches,
+                      modernMedia:matchMedia('-moz-pref("shyfox.enable.context.menu.icons")').matches,
+                      display:style.display, width:rect.width, height:rect.height};
+                    """, sandbox='system')
+                if state and state['width'] > 0 and state['height'] > 0:
+                    break
+                if time.monotonic() >= deadline:
+                    raise RuntimeError(f'link context menu did not initialize: {state}')
+                time.sleep(.1)
+            opacity_control = m.execute_script("""
+                const e=document.getElementById('context-openlinkprivate');
+                e.style.setProperty('--toolbarbutton-icon-fill-opacity','0.37','important');
+                try { return getComputedStyle(e).fillOpacity; }
+                finally { e.style.removeProperty('--toolbarbutton-icon-fill-opacity'); }
+                """, sandbox='system')
+            if opacity_control != '0.37':
+                raise RuntimeError(f'context icon opacity intervention failed: {opacity_control}')
+            extension_media = m.execute_script("""
+                return Object.fromEntries(['shyfox.enable.ext.mono.context.icons', 'shyfox.enable.ext.mono.toolbar.icons']
+                  .map(pref => [pref, {legacy:matchMedia(`(-moz-bool-pref: "${pref}")`).matches,
+                    modern:matchMedia(`-moz-pref("${pref}")`).matches}]));
+                """, sandbox='system')
+            if any(value['modern'] != enabled for value in extension_media.values()):
+                raise RuntimeError(f'extension icon preference media control failed: {extension_media}')
+            intervention = m.execute_script("""
+                const css = '@media -moz-pref("shyfox.enable.context.menu.icons") { #contentAreaContextMenu #context-openlinkprivate { background-image: url("chrome://browser/skin/privateBrowsing.svg") !important; } }';
+                const uri='data:text/css,' + encodeURIComponent(css);
+                window.windowUtils.loadSheetUsingURIString(uri, Ci.nsIDOMWindowUtils.USER_SHEET);
+                try {
+                  return getComputedStyle(document.getElementById('context-openlinkprivate')).backgroundImage;
+                } finally {
+                  window.windowUtils.removeSheetUsingURIString(uri, Ci.nsIDOMWindowUtils.USER_SHEET);
+                }
+                """, sandbox='system')
+            pdf_control = m.execute_script("""
+                const item=document.getElementById('context-pdfjs-select-all');
+                if (!item) return null;
+                const css='@media -moz-pref("shyfox.enable.context.menu.icons") { #contentAreaContextMenu #context-pdfjs-select-all { background-image: url("chrome://browser/skin/privateBrowsing.svg") !important; } }';
+                const uri='data:text/css,'+encodeURIComponent(css);
+                window.windowUtils.loadSheetUsingURIString(uri, Ci.nsIDOMWindowUtils.USER_SHEET);
+                try { return getComputedStyle(item).backgroundImage; }
+                finally { window.windowUtils.removeSheetUsingURIString(uri, Ci.nsIDOMWindowUtils.USER_SHEET); }
+                """, sandbox='system')
+            expected = 'url("chrome://browser/skin/privateBrowsing.svg")' if enabled else 'none'
+            if state['modernMedia'] != enabled or intervention != expected or pdf_control != expected:
+                raise RuntimeError(f'modern preference intervention was inconclusive: {state}, {intervention}, {pdf_control}')
+            m.actions.sequence('key', 'keyboard').send_keys(Keys.ESCAPE).perform()
+            deadline = time.monotonic() + 10
+            while m.execute_script("return document.getElementById('contentAreaContextMenu').state", sandbox='system') != 'closed':
+                if time.monotonic() >= deadline:
+                    raise RuntimeError('Escape did not close context menu')
+                time.sleep(.1)
+            other_contexts = {'page':check_context(m, '#page', 'context-savepage'),
+                              'input':check_context(m, '#edit', 'context-selectall')}
+            m.set_context('content')
+            initial_password = m.execute_script("const e=document.getElementById('password'); return {type:e.type,revealed:e.revealPassword}", sandbox='system')
+            if initial_password != {'type':'password', 'revealed':False}:
+                raise RuntimeError(f'password fixture did not start concealed: {initial_password}')
+            other_contexts['password'] = check_context(m, '#password', 'context-reveal-password', action_id='context-reveal-password')
+            m.set_context('content')
+            deadline = time.monotonic() + 10
+            while not m.execute_script("return document.getElementById('password').revealPassword", sandbox='system'):
+                if time.monotonic() >= deadline:
+                    raise RuntimeError('password reveal action did not reveal fixture')
+                time.sleep(.1)
+            if m.execute_script("return document.getElementById('password').type") != 'password':
+                raise RuntimeError('password reveal unexpectedly changed fixture input type')
+            other_contexts['password-revealed'] = check_context(m, '#password', 'context-reveal-password', action_id='context-reveal-password')
+            reveal_checked = [next(item['checked'] for item in other_contexts[name]['menuItems']
+                                   if item['id'] == 'context-reveal-password')
+                              for name in ('password', 'password-revealed')]
+            if reveal_checked != [False, True]:
+                raise RuntimeError(f'password reveal menu checked state did not track fixture: {reveal_checked}')
+            m.set_context('content')
+            deadline = time.monotonic() + 10
+            while m.execute_script("return document.getElementById('password').revealPassword", sandbox='system'):
+                if time.monotonic() >= deadline:
+                    raise RuntimeError('password reveal action did not conceal fixture')
+                time.sleep(.1)
+            m.set_context('content')
+            image = m.execute_script("const e=document.getElementById('image'); return {loaded:e.complete && e.naturalWidth > 0, width:e.getBoundingClientRect().width}")
+            if not image['loaded'] or image['width'] <= 0:
+                raise RuntimeError(f'image context fixture unavailable: {image}')
+            other_contexts['image'] = check_context(m, '#image', 'context-saveimage')
+            m.set_context('content')
+            selected = m.execute_script("""
+                const text=document.querySelector('#page').firstChild, range=document.createRange(), selection=window.getSelection();
+                range.selectNodeContents(text); selection.removeAllRanges(); selection.addRange(range);
+                return selection.toString();
+                """)
+            if selected != 'textfox page fixture':
+                raise RuntimeError(f'selection context fixture unavailable: {selected}')
+            other_contexts['selection'] = check_context(m, '#page', 'context-searchselect', selected)
+            if media:
+                for kind in ('video', 'audio'):
+                    other_contexts.update(check_media(m, kind, keyboard_media))
+            pdf_result = check_pdf(m, profile, enabled) if pdf else None
+            print(json.dumps({'firefox':metadata, 'item':state, 'opacityControl':opacity_control,
+                              'otherContexts':other_contexts,
+                              'extensionMedia':extension_media, 'modernIntervention':intervention,
+                              'pdfSelectorControl':pdf_control, 'pdfEditor':pdf_result}), flush=True)
+        finally:
+            try:
+                if m:
+                    m.delete_session()
+            finally:
+                process.terminate()
+                try:
+                    process.wait(timeout=15)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait()
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--pdf', action='store_true', help='also generate a PDF using ps2pdf and inspect its editor menu')
+    parser.add_argument('--media', action='store_true', help='also generate local video and audio WebM fixtures using ffmpeg')
+    parser.add_argument('--keyboard-media', action='store_true', help='activate media actions with keyboard navigation')
+    args = parser.parse_args()
+    if args.pdf and not shutil.which('ps2pdf'):
+        parser.error('--pdf requires ps2pdf')
+    if args.keyboard_media and not args.media:
+        parser.error('--keyboard-media requires --media')
+    if args.media and not shutil.which('ffmpeg'):
+        parser.error('--media requires ffmpeg with libvpx and libvorbis')
+    with tempfile.TemporaryDirectory(prefix='tf-context-media-') as directory:
+        media = None
+        if args.media:
+            path = Path(directory) / 'fixture.webm'
+            subprocess.run(['ffmpeg', '-hide_banner', '-loglevel', 'error', '-f', 'lavfi',
+                            '-i', 'color=c=black:s=64x64:r=2', '-f', 'lavfi',
+                            '-i', 'anullsrc=r=8000:cl=mono', '-t', '1',
+                            '-c:v', 'libvpx', '-c:a', 'libvorbis', '-threads', '1', '-y', str(path)],
+                           check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+            audio_path = Path(directory) / 'fixture-audio.webm'
+            subprocess.run(['ffmpeg', '-hide_banner', '-loglevel', 'error', '-f', 'lavfi',
+                            '-i', 'anullsrc=r=8000:cl=mono', '-t', '1', '-c:a', 'libvorbis',
+                            '-threads', '1', '-y', str(audio_path)],
+                           check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+            media = {'video':base64.b64encode(path.read_bytes()).decode('ascii'),
+                     'audio':base64.b64encode(audio_path.read_bytes()).decode('ascii')}
+        for nova in (False, True):
+            for enabled in (False, True):
+                check(nova, enabled, args.pdf, media, args.keyboard_media)

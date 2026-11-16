@@ -1,11 +1,25 @@
 :root {
-  --toolbar-color: currentColor !important;
+  /* Chrome text sits on --tf-bg, so it takes --tf-fg (Firefox 159 token names).
+     Never set --lwt-text-color here: --tf-fg may refer to it. */
+  --toolbox-background-color: var(--tf-bg) !important;
+  --toolbox-background-color-inactive: var(--tf-bg) !important;
+  --toolbox-text-color: var(--tf-fg) !important;
+  --toolbox-text-color-inactive: var(--tf-fg) !important;
+  --toolbar-text-color: var(--tf-fg) !important;
+  --toolbar-field-text-color: var(--tf-fg) !important;
+  --toolbar-field-text-color-focus: var(--tf-fg) !important;
+  --sidebar-text-color: var(--tf-fg) !important;
   --link-color: var(--tf-accent) !important;
   --urlbarView-highlight-background: var(
     --toolbar-field-background-color
   ) !important;
   --toolbox-non-lwt-bgcolor: var(--tf-bg) !important;
   --toolbar-field-background-color: var(--tf-bg) !important;
+
+  /* Keyboard focus rings sit on --tf-bg and its tints. Firefox's AccentColor
+     (and the URL bar's half-transparent mix of it) can fall below 3:1 there. */
+  --focus-outline-color: var(--tf-accent) !important;
+  --toolbar-field-border-color-focus: var(--tf-accent) !important;
 
   /* borders */
   --border-width: var(--tf-border-width) !important;
@@ -18,13 +32,13 @@
   --tab-selected-outline-color: transparent !important;
   --tab-selected-bgcolor: color-mix(
     in hsl,
-    var(--toolbar-field-color) 8%,
-    var(--toolbar-bgcolor)
+    var(--tf-fg) 8%,
+    var(--tf-bg)
   ) !important;
   --tab-hover-background-color: color-mix(
     in hsl,
-    var(--toolbar-field-color) 4%,
-    var(--toolbar-bgcolor)
+    var(--tf-fg) 4%,
+    var(--tf-bg)
   ) !important;
   --tab-min-height: 29px !important;
 
@@ -36,56 +50,70 @@
     --tab-hover-background-color
   ) !important;
 
-  /* containers */
+  /* containers; chrome/browser.css also reads the palette for --tf-container-frame */
+  --textfox-container-yellow: #f6c177;
+  --textfox-container-purple: #c4a7e7;
+  --textfox-container-blue: #9ccfd8;
+  --textfox-container-turquoise: #9ccfd8;
+  --textfox-container-green: #3e8fb0;
+  --textfox-container-orange: #f6c177;
+  --textfox-container-red: #eb6f92;
+  --textfox-container-pink: #ea9a97;
   [data-color="yellow"],
   .identity-color-yellow {
-    --color: #f6c177 !important;
-    --identity-tab-color: #f6c177 !important;
-    --identity-icon-color: #f6c177 !important;
+    --color: var(--textfox-container-yellow) !important;
+    --identity-tab-color: var(--textfox-container-yellow) !important;
+    --identity-icon-color: var(--textfox-container-yellow) !important;
   }
   [data-color="purple"],
   .identity-color-purple {
-    --color: #c4a7e7 !important;
-    --identity-tab-color: #c4a7e7 !important;
-    --identity-icon-color: #c4a7e7 !important;
+    --color: var(--textfox-container-purple) !important;
+    --identity-tab-color: var(--textfox-container-purple) !important;
+    --identity-icon-color: var(--textfox-container-purple) !important;
   }
   [data-color="blue"],
   .identity-color-blue {
-    --color: #9ccfd8 !important;
-    --identity-tab-color: #9ccfd8 !important;
-    --identity-icon-color: #9ccfd8 !important;
+    --color: var(--textfox-container-blue) !important;
+    --identity-tab-color: var(--textfox-container-blue) !important;
+    --identity-icon-color: var(--textfox-container-blue) !important;
   }
   [data-color="turquoise"],
   .identity-color-turquoise {
-    --color: #9ccfd8 !important;
-    --identity-tab-color: #9ccfd8 !important;
-    --identity-icon-color: #9ccfd8 !important;
+    --color: var(--textfox-container-turquoise) !important;
+    --identity-tab-color: var(--textfox-container-turquoise) !important;
+    --identity-icon-color: var(--textfox-container-turquoise) !important;
   }
   [data-color="green"],
   .identity-color-green {
-    --color: #3e8fb0 !important;
-    --identity-tab-color: #3e8fb0 !important;
-    --identity-icon-color: #3e8fb0 !important;
+    --color: var(--textfox-container-green) !important;
+    --identity-tab-color: var(--textfox-container-green) !important;
+    --identity-icon-color: var(--textfox-container-green) !important;
   }
   [data-color="orange"],
   .identity-color-orange {
-    --color: #f6c177 !important;
-    --identity-tab-color: #f6c177 !important;
-    --identity-icon-color: #f6c177 !important;
+    --color: var(--textfox-container-orange) !important;
+    --identity-tab-color: var(--textfox-container-orange) !important;
+    --identity-icon-color: var(--textfox-container-orange) !important;
   }
   [data-color="red"],
   .identity-color-red {
-    --color: #eb6f92 !important;
-    --identity-tab-color: #eb6f92 !important;
-    --identity-icon-color: #eb6f92 !important;
+    --color: var(--textfox-container-red) !important;
+    --identity-tab-color: var(--textfox-container-red) !important;
+    --identity-icon-color: var(--textfox-container-red) !important;
   }
   [data-color="pink"],
   .identity-color-pink {
-    --color: #ea9a97 !important;
-    --identity-tab-color: #ea9a97 !important;
-    --identity-icon-color: #ea9a97 !important;
+    --color: var(--textfox-container-pink) !important;
+    --identity-tab-color: var(--textfox-container-pink) !important;
+    --identity-icon-color: var(--textfox-container-pink) !important;
   }
 
   /* opacity */
   --inactive-titlebar-opacity: 1 !important;
+}
+
+/* The selected tab's text token is redeclared on the tab itself and does not
+   derive from --toolbox-text-color on built-in themes. */
+.tabbrowser-tab {
+  --tab-text-color-selected: var(--tf-fg) !important;
 }

@@ -43,6 +43,7 @@ in
         map (profile: {
           "${profile}" = {
             extraConfig = builtins.readFile "${package}/user.js";
+            settings = cfg.configPrefs;
             containersForce = true;
             userChrome = lib.mkBefore (builtins.readFile "${package}/chrome/userChrome.css");
           };
@@ -63,6 +64,23 @@ in
           text = cfg.configCss;
         };
       }) cfg.profiles
+    );
+
+    # Earlier textfox generations assigned browser.nova.enabled false through
+    # user.js, and Firefox keeps that in prefs.js after the assignment is gone.
+    # Clear it once per profile, after the retired user.js is linked. Exit 75
+    # means Firefox holds the profile; the marker is written only on success, so
+    # the next activation tries again.
+    home.activation.textfoxClearNova = lib.hm.dag.entryAfter [ "linkGeneration" ] (
+      lib.concatMapStrings (profile: ''
+        textfoxStatus=0
+        run ${pkgs.python3}/bin/python3 ${package}/clear-nova-pref.py ${lib.escapeShellArg "${config.home.homeDirectory}/${configDir}${profile}"} || textfoxStatus=$?
+        if [ "$textfoxStatus" -eq 75 ]; then
+          warnEcho ${lib.escapeShellArg "textfox: Firefox is using profile ${profile}; browser.nova.enabled is reset on the next activation"}
+        elif [ "$textfoxStatus" -ne 0 ]; then
+          warnEcho ${lib.escapeShellArg "textfox: could not reset browser.nova.enabled in profile ${profile}"} "(exit $textfoxStatus)"
+        fi
+      '') cfg.profiles
     );
   };
 }
