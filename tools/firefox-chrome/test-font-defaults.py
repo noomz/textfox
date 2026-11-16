@@ -1,8 +1,4 @@
 #!/usr/bin/env python3
-"""Check the published and generated font defaults without starting Firefox.
-
-Run: python3 tools/firefox-chrome/test-font-defaults.py
-"""
 
 import csv
 import json
