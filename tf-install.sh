@@ -1,5 +1,6 @@
 #!/bin/bash
 # textfox installation script
+set -o pipefail
 
 print_logo() {
   cat <<EOF
@@ -68,7 +69,7 @@ new_backup_dir() {
     n=$((n + 1))
     dir="${fp}/chrome-${kind}-${stamp}_${n}.bak"
   done
-  mkdir -p "${dir}"
+  mkdir -p "${dir}" || return 1
   echo "${dir}"
 }
 
@@ -83,21 +84,23 @@ backup_existing_profile() {
   fp="$(clean_path "${fp}")"
   local mine="" theirs="" entry name installed=no
   if textfox_installed "${fp}"; then installed=yes; fi
-  for entry in chrome/*; do
-    name="$(basename "${entry}")"
-    [[ -e "${fp}/chrome/${name}" ]] || continue
+  for entry in chrome/* chrome/.[!.]* chrome/..?*; do
+    [[ -e "${entry}" || -L "${entry}" ]] || continue
+    name="${entry##*/}"
+    [[ "${name}" == config.css ]] && continue
+    [[ -e "${fp}/chrome/${name}" || -L "${fp}/chrome/${name}" ]] || continue
     if owned_by_textfox "${fp}" "${name}" "${installed}"; then
       if [[ -z "${theirs}" ]]; then
         theirs="$(new_backup_dir "${fp}" textfox)" || return 1
         echo "[!!] Backing up the previous textfox files this install replaces to ${theirs}"
       fi
-      mv -v "${fp}/chrome/${name}" "${theirs}/${name}"
+      mv -v "${fp}/chrome/${name}" "${theirs}/${name}" || return 1
     else
       if [[ -z "${mine}" ]]; then
         mine="$(new_backup_dir "${fp}" pre-textfox)" || return 1
         echo "[!!] Backing up your files this install replaces to ${mine}"
       fi
-      mv -v "${fp}/chrome/${name}" "${mine}/${name}"
+      mv -v "${fp}/chrome/${name}" "${mine}/${name}" || return 1
     fi
   done
 }
@@ -109,8 +112,13 @@ copy_chrome() {
     echo "Copying textfox/chrome/ -> ${fp}/chrome/"
     # Merge into the existing directory rather than copying the directory itself,
     # which would create chrome/chrome on a reinstall.
-    mkdir -p "${fp}/chrome"
-    cp -R "chrome/." "${fp}/chrome/"
+    mkdir -p "${fp}/chrome" || return 1
+    local entry
+    for entry in chrome/* chrome/.[!.]* chrome/..?*; do
+      [[ -e "${entry}" || -L "${entry}" ]] || continue
+      [[ "${entry##*/}" == config.css ]] && continue
+      cp -R "${entry}" "${fp}/chrome/" || return 1
+    done
   else
     echo "The specified Firefox profile path does not exist: ${fp}"
     return 1
@@ -164,7 +172,7 @@ merge_user_js() {
   fp="$(clean_path "${fp}")"
   local target="${fp}/user.js" block tmp begins ends
 
-  block="$(extract_pref_block)"
+  block="$(extract_pref_block)" || return 1
   if [[ -z "${block}" ]]; then
     echo "[!!] shipped user.js has no preference block; nothing merged" >&2
     return 1
@@ -180,12 +188,17 @@ merge_user_js() {
       echo "[!!] ${target} has unbalanced, repeated, or reversed textfox markers; leaving it untouched" >&2
       return 1
     fi
-    strip_pref_block "${target}" | drop_trailing_blanks > "${tmp}"
+    if ! strip_pref_block "${target}" | drop_trailing_blanks > "${tmp}"; then
+      rm -f "${tmp}"
+      return 1
+    fi
   fi
 
   # One blank line between the user's text and the managed block.
-  if [[ -s "${tmp}" ]]; then printf '\n' >> "${tmp}"; fi
-  printf '%s\n' "${block}" >> "${tmp}"
+  if [[ -s "${tmp}" ]]; then
+    printf '\n' >> "${tmp}" || { rm -f "${tmp}"; return 1; }
+  fi
+  printf '%s\n' "${block}" >> "${tmp}" || { rm -f "${tmp}"; return 1; }
 
   if [[ -f "${target}" ]] && cmp -s "${tmp}" "${target}"; then
     rm -f "${tmp}"
@@ -195,10 +208,10 @@ merge_user_js() {
 
   if [[ -f "${target}" ]]; then
     local bak="${target}-$(date +%Y%m%d_%H%M%S).bak"
-    cp -v "${target}" "${bak}"
+    cp -v "${target}" "${bak}" || { rm -f "${tmp}"; return 1; }
     echo "[!!] Previous user.js kept at ${bak}"
   fi
-  mv -f "${tmp}" "${target}"
+  mv -f "${tmp}" "${target}" || { rm -f "${tmp}"; return 1; }
   echo "Merged textfox preferences into ${target}"
 }
 
@@ -253,8 +266,8 @@ tf_install() {
       clear_nova=no
     fi
   fi
-  backup_existing_profile "${ffpp}"
-  copy_chrome "${ffpp}"
+  backup_existing_profile "${ffpp}" || return 1
+  copy_chrome "${ffpp}" || return 1
   if ! merge_user_js "${ffpp}"; then
     echo "[!!] Installation aborted: the preference block was not merged" >&2
     return 1
