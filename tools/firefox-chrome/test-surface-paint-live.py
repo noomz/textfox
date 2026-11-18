@@ -23,7 +23,8 @@ Colors are resolved inside each surface, so currentColor-relative defaults
 (the default --tf-border) resolve as painted; translucent colors are composited
 over --tf-bg.
 
-Surfaces: navbar, URL bar text, URL bar results, horizontal tabs, app menu,
+Surfaces: navbar, URL bar text, URL bar results, horizontal tabs (vertical
+tabs with `--layout revamp`), app menu,
 toolbar context menu, findbar, new-tab search box and shortcut tile, in both
 browser Nova states. Cases: the shipped defaults, a sentinel config.css with
 distinct colors (or `--config FILE` in its place), and a known-bad config.css
@@ -110,6 +111,7 @@ TOLERANCE = 4      # per channel, painted vs expected color
 DISTINCT = 12      # a border must differ from the background by more than this in some channel
 EDGE_SEARCH = 24   # px inward from the painted edge to look for the border line (past shadows)
 EDGE_MATCH = 0.9   # share of the middle of an edge line that must be border color
+SHADOW_SEARCH = 40  # px inward a macOS popup's border may sit behind its OS drop shadow (T37)
 SLACK = 48         # px a surface may paint beyond its element box (section titles, popup shadows)
 # Stability controls ignore channel differences up to this (of 255): macOS antialiases a native
 # popup's rounded corners one unit differently between frames. Below TOLERANCE, so such noise
@@ -188,6 +190,12 @@ CHROME_SURFACES = [
     ('context-menu', '#toolbar-context-menu', '--tf-accent',
      '#toolbar-context-menu > menuitem:not([hidden])', OPEN_CONTEXT),
 ]
+# `--layout`: classic leaves Firefox's sidebar prefs alone; revamp turns vertical tabs on and judges
+# the vertical tab strip, the launcher expanded so labels show, in place of the horizontal one (T37).
+VERTICAL_TABS = ('vertical-tabs', '#vertical-tabs', '--tf-border',
+                 '#vertical-tabs .tabbrowser-tab:not([selected]) .tab-label', None)
+LAYOUT_PREFS = {'classic': {}, 'revamp': {'sidebar.revamp': True, 'sidebar.verticalTabs': True}}
+TAB_SURFACES = ('tabs', 'vertical-tabs')
 NEWTAB_SURFACES = {
     # Light-DOM in-page URL bar input (gated, browser Nova) or the shadow-DOM handoff host.
     'newtab-search': ['.search-wrapper input', '.search-wrapper content-search-handoff-ui'],
@@ -343,19 +351,36 @@ def dominant(image, box, skip=None):
     return max(tally, key=tally.get)
 
 
-def border_sides(image, box, color, search=EDGE_SEARCH):
-    """Sides (left, right, bottom) whose outermost `search` lines hold a border of color."""
+def border_sides(image, box, color, search=EDGE_SEARCH, hidden=None, shadow=0):
+    """Sides (left, right, bottom) whose outermost `search` lines hold a border of color.
+
+    With `hidden` (the capture without the surface), the search starts past the side's shadow: the
+    run of up to `shadow` outermost lines in which no pixel is lighter than what the surface hides
+    there; the run ends at a border line (a dark border over light content is darker too). macOS draws a drop shadow around popups; over bright content it changes pixels below a
+    menu, so the painted box reaches past the border (T37)."""
     x0, y0, w, h = box['x'], box['y'], box['width'], box['height']
     rows = range(y0 + h // 4, y0 + h - h // 4)
     columns = range(x0 + w // 4, x0 + w - w // 4)
-    lines = {
-        'left': [[(x0 + d, y) for y in rows] for d in range(min(search, w))],
-        'right': [[(x0 + w - 1 - d, y) for y in rows] for d in range(min(search, w))],
-        'bottom': [[(x, y0 + h - 1 - d) for x in columns] for d in range(min(search, h))],
-    }
-    return {side: any(line and sum(near(image.pixel(x, y), color) for x, y in line) >= EDGE_MATCH * len(line)
-                      for line in candidates)
-            for side, candidates in lines.items()}
+
+    def line(side, d):
+        return {'left': [(x0 + d, y) for y in rows], 'right': [(x0 + w - 1 - d, y) for y in rows],
+                'bottom': [(x, y0 + h - 1 - d) for x in columns]}[side]
+
+    def bordered(points):
+        return points and sum(near(image.pixel(x, y), color) for x, y in points) >= EDGE_MATCH * len(points)
+
+    def shaded(points):
+        return all(a <= b + CONTROL_NOISE for x, y in points for a, b in zip(image.pixel(x, y), hidden.pixel(x, y)))
+
+    sides = {}
+    for side in ('left', 'right', 'bottom'):
+        size = h if side == 'bottom' else w
+        skip = 0
+        if hidden:
+            while skip < min(shadow, size) and shaded(line(side, skip)) and not bordered(line(side, skip)):
+                skip += 1
+        sides[side] = any(bordered(line(side, skip + d)) for d in range(min(search, size - skip)))
+    return sides
 
 
 class Capture:
@@ -445,7 +470,8 @@ def art_shown(shot, box, flat, skip=None):
     return art, shown
 
 
-def judge(name, shot, colors, border_var=None, border_color=None, dpr=1, readable_only=False, art=False):
+def judge(name, shot, colors, border_var=None, border_color=None, dpr=1, readable_only=False, art=False,
+          os_shadow=False):
     """Return (record, failures) for one surface; raise when the measurement is not of that surface.
 
     Device-pixel sizes scale with dpr: the element box and slack by dpr, the text floor by its square.
@@ -453,7 +479,9 @@ def judge(name, shot, colors, border_var=None, border_color=None, dpr=1, readabl
     chrome borders, as high contrast intends; only the text must reach MIN_RATIO on what painted.
     art (V19): the surface sits over theme art; it must show the art, and text is judged against
     the paint under each text pixel. Whether any art paints under a box at all is the run's
-    check (art_under_some), since a gradient can equal the frame color under a whole box."""
+    check (art_under_some), since a gradient can equal the frame color under a whole box.
+    os_shadow (macOS popups): the OS drop shadow may push the painted box past the border; see
+    border_sides."""
     image, box, dom = shot['image'], shot['box'], colors['dom']
     record = {'surface': name, 'paintedBox': box, 'changedPixels': shot['changed'], 'colors': colors}
     if not box:
@@ -477,7 +505,8 @@ def judge(name, shot, colors, border_var=None, border_color=None, dpr=1, readabl
     if border_color or (border_var and not readable_only):
         color = border_color or colors[border_var]
         label = border_var or '--newtab-border-color'
-        sides = border_sides(image, box, color, round(EDGE_SEARCH * dpr))
+        sides = border_sides(image, box, color, round(EDGE_SEARCH * dpr), hidden=shot['hidden'] if os_shadow else None,
+                             shadow=round(SHADOW_SEARCH * dpr))
         record['border'] = {'color': color, 'sides': sides}
         missing = [side for side, ok in sides.items() if not ok]
         if background and near(color, background, DISTINCT):
@@ -533,13 +562,14 @@ def neutral_pointer(m):
 
 
 def run(display, nova, config, kind, high_contrast=None, newtab_defaults=False, expect_version=None, theme=None,
-        art='none'):
+        art='none', layout='classic'):
     """Launch Firefox with config on display and return (metadata, records, failures by surface).
 
     high_contrast: the OS high-contrast state the run set (Windows), or None where not set.
     newtab_defaults: the new tab as Firefox ships it (widgets, stories, weather), nothing hidden.
     theme: a ff_themes spec enabled before any capture, or None for no theme.
-    art: an ff_themes.ART_CONFIG mode; config already carries its config.css lines."""
+    art: an ff_themes.ART_CONFIG mode; config already carries its config.css lines.
+    layout: a LAYOUT_PREFS key; revamp judges vertical tabs in place of horizontal ones."""
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0))
         port = sock.getsockname()[1]
@@ -573,6 +603,7 @@ def run(display, nova, config, kind, high_contrast=None, newtab_defaults=False, 
             # A menu taller than a small screen scrolls; overlay scrollbars fade between captures.
             'ui.useOverlayScrollbars': 0,
             'marionette.port': port,
+            **LAYOUT_PREFS[layout],
         }
         if newtab_defaults:
             for k in ('widgets.enabled', 'showWeather', 'feeds.section.topstories', 'showSponsoredTopSites'):
@@ -649,9 +680,17 @@ def run(display, nova, config, kind, high_contrast=None, newtab_defaults=False, 
                              sandbox='system')
             wait(m, "return gBrowser.tabs.length == 2 && !!document.querySelector('findbar:not([hidden])')",
                  'second tab and findbar')
+            surfaces = CHROME_SURFACES
+            if layout == 'revamp':
+                m.execute_script("SidebarController.promiseInitialized.then(() => "
+                                 "SidebarController.updateUIState({hidden: false, launcherExpanded: true}))",
+                                 sandbox='system')
+                wait(m, "return document.getElementById('vertical-tabs')?.hasAttribute('visible') && "
+                     "document.querySelectorAll('#vertical-tabs .tabbrowser-tab').length == 2", 'vertical tabs')
+                surfaces = [VERTICAL_TABS if s[0] == 'tabs' else s for s in CHROME_SURFACES]
             neutral_pointer(m)
             time.sleep(1)
-            for name, selector, border_var, text_selector, opener in CHROME_SURFACES:
+            for name, selector, border_var, text_selector, opener in surfaces:
                 if opener:
                     m.execute_script(opener[0], sandbox='system')
                     wait(m, opener[1], f'{name} open')
@@ -667,13 +706,14 @@ def run(display, nova, config, kind, high_contrast=None, newtab_defaults=False, 
                 capture.noise = capture.box_noise = 0
                 record, failures[name] = judge(name, shot, colors, border_var=border_var, dpr=display.dpr,
                                                readable_only=bool(high_contrast),
-                                               art=meta['art']['expected'] and not opener)
-                if name == 'tabs':
+                                               art=meta['art']['expected'] and not opener,
+                                               os_shadow=display.platform == 'macos' and bool(opener))
+                if name in TAB_SURFACES:
                     # V21: textfox owns the unselected label's opacity; Firefox 160 fades it to 0.6 on
                     # macOS, which no label color survives on a mid-tone theme frame (B26).
                     record['labelOpacity'] = m.execute_script(LABEL_OPACITY_JS, sandbox='system')
                     if record['labelOpacity'] != 1:
-                        failures[name].append(f'tabs unselected label paints at opacity {record["labelOpacity"]}, not 1')
+                        failures[name].append(f'{name} unselected label paints at opacity {record["labelOpacity"]}, not 1')
                 records.append(record)
 
             missing_art = art_under_some(records)
@@ -734,6 +774,8 @@ def main():
                         'classic and Nova), every theme-picker theme in both schemes, or art (image themes, nova-ash)')
     parser.add_argument('--art', choices=tuple(ff_themes.ART_CONFIG), default='none',
                         help='turn --tf-theme-images or --tf-theme-gradient on (V19)')
+    parser.add_argument('--layout', choices=tuple(LAYOUT_PREFS), default='classic',
+                        help='revamp: vertical tabs on, judged in place of horizontal tabs (T37)')
     parser.add_argument('--nova', choices=['false', 'true'], action='append',
                         help='limit to a browser Nova state (run-split.py splits a suite this way)')
     parser.add_argument('--high-contrast', action='store_true',
@@ -769,9 +811,10 @@ def main():
                 meta, records, found = run(display, nova, config, kind,
                                             high_contrast=args.high_contrast if hc else None,
                                             newtab_defaults=args.newtab_defaults,
-                                            expect_version=args.expect_version, theme=theme, art=args.art)
+                                            expect_version=args.expect_version, theme=theme, art=args.art,
+                                            layout=args.layout)
                 judged_art = judged_art or meta['art']['expected']
-                print(json.dumps({'nova': nova, 'config': kind, 'theme': theme, 'art': args.art, 'firefox': meta,
+                print(json.dumps({'nova': nova, 'layout': args.layout, 'config': kind, 'theme': theme, 'art': args.art, 'firefox': meta,
                                   'surfaces': records}), flush=True)
                 nova = f'{nova} theme={theme}' if theme else nova
                 surfaces = surfaces or list(found)
@@ -803,7 +846,8 @@ def main():
             print(f'FAIL {failure}', file=sys.stderr)
         return 1
     good = ', '.join(k for k in configs if k != 'known-bad')
-    where = display.platform + (' with OS high contrast' if args.high_contrast else '') + (
+    where = display.platform + (' with vertical tabs' if args.layout == 'revamp' else '') + (
+        ' with OS high contrast' if args.high_contrast else '') + (
         f' with --art {args.art}' if args.art != 'none' else '') + (
         f' with Firefox themes {", ".join(themes)}' if themes else '') + (
         ' with the default new tab (widgets, stories, weather)' if args.newtab_defaults else '')

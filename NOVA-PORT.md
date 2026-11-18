@@ -2007,3 +2007,26 @@ Bounds:
 
 - In T20, a suite of fewer than four themes leaves some Nova-and-layout combinations without their own control run (V23 asks one per theme).
 - A notification banner still stops a macOS run; the harness now names it instead of misreporting a surface.
+
+## T37 vertical tabs painted on macOS (issue #1)
+
+Requested 2026-11-18: T20 judged the vertical tab strip on Linux only, so vertical tabs had no painted proof on macOS, where Firefox fades unselected tab labels (B26). Scope: Linux and macOS (user).
+
+Harness (`test-surface-paint-live.py`, T15):
+
+- `--layout classic|revamp`. Classic leaves Firefox's sidebar prefs as before. Revamp sets `sidebar.revamp` and `sidebar.verticalTabs`, expands the launcher, waits for both tabs in `#vertical-tabs`, and judges the vertical tab strip (`#vertical-tabs`, `--tf-border`, unselected `.tab-label` text) in place of the horizontal one, with V21's label-opacity check.
+- macOS popups: `border_sides` takes the hidden capture and starts the border search past the popup's OS drop shadow, the run of up to 40 px outermost lines in which no pixel is lighter than what the popup hides, ending at a border line. In revamp with Nova off, the toolbar context menu opens over Firefox's bright purple "Drag important tabs here" panel; the shadow there pushed the painted box 49 device px past the menu's bottom border (search 48), so Purple starfield and Topo! Black dark failed "no --tf-accent border on bottom". User (2026-11-18): keep the shadow, the harness allows it. A first version also skipped a dark border over light content (nova-ash light failed on three popups); the run now stops at a border line. Linux and Windows keep the old search (`os_shadow` is macOS popups only), so their records stand.
+
+Red (macOS, `mac_jr`/`mac_jr2`, Tart, Firefox 160.0 build `20261104181552`): with B26's `.tab-label-container { opacity: 1 }` removed, `--layout revamp` on Rosy Sky light and dark: unselected vertical labels at opacity 0.6 and 0 pixels at 4.5:1 (floor 120) in both Nova states, exit 1. Green with the rule: opacity 1, 638–645 pixels, exit 0. Firefox 160 fades vertical tab labels on macOS too; B26's rule already covered them.
+
+Green (`--layout revamp`, both browser Nova states, defaults and sentinel; known-bad per V23):
+
+- Linux (Sway): no theme 6 runs; `--themes default` 20 runs, 863 s; `--themes art` 40 runs, 1717 s. Exit 0.
+- macOS: `--themes default` split on both VMs, 2 × 10 runs, 9.4 min, exit 0. `--themes art`: dark half on `mac_jr2` 20 runs, exit 0; light half on `mac_jr2` 20 runs, 17.7 min, exit 0. Classic `--themes default` after the judge change, 20 runs, 18.8 min, exit 0.
+
+Not counted:
+
+- `mac_jr`'s art half aborted three times ("captures unstable", "hidden capture never settled", "painted box larger than its element"): kept frames show a "clipass" app window ("Fixture note 40") over Firefox, not started by this work; user: run on `mac_jr2` alone. A first attempt there also hit `mac_jr`'s full disk (3.8 GB of kept frames from T36, since deleted).
+- "Software Update Available" banners on both VMs stopped one run at the first capture (the T36 banner check); the user dismissed them.
+
+Bounds: Windows is not run with `--layout revamp`. T20 still judges vertical tabs (and the sidebar) on Linux only.
