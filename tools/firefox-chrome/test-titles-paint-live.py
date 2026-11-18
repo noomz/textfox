@@ -61,7 +61,8 @@ import paint_display  # noqa: E402
 import ff_themes  # noqa: E402
 
 _paint = runpy.run_path(str(HERE / 'test-surface-paint-live.py'))
-connect, wait, CHROME_STYLE_JS, FREEZE = (_paint[k] for k in ('connect', 'wait', 'CHROME_STYLE_JS', 'FREEZE'))
+connect, wait, CHROME_STYLE_JS, FREEZE, PARSE_JS = (
+    _paint[k] for k in ('connect', 'wait', 'CHROME_STYLE_JS', 'FREEZE', 'PARSE_JS'))
 _more = runpy.run_path(str(HERE / 'test-surface-paint-more-live.py'))
 stop, LAYOUTS = _more['stop'], _more['LAYOUTS']
 
@@ -117,7 +118,7 @@ const walk = root => {
   }
 };
 walk(document);
-const bg = before.backgroundColor.match(/[\d.]+/g).slice(0, 3).map(Number);
+const bg = parseColor(before.backgroundColor).slice(0, 3);
 return {x: b.x, y: b.y, w: b.width, h: b.height, borderTop: parseFloat(style.borderTopWidth),
         inShadow: host.getRootNode() != document, bg, controls};
 """
@@ -378,7 +379,7 @@ def run(display, nova, layout, dpp, expect_version, theme=None, art='none'):
             for title, (selector, lookup, layouts) in TITLES.items():
                 if layout not in layouts:
                     continue
-                geometry = m.execute_script(HOSTS_JS + GEOMETRY_JS, script_args=[title], sandbox='system')
+                geometry = m.execute_script(PARSE_JS + HOSTS_JS + GEOMETRY_JS, script_args=[title], sandbox='system')
                 if geometry is None:
                     raise RuntimeError(f'{title}: box or title not shown in the {layout} layout')
                 record, problems = measure(m, shooter, title, selector, geometry, meta['dpr'],

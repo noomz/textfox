@@ -2,6 +2,7 @@
 """Check configured sidebar launcher colors under temporary Firefox themes."""
 import json
 import os
+import re
 from pathlib import Path
 import shutil
 import socket
@@ -13,6 +14,14 @@ import zipfile
 from ff_inspect import connect
 
 ROOT = Path(__file__).resolve().parents[2]
+
+
+def rgb(text):
+    """A computed color as rounded 0-255 channels: rgb() or color(srgb 0-1) (color-mix() results)."""
+    m = re.fullmatch(r'color\(srgb ([-\d.e]+) ([-\d.e]+) ([-\d.e]+)(?: / [\d.]+)?\)', text)
+    if m:
+        return tuple(round(float(v) * 255) for v in m.groups())
+    return tuple(round(float(v)) for v in re.findall(r'[\d.]+', text)[:3])
 
 
 def check(nova, dark):
@@ -98,13 +107,13 @@ def check(nova, dark):
                     raise RuntimeError('sidebar did not expand on pointer hover')
                 time.sleep(.1)
             print(json.dumps({'nova':nova, 'dark':dark, 'expandOnHover':hoverState, 'expanded':True}), flush=True)
-            if not hoverState['root'] or hoverState['color'] != foreground:
+            if not hoverState['root'] or rgb(hoverState['color']) != rgb(foreground):
                 raise RuntimeError('expand-on-hover theme state or foreground is incorrect')
             if not result['fullSelectorMatches']:
                 raise RuntimeError(f'themed sidebar selector did not match: {result}')
             if result['configuredBackground'] != background or result['hostBackground'] != background:
                 raise RuntimeError('themed sidebar launcher background does not follow --tf-bg')
-            if result['hostColor'] != foreground or result['wrapperColor'] != foreground:
+            if rgb(result['hostColor']) != rgb(foreground) or rgb(result['wrapperColor']) != rgb(foreground):
                 raise RuntimeError('themed sidebar launcher foreground does not follow theme')
         finally:
             try:

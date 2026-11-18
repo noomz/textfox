@@ -10,7 +10,9 @@ Each surface is hidden in turn with `visibility: hidden` (layout kept); the
 pixels that change are the pixels it painted, and their bounding box is the
 surface on screen. Inside that box the capture must show:
 
-- chrome surfaces: --tf-bg as the dominant color; a border of the surface's
+- chrome surfaces: their own background variable (V22: --tf-bg for the tab strip,
+  --tf-navbar-bg for navbar and findbar, --tf-urlbar-bg for the URL bar and its results,
+  --tf-popup-bg for menus) as the dominant color; a border of the surface's
   configured variable (--tf-border for navbar, tabs and findbar, --tf-accent for
   URL bar results, app menu and context menu), distinct from the background, on
   the left, right and bottom edges (the top edge carries the section title);
@@ -58,14 +60,18 @@ capture set; an unstable set is retried, never accepted.
 active (ff_themes.py: built-in Light, Dark, Alpenglow, or a Nova theme from its
 pinned AMO file, which the run downloads once); `--themes default` runs a dark and
 a light classic and Nova theme, `--themes every` all theme-picker themes in both
-schemes (V15). Surfaces must paint --tf-bg under the theme, as without one.
+schemes (V15). Under a theme with a pinned manifest (AMO-hosted), with the default
+config.css, each surface's resolved pair must also be the one theme-color-map.py predicts
+from the manifest alone (V22 oracle): the theme's pair where it reaches 4.5:1, else the
+fallback; the judge holds the painted background to the resolved one.
 
 `--art images|gradient` (V19) turns --tf-theme-images or --tf-theme-gradient on in
 every config.css (gradient: with a visible stand-in for Linux's transparent browser
 Nova gradient, ff_themes.ART_CONFIG) and holds animated images still. Where Firefox
 itself has that art (its own `--toolbox-background-image` at :root: a theme's layers
 for images, browser Nova's gradient without a theme for gradient), each window box
-(navbar, URL bar text, tabs, findbar) is judged over the art instead of on --tf-bg:
+(navbar, URL bar text, tabs, findbar) is judged over the art instead of on its color
+(except a URL bar field that paints the theme's own field, B27: judged on that color):
 where the art paints with the box hidden, the box must show it (ART_SHOWN of those
 pixels unchanged; and under at least one of them ART_MIN_PIXELS art pixels, since a
 gradient can equal the frame color under a whole box), and its text must reach 4.5:1
@@ -98,10 +104,12 @@ import time
 from ff_inspect import connect
 import ff_themes
 from paint_display import diff, open_display
+from types import SimpleNamespace
 
 ROOT = Path(__file__).resolve().parents[2]
 HERE = Path(__file__).resolve().parent
 _layout = runpy.run_path(str(HERE / 'test-nova-layout-live.py'))
+THEME_MAP = SimpleNamespace(**runpy.run_path(str(HERE / 'theme-color-map.py')))
 start_sway, stop, changed_mask, count, painted_box, OUTPUT = (
     _layout[k] for k in ('start_sway', 'stop', 'changed_mask', 'count', 'painted_box', 'OUTPUT'))
 
@@ -130,8 +138,14 @@ CONFIGS = {
     # Distinct colors; the border colors stay below 4.5:1 against the background.
     'sentinel': (f':root {{ {TABS} --tf-bg: rgb(24, 36, 64); --tf-border: rgb(200, 0, 90); '
                  '--tf-accent: rgb(0, 140, 90); }\n'),
-    # Known bad: text the color of the background, borders gone.
-    'known-bad': f':root {{ {TABS} --tf-fg: var(--tf-bg); --tf-border-width: 0px; }}\n',
+    # Known bad: text the color of the background (each surface's own pair, V22), borders gone.
+    'known-bad': (f':root {{ {TABS} --tf-fg: var(--tf-bg); --tf-border-width: 0px;'
+                  ' --tf-navbar-fg: var(--tf-navbar-bg); --tf-urlbar-fg: var(--tf-urlbar-bg);'
+                  ' --tf-popup-fg: var(--tf-popup-bg); --tf-sidebar-fg: var(--tf-sidebar-bg);'
+                  ' --tf-tab-selected-fg: var(--tf-tab-selected-bg); }'
+                  # Over theme art, body sets the surface pairs (V19, chrome/browser.css).
+                  ' body { --tf-navbar-fg: var(--tf-navbar-bg) !important;'
+                  ' --tf-urlbar-fg: var(--tf-urlbar-bg) !important; --tf-sidebar-fg: var(--tf-sidebar-bg) !important; }\n'),
 }
 
 # --newtab-defaults. Marionette's RecommendedPreferences.sys.mjs sets these false on the
@@ -194,6 +208,19 @@ CHROME_SURFACES = [
 # the vertical tab strip, the launcher expanded so labels show, in place of the horizontal one (T37).
 VERTICAL_TABS = ('vertical-tabs', '#vertical-tabs', '--tf-border',
                  '#vertical-tabs .tabbrowser-tab:not([selected]) .tab-label', None)
+# Each chrome surface's own color pair (V22): background and text variables, and the pair it takes
+# in theme-color-map.py's oracle.
+SURFACE_PAIRS = {
+    'navbar': ('--tf-navbar-bg', '--tf-navbar-fg', 'navbar'),
+    'urlbar-text': ('--tf-urlbar-bg', '--tf-urlbar-fg', 'urlbar'),
+    'tabs': ('--tf-bg', '--tf-fg', 'window'),
+    'vertical-tabs': ('--tf-bg', '--tf-fg', 'window'),
+    'findbar': ('--tf-navbar-bg', '--tf-navbar-fg', 'navbar'),
+    'urlbar-results': ('--tf-urlbar-bg', '--tf-urlbar-fg', 'urlbar'),
+    'app-menu': ('--tf-popup-bg', '--tf-popup-fg', 'popup'),
+    'context-menu': ('--tf-popup-bg', '--tf-popup-fg', 'popup'),
+}
+ORACLE_SLACK = 3  # channel rounding between the oracle and Firefox's color math
 LAYOUT_PREFS = {'classic': {}, 'revamp': {'sidebar.revamp': True, 'sidebar.verticalTabs': True}}
 TAB_SURFACES = ('tabs', 'vertical-tabs')
 NEWTAB_SURFACES = {
@@ -249,7 +276,12 @@ if (!host) return null;
 if (host.localName === 'input') host = host.parentElement;  // an input cannot hold the probe
 const make = () => document.createXULElement('box');
 const out = {'--tf-bg': over(resolveColor(host, 'var(--tf-bg)', make), [0, 0, 0])};
-for (const v of ['--tf-border', '--tf-accent']) out[v] = over(resolveColor(host, `var(${v})`, make), out['--tf-bg']);
+// The surface's own pair (V22): its background over --tf-bg, its text over that.
+out.bg = over(resolveColor(host, `var(${arguments[1]})`, make), out['--tf-bg']);
+out.fg = over(resolveColor(host, `var(${arguments[2]})`, make), out.bg);
+// Over theme art the URL bar field keeps the theme's own field where its pair passes (B27).
+out.artBox = resolveColor(host, 'var(--textfox-urlbar-box, transparent)', make);
+for (const v of ['--tf-border', '--tf-accent']) out[v] = over(resolveColor(host, `var(${v})`, make), out.bg);
 const r = document.querySelector(arguments[0]).getBoundingClientRect();
 out.dom = {width:r.width, height:r.height};
 return out;
@@ -470,6 +502,17 @@ def art_shown(shot, box, flat, skip=None):
     return art, shown
 
 
+def oracle_check(name, colors, expected):
+    """V22: the surface's resolved pair is the one theme-color-map.py predicts from the manifest.
+    The judge already holds the painted background to the resolved one."""
+    found = []
+    for key, want in (('bg', expected[0]), ('fg', expected[1])):
+        if not near(colors[key], want[:3], ORACLE_SLACK):
+            found.append(f'{name} {key} {[round(c) for c in colors[key]]} is not the theme pair\'s '
+                         f'{[round(c) for c in want[:3]]} (V22 oracle)')
+    return found
+
+
 def judge(name, shot, colors, border_var=None, border_color=None, dpr=1, readable_only=False, art=False,
           os_shadow=False):
     """Return (record, failures) for one surface; raise when the measurement is not of that surface.
@@ -500,8 +543,8 @@ def judge(name, shot, colors, border_var=None, border_color=None, dpr=1, readabl
     elif shot['text']:
         background = dominant(image, inflate(box, 4, size), colors.get('skip'))
         record['background'] = background
-        if not readable_only and not near(background, colors['--tf-bg']):
-            failures.append(f'{name} paints background {background}, not --tf-bg {colors["--tf-bg"]}')
+        if not readable_only and not near(background, colors['bg']):
+            failures.append(f'{name} paints background {background}, not {colors["bgVar"]} {colors["bg"]}')
     if border_color or (border_var and not readable_only):
         color = border_color or colors[border_var]
         label = border_var or '--newtab-border-color'
@@ -666,6 +709,12 @@ def run(display, nova, config, kind, high_contrast=None, newtab_defaults=False, 
             if theme:
                 meta['theme'] = ff_themes.apply(m, theme)
             meta['art'] = ff_themes.art_expected(m, art)
+            # V22 oracle: the pair each surface takes, from the theme's pinned manifest alone. Only
+            # with textfox's own colors (defaults); a config.css that sets them replaces the theme's.
+            oracle = None
+            if theme and kind == 'defaults' and (colors_ := THEME_MAP.theme_colors(theme)):
+                oracle = THEME_MAP.textfox_pairs(colors_, art=meta['art']['expected'])
+                meta['oracle'] = {k: [[round(c) for c in v[:3]] for v in pair_] for k, pair_ in oracle.items()}
             ff_themes.hold_still(m, art)
             meta['window'] = display.bind(m)
             meta['platform'] = display.platform
@@ -696,17 +745,30 @@ def run(display, nova, config, kind, high_contrast=None, newtab_defaults=False, 
                     wait(m, opener[1], f'{name} open')
                     neutral_pointer(m)  # a popup opens under the pointer; keep its items unhovered
                     time.sleep(1)
-                colors = m.execute_script(RESOLVE_JS, script_args=[selector], sandbox='system')
+                bg_var, fg_var, pair = SURFACE_PAIRS[name]
+                colors = m.execute_script(RESOLVE_JS, script_args=[selector, bg_var, fg_var], sandbox='system')
                 if not colors:
                     raise RuntimeError(f'{name}: {selector} missing')
+                colors['bgVar'] = bg_var
+                if name == 'navbar':
+                    # The URL bar field paints its own pair (V22; over art the theme's own field,
+                    # B27), which can fill most of the navbar: the navbar is judged around it.
+                    # Painted like the navbar (no theme), hiding it changes nothing: no box, no skip.
+                    field = capture.surface('urlbar-field', '.urlbar-background')['box']
+                    if field:
+                        colors['skip'] = field
                 # Only over art: a popup's --tf-bg can sit within noise of faint art behind it.
                 capture.noise = CONTROL_NOISE if meta['art']['expected'] and not opener else 0
                 capture.box_noise = CONTROL_NOISE if meta['art']['expected'] else 0
                 shot = capture.surface(name, selector, text_selector)
                 capture.noise = capture.box_noise = 0
+                # Over art, boxes are transparent except a URL bar field that paints the theme's
+                # own field (B27, V22): that one is judged on its color, as without art.
+                over_art = meta['art']['expected'] and not opener and not (
+                    name == 'urlbar-text' and colors['artBox'][3] > 0)
                 record, failures[name] = judge(name, shot, colors, border_var=border_var, dpr=display.dpr,
                                                readable_only=bool(high_contrast),
-                                               art=meta['art']['expected'] and not opener,
+                                               art=over_art,
                                                os_shadow=display.platform == 'macos' and bool(opener))
                 if name in TAB_SURFACES:
                     # V21: textfox owns the unselected label's opacity; Firefox 160 fades it to 0.6 on
@@ -714,6 +776,8 @@ def run(display, nova, config, kind, high_contrast=None, newtab_defaults=False, 
                     record['labelOpacity'] = m.execute_script(LABEL_OPACITY_JS, sandbox='system')
                     if record['labelOpacity'] != 1:
                         failures[name].append(f'{name} unselected label paints at opacity {record["labelOpacity"]}, not 1')
+                if oracle and not high_contrast:
+                    failures[name] += oracle_check(name, colors, oracle[pair])
                 records.append(record)
 
             missing_art = art_under_some(records)

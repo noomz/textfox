@@ -1,7 +1,8 @@
 findbar {
   margin: 1rem 0rem 0rem !important;
   border: var(--border-width) solid var(--tf-border) !important;
-  background: var(--textfox-box-bg) !important;
+  background: var(--textfox-navbar-box) !important;
+  color: var(--tf-navbar-fg);
   border-radius: var(--tf-rounding);
   padding: 8px 0 !important;
   transition: border-color var(--tf-border-transition);
@@ -19,7 +20,7 @@ findbar {
     display: var(--tf-display-titles);
     text-shadow: none; /* B24: header-image themes shadow toolbar text past the glyphs */
     content: "find";
-    background-color: var(--tf-bg);
+    background-color: var(--tf-navbar-bg);
     position: absolute;
     padding: 0 4px;
     /* Centered on the top border line (V14): the static position sits 8px below the
@@ -38,7 +39,8 @@ findbar {
 
 .findbar-textbox {
   border: var(--border-width) solid var(--tf-border) !important;
-  background: var(--textfox-box-bg) !important;
+  background: var(--textfox-urlbar-box) !important;
+  color: var(--tf-urlbar-fg) !important;
 }
 
 .findbar-container>checkbox {

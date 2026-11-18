@@ -11,7 +11,8 @@ The option is on in config.css; an author sheet sets both options to 0 for the "
 captures. Captures pair up under a paused refresh driver (`advanceTimeAndRefresh`), so
 both of a pair show the same animation frame. For each setup, both browser Nova states:
 
-- off is as before: with the options at 0 the window paints the same pixels as the chrome
+- off is as before: with the options at 0 (and `--tf-theme-colors` 0, so V22's theme pairs do
+  not count) the window paints the same pixels as the chrome
   at `--baseline` (default c2c4b79, before T33) in the same state;
 - art shows: inside each box (navbar, tabs, bookmarks, sidebar, main, find), pixels that
   paint flat --tf-bg (the theme's frame color by default) with the option off must paint
@@ -26,7 +27,8 @@ both of a pair show the same animation frame. For each setup, both browser Nova 
   animation, or painting --tf-bg, shows as a patch. In the border rows under it, the
   title must differ from that capture (which shows the line) in HIDES of the pixels.
 
-`--identity` instead compares, with no option in config.css at all, the window with the
+`--identity` instead compares, with no option in config.css at all (with a theme,
+`--tf-theme-colors: 0`, since V22 repaints themed boxes on purpose), the window with the
 chrome at `--baseline` for no theme and ff_themes.DEFAULT_THEMES, both browser Nova states,
 classic and revamp layouts: the pixels must be the same.
 
@@ -69,7 +71,11 @@ HIDES = 0.9     # share of the border line under a title the title must cover
 NOISE = 2       # per channel: identical captures
 STEP = 333      # ms of animation between paused frames
 STEPS = [0, STEP, STEP]  # three paused frames for the title check
-OFF = ':root { --tf-theme-images: 0 !important; --tf-theme-gradient: 0 !important; }'
+# The art options off; theme colors (V22, T35) off too, so the comparison with the baseline (before
+# both) measures the art options alone.
+OFF = (':root { --tf-theme-images: 0 !important; --tf-theme-gradient: 0 !important; '
+       '--tf-theme-colors: 0 !important; }')
+THEME_COLORS_OFF = ':root { --tf-theme-colors: 0; }\n'
 BASELINE = 'c2c4b79'
 
 SHEET_JS = r"""
@@ -284,8 +290,11 @@ def check(display, directory, chrome, baseline, art, theme, nova, animated):
                 failures.append(f'theme art paints fewer than {ART_MIN} pixels off --tf-bg and frame color {frame} '
                                 f'in {", ".join(bare)}: {record["art"]}')
 
-            # --tf-theme-scrim: 100% hides the art (the paint of options 0); a lighter wash shows it
-            # stronger than the default 80%, measured as mean channel distance from options 0.
+            # --tf-theme-scrim: 100% hides the art; a lighter wash shows it stronger than the default
+            # 80%, measured as mean channel distance from the same window with the art image removed
+            # (options on: transparent boxes, and a URL bar field that keeps the theme's own, V22).
+            no_art = pixels(window.shoot(':root { --tf-theme-scrim: 100% !important; } '
+                                         'body { --textfox-art: none !important; }', 0))
             def strength(px):
                 x0, y0, x1, y1 = interior(boxes['navbar'])
                 width = px[0]
@@ -293,15 +302,15 @@ def check(display, directory, chrome, baseline, art, theme, nova, animated):
                 for y in range(y0, y1):
                     for x in range(x0, x1):
                         i = (y * width + x) * 3
-                        total += sum(abs(px[2][i + k] - off_px[2][i + k]) for k in range(3))
+                        total += sum(abs(px[2][i + k] - no_art[2][i + k]) for k in range(3))
                         n += 1
                 return total / max(n, 1)
             full = pixels(window.shoot(':root { --tf-theme-scrim: 100% !important; }', 0))
             light = pixels(window.shoot(':root { --tf-theme-scrim: 40% !important; }', 0))
             record['scrim'] = {'80%': strength(on_px), '100%': strength(full), '40%': strength(light)}
-            hidden_art, _ = count(off_px, full, interior(boxes['navbar']), TOLERANCE)
+            hidden_art, _ = count(no_art, full, interior(boxes['navbar']), TOLERANCE)
             if hidden_art:
-                failures.append(f'--tf-theme-scrim 100%: art still paints {hidden_art} navbar pixels off options 0')
+                failures.append(f'--tf-theme-scrim 100%: art still paints {hidden_art} navbar pixels off the art removed')
             if not record['scrim']['40%'] > record['scrim']['80%'] > 0:
                 failures.append(f'--tf-theme-scrim does not set the art strength: {record["scrim"]}')
 
@@ -359,7 +368,8 @@ def identical(display, directory, chrome, baseline, theme, nova, layout):
     shots = []
     for source in (baseline, chrome):  # one at a time: Sway tiles two windows side by side
         with tempfile.TemporaryDirectory(dir=directory) as name:
-            window = Window(display, name, source, '', theme, nova, layout)
+            # A Firefox theme's own pairs (V22) change the paint on purpose; no theme, no switch.
+            window = Window(display, name, source, THEME_COLORS_OFF if theme else '', theme, nova, layout)
             try:
                 shots.append(pixels(window.shoot('', 0)))
             finally:

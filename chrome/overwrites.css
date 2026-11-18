@@ -5,16 +5,8 @@
   --toolbox-background-color-inactive: var(--tf-bg) !important;
   --toolbox-text-color: var(--tf-fg) !important;
   --toolbox-text-color-inactive: var(--tf-fg) !important;
-  --toolbar-text-color: var(--tf-fg) !important;
-  --toolbar-field-text-color: var(--tf-fg) !important;
-  --toolbar-field-text-color-focus: var(--tf-fg) !important;
-  --sidebar-text-color: var(--tf-fg) !important;
   --link-color: var(--tf-accent) !important;
-  --urlbarView-highlight-background: var(
-    --toolbar-field-background-color
-  ) !important;
   --toolbox-non-lwt-bgcolor: var(--tf-bg) !important;
-  --toolbar-field-background-color: var(--tf-bg) !important;
 
   /* Keyboard focus rings sit on --tf-bg and its tints. Firefox's AccentColor
      (and the URL bar's half-transparent mix of it) can fall below 3:1 there. */
@@ -30,11 +22,7 @@
 
   /* tabs */
   --tab-selected-outline-color: transparent !important;
-  --tab-selected-bgcolor: color-mix(
-    in hsl,
-    var(--tf-fg) 8%,
-    var(--tf-bg)
-  ) !important;
+  --tab-selected-bgcolor: var(--tf-tab-selected-bg) !important;
   --tab-hover-background-color: color-mix(
     in hsl,
     var(--tf-fg) 4%,
@@ -115,5 +103,19 @@
 /* The selected tab's text token is redeclared on the tab itself and does not
    derive from --toolbox-text-color on built-in themes. */
 .tabbrowser-tab {
-  --tab-text-color-selected: var(--tf-fg) !important;
+  --tab-text-color-selected: var(--tf-tab-selected-fg) !important;
+}
+
+/* A Firefox theme sets these on :root's style attribute, and chrome/theme.css reads them there
+   (V22), so under a theme textfox sets them one level down: every chrome element inherits from
+   there. A root without a theme (no theme, or a sub-document such as the bookmarks sidebar, whose
+   root paints its text) takes them itself, as before. */
+:root:not([lwtheme]),
+:root > * {
+  --toolbar-text-color: var(--tf-navbar-fg) !important;
+  --toolbar-field-background-color: var(--tf-urlbar-bg) !important;
+  --toolbar-field-text-color: var(--tf-urlbar-fg) !important;
+  --toolbar-field-text-color-focus: var(--tf-urlbar-fg) !important;
+  --urlbarView-highlight-background: var(--tf-urlbar-bg) !important;
+  --sidebar-text-color: var(--tf-sidebar-fg) !important;
 }

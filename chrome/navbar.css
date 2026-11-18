@@ -53,6 +53,7 @@
 }
 
 #nav-bar {
+  background-color: var(--textfox-navbar-box) !important;
   margin: var(--tf-navbar-margin);
   padding: var(--tf-navbar-padding) !important;
   border-top: var(--border-width) !important;
@@ -69,7 +70,7 @@
     display: var(--tf-display-titles);
     text-shadow: none; /* B24: header-image themes shadow toolbar text past the glyphs */
     content: "navbar";
-    background-color: var(--tf-bg);
+    background-color: var(--tf-navbar-bg);
     position: absolute;
     /* Centered on the top border line (V14). #nav-bar is positioned and its padding is a
        user variable, so offset from its padding box instead of the static position. */
@@ -89,6 +90,7 @@
   }
 }
 #PersonalToolbar {
+  background-color: var(--textfox-navbar-box) !important;
   margin: 8px 8px 2px;
   padding: 4px !important;
   border-top: var(--border-width) !important;
@@ -105,7 +107,7 @@
     display: var(--tf-display-titles);
     text-shadow: none; /* B24: header-image themes shadow toolbar text past the glyphs */
     content: "bookmarks";
-    background-color: var(--tf-bg);
+    background-color: var(--tf-navbar-bg);
     position: absolute;
     padding: 0 2px;
     /* Centered on the top border line (V14): the static position sits 4px below the

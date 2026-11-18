@@ -15,7 +15,8 @@ Surfaces, in both browser Nova states:
   sidebar box, vertical tab strip, and a private window's navbar, vertical tab
   strip and content box.
 
-Chrome surfaces must paint --tf-bg as the dominant color (web content inside a
+Chrome surfaces must paint their own background variable (V22: --tf-sidebar-bg for the
+sidebar, --tf-navbar-bg for the navbar, --tf-popup-bg for panels, else --tf-bg) as the dominant color (web content inside a
 box is skipped), a border of their variable on the left, right and bottom
 edges, and a textfox-colored text target at 4.5:1. The content box (sidebar
 shown and hidden) and each split-view panel paint one frame (V17): between the
@@ -78,7 +79,12 @@ CONFIGS = {
     'sentinel': (f':root {{ {TABS} --tf-bg: rgb(24, 36, 64); --tf-border: rgb(200, 0, 90); '
                  '--tf-accent: rgb(0, 140, 90); }\n'),
     'known-bad': (f':root {{ {TABS} --tf-fg: var(--tf-bg); --tf-border-width: 0px; '
-                  '--tf-font-family: serif; }\n'),
+                  '--tf-navbar-fg: var(--tf-navbar-bg); --tf-urlbar-fg: var(--tf-urlbar-bg); '
+                  '--tf-popup-fg: var(--tf-popup-bg); --tf-sidebar-fg: var(--tf-sidebar-bg); '
+                  '--tf-tab-selected-fg: var(--tf-tab-selected-bg); --tf-font-family: serif; }'
+                  # Over theme art, body sets the surface pairs (V19, chrome/browser.css).
+                  ' body { --tf-navbar-fg: var(--tf-navbar-bg) !important;'
+                  ' --tf-urlbar-fg: var(--tf-urlbar-bg) !important; --tf-sidebar-fg: var(--tf-sidebar-bg) !important; }\n'),
 }
 LAYOUTS = {
     'classic': {'sidebar.revamp': False, 'sidebar.verticalTabs': False},
@@ -110,6 +116,22 @@ POPUPS = [
      "return document.getElementById('customizationui-widget-panel')?.state == 'open'",
      "PanelMultiView.hidePopup(document.getElementById('customizationui-widget-panel'))"),
 ]
+# Each surface's own color pair (V22): background and text variables.
+PAIRS = {'sidebar': ('--tf-sidebar-bg', '--tf-sidebar-fg'), 'navbar': ('--tf-navbar-bg', '--tf-navbar-fg'),
+         'extensions-panel': ('--tf-popup-bg', '--tf-popup-fg'), 'all-tabs-panel': ('--tf-popup-bg', '--tf-popup-fg'),
+         'page-context-menu': ('--tf-popup-bg', '--tf-popup-fg')}
+WINDOW_PAIR = ('--tf-bg', '--tf-fg')  # tab strips, content box, split panels
+
+
+def resolve(m, surface_name, selector):
+    """RESOLVE_JS for a surface with its own pair (unprefixed name), or None if missing."""
+    bg_var, fg_var = PAIRS.get(surface_name, WINDOW_PAIR)
+    colors = m.execute_script(RESOLVE_JS, script_args=[selector, bg_var, fg_var], sandbox='system')
+    if colors:
+        colors['bgVar'] = bg_var
+    return colors
+
+
 PAGE_CONTEXT = ('page-context-menu', '#contentAreaContextMenu', '--tf-accent',
                 '#contentAreaContextMenu > menuitem:not([hidden])', None)
 
@@ -244,13 +266,19 @@ class Run:
         name, selector, border_var, text_selector, skip = surface
         name = prefix + name
         self.m.set_context('chrome')
-        colors = self.m.execute_script(RESOLVE_JS, script_args=[selector], sandbox='system')
+        colors = resolve(self.m, surface[0], selector)
         if not colors:
             raise RuntimeError(f'{name}: {selector} missing')
         if skip:
             colors['skip'] = self.m.execute_script(SKIP_JS, script_args=[skip], sandbox='system')
             if not colors['skip']:
                 raise RuntimeError(f'{name}: {skip} missing')
+        if surface[0] == 'navbar':
+            # The URL bar field paints its own pair (V22; over art the theme's own field, B27), which
+            # can fill most of the navbar (a Nova private window): the navbar is judged around it.
+            field = self.capture.surface(name + ' urlbar-field', '.urlbar-background')['box']
+            if field:
+                colors['skip'] = field
         # Only over art: a popup's --tf-bg can sit within noise of faint art behind it.
         self.capture.noise = _paint['CONTROL_NOISE'] if self.art and over_art else 0
         self.capture.box_noise = _paint['CONTROL_NOISE'] if self.art else 0  # B29
@@ -280,7 +308,7 @@ class Run:
         gap = self.m.execute_script(GAP_JS, script_args=[selector], sandbox='system')
         if not gap:
             raise RuntimeError(f'{name}: {selector} .browserStack missing')
-        background = self.m.execute_script(RESOLVE_JS, script_args=[selector], sandbox='system')['--tf-bg']
+        background = resolve(self.m, surface[0], selector)['bg']
         image = Image(self.capture.shoot('', False), self.capture.size)
         reference = None
         if self.art:

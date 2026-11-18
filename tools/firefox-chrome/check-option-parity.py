@@ -20,6 +20,8 @@ MANUAL_CONFIG_CSS = ''':root {
   --tf-theme-gradient: 1;
   --tf-theme-images: 1;
   --tf-theme-scrim: 60%;
+  --tf-theme-colors: 0;
+  --tf-popup-bg: rgb(10, 20, 30);
   --tf-newtab-logo: "hi";
 }
 '''
@@ -34,6 +36,8 @@ NIX_OPTIONS = '''{
   textfox.config.themeGradient = true;
   textfox.config.themeImages = true;
   textfox.config.themeScrim = "60%";
+  textfox.config.themeColors = false;
+  textfox.config.colors.popup.background = "rgb(10, 20, 30)";
   textfox.config.newtabLogo = "hi";
   system.stateVersion = "26.05";
 }'''
@@ -83,6 +87,8 @@ def main():
         failures.append('theme gradient and images are not on')
     if manual['--tf-theme-scrim'] != '60%':
         failures.append('theme scrim does not follow configuration')
+    if manual['--tf-theme-colors'] != '0' or manual['--tf-popup-bg'] != 'rgb(10, 20, 30)':
+        failures.append('theme colors switch or popup background does not follow configuration')
     if manual['--tf-font-size'] != '17px' or manual['--tf-rounding'] != '4px':
         failures.append('sizes do not follow configuration')
     if manual['--tf-newtab-logo-rendered'] != '"hi"':

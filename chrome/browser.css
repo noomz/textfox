@@ -89,6 +89,10 @@ body {
   --textfox-art: none;
   --textfox-scrim: transparent;
   --textfox-box-bg: var(--tf-bg);
+  /* Surfaces with their own color pair (V22, chrome/theme.css). */
+  --textfox-navbar-box: var(--tf-navbar-bg);
+  --textfox-urlbar-box: var(--tf-urlbar-bg);
+  --textfox-sidebar-box: var(--tf-sidebar-bg);
 }
 
 /* Theme art (V19): --tf-theme-gradient 1 keeps browser Nova's own gradient (no Firefox theme),
@@ -105,6 +109,16 @@ body {
     --textfox-art: var(--textfox-root-art);
     --textfox-scrim: color-mix(in srgb, var(--tf-bg) clamp(0%, var(--tf-theme-scrim), 100%), transparent);
     --textfox-box-bg: transparent;
+    --textfox-navbar-box: transparent;
+    --textfox-urlbar-box: var(--textfox-urlbar-art, transparent);
+    --textfox-sidebar-box: transparent;
+    /* Boxes that drop their paint lie on the art and its --tf-bg scrim: the window pair. */
+    --tf-navbar-bg: var(--tf-bg);
+    --tf-navbar-fg: var(--tf-fg);
+    --tf-sidebar-bg: var(--tf-bg);
+    --tf-sidebar-fg: var(--tf-fg);
+    --tf-urlbar-bg: var(--textfox-urlbar-art-bg, var(--tf-bg));
+    --tf-urlbar-fg: var(--textfox-urlbar-art-fg, var(--tf-fg));
   }
 }
 @container style(--tf-theme-images >= 1) {
@@ -113,6 +127,16 @@ body {
     --textfox-art: var(--textfox-root-art);
     --textfox-scrim: color-mix(in srgb, var(--tf-bg) clamp(0%, var(--tf-theme-scrim), 100%), transparent);
     --textfox-box-bg: transparent;
+    --textfox-navbar-box: transparent;
+    --textfox-urlbar-box: var(--textfox-urlbar-art, transparent);
+    --textfox-sidebar-box: transparent;
+    /* Boxes that drop their paint lie on the art and its --tf-bg scrim: the window pair. */
+    --tf-navbar-bg: var(--tf-bg);
+    --tf-navbar-fg: var(--tf-fg);
+    --tf-sidebar-bg: var(--tf-bg);
+    --tf-sidebar-fg: var(--tf-fg);
+    --tf-urlbar-bg: var(--textfox-urlbar-art-bg, var(--tf-bg));
+    --tf-urlbar-fg: var(--textfox-urlbar-art-fg, var(--tf-fg));
   }
 }
 /* The art and the scrim over it (an inset shadow paints above the background). Titles paint the

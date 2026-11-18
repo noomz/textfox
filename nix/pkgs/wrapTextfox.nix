@@ -55,6 +55,7 @@ let
         sed "s|\./icons/|$assetsDirName/|g" "$src/icons.css" >> "$out/userChrome.css"
         cat "$src/menus.css" >> "$out/userChrome.css"
         cat "$src/tabs.css" >> "$out/userChrome.css"
+        cat "$src/theme.css" >> "$out/userChrome.css"
 
         cat "$src/defaults.css" >> "$out/userChrome.css"
         cat "$configCssPath" >> "$out/userChrome.css"

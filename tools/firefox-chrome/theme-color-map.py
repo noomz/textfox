@@ -188,6 +188,52 @@ def accent_row(colors):
             'keep' if cr >= 3 else 'FALLBACK (< 3)', '' if cr >= 3 else '--tf-accent default (--toolbarbutton-icon-fill)']
 
 
+def textfox_pairs(colors, art=False):
+    """What textfox paints per surface under a theme (V22 as chrome/theme.css implements it), from the
+    manifest alone: {surface: (background, text)}, opaque. The painted judge's oracle (T35).
+
+    A pair keeps the theme's colors when its background key is set and the composited pair reaches
+    4.5:1; a missing text key takes Firefox's fallback (toolbar_text -> tab_background_text,
+    toolbar_field_text -> black). Else the fallback: the window pair (frame with the theme's
+    tab_background_text, or contrast-color() text when that fails), and for the URL bar the navbar's.
+    Popups lie over --tf-bg (frame), where textfox paints them opaque. Over theme art (V19) the navbar
+    drops its paint and takes the window pair; the URL bar keeps its own pair, else the window's."""
+    frame = paint(colors, 'frame', None)
+    text = rgba(colors['tab_background_text']) if 'tab_background_text' in colors else None
+    text = text and over(text, frame)
+    window = (frame, text if text and ratio(text, frame) >= FLOOR else contrast_color(frame))
+
+    def pair(bg_key, backing, text_keys, fallback):
+        if bg_key not in colors:
+            return fallback
+        bg = over(rgba(colors[bg_key]), backing)
+        src = next((k for k in text_keys if k in colors or k in LITERAL), None)
+        if not src:
+            return fallback
+        fg = over(LITERAL.get(src) or rgba(colors[src]), bg)
+        return (bg, fg) if ratio(bg, fg) >= FLOOR else fallback
+
+    navbar = pair('toolbar', frame, ('toolbar_text', 'tab_background_text'), window)
+    urlbar = pair('toolbar_field', navbar[0], ('toolbar_field_text', '=black'), None)
+    return {
+        'window': window,
+        'navbar': window if art else navbar,
+        'urlbar': urlbar or (window if art else navbar),
+        'popup': pair('popup', frame, ('popup_text',), window),
+    }
+
+
+def theme_colors(spec):
+    """Normalized manifest colors of an AMO-hosted ff_themes spec ('ID[:light|dark]'), or None for a
+    built-in theme (no pinned manifest). A Nova theme's scheme picks its dark_theme."""
+    theme, scheme = ff_themes.parse(spec)
+    if theme not in ff_themes.AMO_HOSTED:
+        return None
+    m = json.loads(zipfile.ZipFile(ff_themes.xpi(theme)).read('manifest.json'))
+    colors = m['dark_theme']['colors'] if scheme == 'dark' and 'dark_theme' in m else m['theme']['colors']
+    return normalize(colors)
+
+
 def set_by(key, variants):
     """Who sets a key, with whole groups (every Nova light / dark variant) collapsed."""
     users = [label for label, c in variants if key in c]

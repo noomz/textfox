@@ -60,6 +60,18 @@ _paint = runpy.run_path(str(HERE / 'test-surface-paint-live.py'))
     _paint[k] for k in ('Capture', 'Image', 'judge', 'wait', 'near', 'ratio', 'inflate', 'border_sides',
                         'start_sway', 'stop', 'changed_mask', 'count', 'painted_box', 'RESOLVE_JS', 'CHROME_STYLE_JS',
                         'CHROME_SURFACES', 'DISTINCT', 'OUTPUT'))
+SURFACE_PAIRS = _paint['SURFACE_PAIRS']
+
+
+def resolve(m, name, selector):
+    """RESOLVE_JS with the surface's own pair (V22); window boxes take --tf-bg."""
+    bg_var, fg_var = SURFACE_PAIRS.get(name, ('--tf-bg', '--tf-fg'))[:2]
+    colors = m.execute_script(RESOLVE_JS, script_args=[selector, bg_var, fg_var], sandbox='system')
+    if colors:
+        colors['bgVar'] = bg_var
+    return colors
+
+
 langpack_for, LANGPACK_ID = (runpy.run_path(str(HERE / 'test-rtl-locale-live.py'))[k]
                              for k in ('langpack_for', 'LANGPACK_ID'))
 
@@ -323,7 +335,7 @@ def motion_checks(m, capture, env):
     if idle:  # reduced motion: nothing in chrome may animate at rest
         raise RuntimeError(f'motion: animations running at idle under reduced motion: {idle}')
     for name, selector in MOTION_SURFACES:
-        colors = m.execute_script(RESOLVE_JS, script_args=[selector], sandbox='system')
+        colors = resolve(m, name, selector)
         rect = m.execute_script(RECT_JS, script_args=[selector], sandbox='system')
         if not colors or not rect:
             raise RuntimeError(f'motion {name}: {selector} missing')
@@ -371,7 +383,7 @@ def rtl_checks(m, capture):
             wait(m, opener[1], f'{name} open')
             time.sleep(1)
             openers.append(name)
-        colors = m.execute_script(RESOLVE_JS, script_args=[selector], sandbox='system')
+        colors = resolve(m, name, selector)
         if not colors:
             raise RuntimeError(f'rtl {name}: {selector} missing')
         shot = capture.surface(name, selector, text_selector)

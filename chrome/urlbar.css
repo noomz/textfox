@@ -2,8 +2,9 @@
   text-align: center;
 }
 
+/* The field paints its own pair (V22): --tf-navbar-bg unless a Firefox theme sets one. */
 #urlbar-background, .urlbar-background {
-  background-color: transparent !important;
+  background-color: var(--textfox-urlbar-box) !important;
   border: unset !important;
   box-shadow: unset !important;
 }
@@ -22,7 +23,8 @@
 .urlbarView {
   text-align: start;
   margin-top: 4px;
-  background-color: var(--tf-bg) !important;
+  background-color: var(--tf-urlbar-bg) !important;
+  color: var(--tf-urlbar-fg);
   border: var(--border-width) solid var(--tf-accent) !important;
   border-radius: 0 0 var(--tf-rounding) var(--tf-rounding);
 }

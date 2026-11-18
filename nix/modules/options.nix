@@ -56,6 +56,51 @@ in
         description = "How much the background color washes over theme art when themeGradient or themeImages is on (0% shows the art at full strength, 100% hides it). Below 80% text may fall under 4.5:1 contrast on bright art.";
       };
 
+      themeColors = mkOption {
+        type = bool;
+        default = true;
+        description = "If a Firefox theme's own color pairs paint the navbar, URL bar, selected tab, popups and sidebar where they reach 4.5:1 contrast (else the background and text colors). Off: every surface takes the background and text colors.";
+      };
+
+      colors =
+        let
+          surface = name: bg: fg: theme: {
+            background = mkOption {
+              type = str;
+              default = bg;
+              description = "${name} background color. Default: the Firefox theme's ${theme} where its pair reaches 4.5:1, else the fallback shown.";
+            };
+            text = mkOption {
+              type = str;
+              default = fg;
+              description = "Text color on the ${name} background.";
+            };
+          };
+        in
+        {
+          navbar =
+            surface "Navbar, bookmarks toolbar and findbar" "var(--textfox-navbar-bg, var(--tf-bg))"
+              "var(--textfox-navbar-fg, var(--tf-fg))"
+              "toolbar";
+          urlbar =
+            surface "URL bar, search field and URL bar results" "var(--textfox-urlbar-bg, var(--tf-navbar-bg))"
+              "var(--textfox-urlbar-fg, var(--tf-navbar-fg))"
+              "toolbar_field";
+          tabSelected =
+            surface "Selected tab"
+              "var(--textfox-tab-selected-bg, color-mix(in hsl, var(--tf-fg) 8%, var(--tf-bg)))"
+              "var(--textfox-tab-selected-fg, var(--tf-fg))"
+              "tab_selected";
+          popup =
+            surface "Menu and panel" "var(--textfox-popup-bg, var(--tf-bg))"
+              "var(--textfox-popup-fg, var(--tf-fg))"
+              "popup";
+          sidebar =
+            surface "Sidebar" "var(--textfox-sidebar-bg, var(--tf-bg))"
+              "var(--textfox-sidebar-fg, var(--tf-fg))"
+              "sidebar";
+        };
+
       newtabLogo = mkOption {
         type = str;
         default = "   __            __  ____          \n  / /____  _  __/ /_/ __/___  _  __\n / __/ _ \\| |/_/ __/ /_/ __ \\| |/_/\n/ /_/  __/>  </ /_/ __/ /_/ />  <  \n\\__/\\___/_/|_|\\__/_/  \\____/_/|_|  ";
@@ -82,13 +127,13 @@ in
         };
         accent = mkOption {
           type = str;
-          default = "var(--toolbarbutton-icon-fill)";
-          description = "The accent color to use";
+          default = "var(--textfox-accent, var(--toolbarbutton-icon-fill))";
+          description = "The accent color to use. The default takes a Firefox theme's tab line color where it reaches 3:1 against the background.";
         };
         color = mkOption {
           type = str;
-          default = "contrast-color(var(--tf-bg))";
-          description = "Text color on the background color. The default picks black or white, whichever reads better; \"var(--lwt-text-color)\" keeps the theme's text color.";
+          default = "var(--textfox-window-fg, contrast-color(var(--tf-bg)))";
+          description = "Text color on the background color. The default takes a Firefox theme's own text color where it reaches 4.5:1, else black or white, whichever reads better.";
         };
       };
 
@@ -199,6 +244,17 @@ in
           --tf-theme-gradient: ${if cfg.themeGradient then "1" else "0"};
           --tf-theme-images: ${if cfg.themeImages then "1" else "0"};
           --tf-theme-scrim: ${cfg.themeScrim};
+          --tf-theme-colors: ${if cfg.themeColors then "1" else "0"};
+          --tf-navbar-bg: ${cfg.colors.navbar.background};
+          --tf-navbar-fg: ${cfg.colors.navbar.text};
+          --tf-urlbar-bg: ${cfg.colors.urlbar.background};
+          --tf-urlbar-fg: ${cfg.colors.urlbar.text};
+          --tf-tab-selected-bg: ${cfg.colors.tabSelected.background};
+          --tf-tab-selected-fg: ${cfg.colors.tabSelected.text};
+          --tf-popup-bg: ${cfg.colors.popup.background};
+          --tf-popup-fg: ${cfg.colors.popup.text};
+          --tf-sidebar-bg: ${cfg.colors.sidebar.background};
+          --tf-sidebar-fg: ${cfg.colors.sidebar.text};
           --tf-newtab-logo: "${cfg.newtabLogo}";
           --tf-navbar-margin: ${cfg.navbar.margin};
           --tf-navbar-padding: ${cfg.navbar.padding};

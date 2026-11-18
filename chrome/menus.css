@@ -2,9 +2,9 @@
   menupopup,
   panel
 ):not(.autoscroller) {
-  --panel-background: var(--tf-bg) !important;
-  --panel-background-color: var(--tf-bg) !important;
-  --panel-text-color: var(--tf-fg) !important;
+  --panel-background: var(--tf-popup-bg) !important;
+  --panel-background-color: var(--tf-popup-bg) !important;
+  --panel-text-color: var(--tf-popup-fg) !important;
   --panel-border-radius: var(--tf-rounding) !important;
   --panel-border-color: var(--tf-accent) !important;
   --panel-separator-color: var(--tf-border) !important;
@@ -24,10 +24,10 @@ slot[part="content"] {
 menu,
 menuitem {
   &:where([_moz-menuactive]:not([disabled="true"])) {
-    background: var(--tab-selected-bgcolor) !important;
+    background: color-mix(in hsl, var(--tf-popup-fg) 8%, var(--tf-popup-bg)) !important;
   }
   &:where([_moz-menuactive="true"][disabled="true"]) {
-    background: var(--tab-hover-background-color) !important;
+    background: color-mix(in hsl, var(--tf-popup-fg) 4%, var(--tf-popup-bg)) !important;
   }
 }
 

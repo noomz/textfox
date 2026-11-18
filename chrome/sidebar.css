@@ -24,10 +24,11 @@ sidebar-main {
   border: var(--border-width) solid var(--tf-border) !important;
   border-radius: var(--tf-rounding) !important;
   transition: border-color var(--tf-border-transition);
-  /* --tf-bg, or transparent over theme art (V19, chrome/browser.css). */
-  background: var(--textfox-box-bg) !important;
+  /* --tf-sidebar-bg, or transparent over theme art (V19, chrome/browser.css). */
+  background: var(--textfox-sidebar-box) !important;
+  color: var(--tf-sidebar-fg);
   /* Nova paints the panel browser (#sidebar) with this variable. */
-  --sidebar-background-color: var(--textfox-box-bg) !important;
+  --sidebar-background-color: var(--textfox-sidebar-box) !important;
   &:hover {
     border-color: var(--tf-accent) !important;
   }
@@ -36,8 +37,8 @@ sidebar-main {
     text-shadow: none; /* B24: header-image themes shadow toolbar text past the glyphs */
     font-size: var(--tf-font-size);
     content: "tool";
-    color: var(--tf-fg);
-    background-color: var(--tf-bg);
+    color: var(--tf-sidebar-fg);
+    background-color: var(--tf-sidebar-bg);
     position: absolute;
     padding: 0 4px;
     /* Centered on the top border line (V14): the static position sits 8px below the

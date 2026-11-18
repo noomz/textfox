@@ -45,8 +45,10 @@ _a firefox theme for the tui enthusiast_
 > menus, findbar and new tab. Firefox themes from the theme picker (Light,
 > Dark, Alpenglow and the Nova themes) are checked on Linux for the same
 > surfaces and the section titles: textfox takes the theme's frame color as its
-> background and paints every box with it, so the theme's toolbar color and
-> background images do not show. `--tf-theme-images: 1` shows a theme's images
+> background, and each box paints the theme's own colors for it (navbar, URL bar,
+> selected tab, menus, sidebar) where they reach 4.5:1 contrast, else the frame
+> color with readable text (`--tf-theme-colors: 0` paints every box with the frame
+> color). The theme's background images do not show by default. `--tf-theme-images: 1` shows a theme's images
 > and gradients behind the whole window, `--tf-theme-gradient: 1` browser Nova's
 > own gradient without a theme; boxes then paint a translucent `--tf-bg` wash over
 > the art so text stays readable (`--tf-theme-scrim`, 80% by default). Both are checked on Linux with three image
@@ -237,6 +239,11 @@ All configuration options are optional and can be set as this example shows (rea
         containerFrame = true;
         themeGradient = true;
         themeImages = true;
+        themeColors = false;
+        colors.popup = {
+          background = "#123456";
+          text = "#fedcba";
+        };
         newtabLogo = "   __            __  ____          \A   / /____  _  __/ /_/ __/___  _  __\A  / __/ _ \\| |/_/ __/ /_/ __ \\| |/_/\A / /_/  __/>  </ /_/ __/ /_/ />  <  \A \\__/\\___/_/|_|\\__/_/  \\____/_/|_|  ";
         font = {
           family = "Fira Code";
@@ -345,9 +352,20 @@ The theme ships with a `defaults.css`, this file can be overridden by creating a
 :root {
   --tf-font-family: "SF Mono", Consolas, monospace; /* Font family of config */
   --tf-font-size: 14px; /* Font size of config */
-  --tf-accent: var(--toolbarbutton-icon-fill); /* Accent color used, eg: color when hovering a container  */
+  --tf-accent: var(--textfox-accent, var(--toolbarbutton-icon-fill)); /* Accent color used, eg: color when hovering a container. A Firefox theme's tab line color where it reaches 3:1 against --tf-bg */
   --tf-bg: var(--lwt-accent-color, -moz-dialog); /* Background color of all elements, tab colors derive from this */
-  --tf-fg: contrast-color(var(--tf-bg)); /* Text color on --tf-bg; black or white, whichever reads better. var(--lwt-text-color) keeps the theme's text color */
+  --tf-fg: var(--textfox-window-fg, contrast-color(var(--tf-bg))); /* Text color on --tf-bg: a Firefox theme's own text color where it reaches 4.5:1, else black or white, whichever reads better */
+  --tf-theme-colors: 1; /* If a Firefox theme's own color pairs paint the surfaces below where they reach 4.5:1 (else --tf-bg and --tf-fg): 1 = shown, 0 = every surface --tf-bg and --tf-fg (0 or 1 only) */
+  --tf-navbar-bg: var(--textfox-navbar-bg, var(--tf-bg)); /* Navbar, bookmarks toolbar and findbar background; theme: toolbar */
+  --tf-navbar-fg: var(--textfox-navbar-fg, var(--tf-fg)); /* Text on --tf-navbar-bg; theme: toolbar_text */
+  --tf-urlbar-bg: var(--textfox-urlbar-bg, var(--tf-navbar-bg)); /* URL bar, search field and URL bar results background; theme: toolbar_field */
+  --tf-urlbar-fg: var(--textfox-urlbar-fg, var(--tf-navbar-fg)); /* Text on --tf-urlbar-bg; theme: toolbar_field_text */
+  --tf-tab-selected-bg: var(--textfox-tab-selected-bg, color-mix(in hsl, var(--tf-fg) 8%, var(--tf-bg))); /* Selected tab background; theme: tab_selected */
+  --tf-tab-selected-fg: var(--textfox-tab-selected-fg, var(--tf-fg)); /* Text on --tf-tab-selected-bg; theme: tab_text */
+  --tf-popup-bg: var(--textfox-popup-bg, var(--tf-bg)); /* Menu and panel background; theme: popup */
+  --tf-popup-fg: var(--textfox-popup-fg, var(--tf-fg)); /* Text on --tf-popup-bg; theme: popup_text */
+  --tf-sidebar-bg: var(--textfox-sidebar-bg, var(--tf-bg)); /* Sidebar background; theme: sidebar */
+  --tf-sidebar-fg: var(--textfox-sidebar-fg, var(--tf-fg)); /* Text on --tf-sidebar-bg; theme: sidebar_text */
   --tf-border: color-mix(in srgb, var(--tf-fg) 20%, var(--tf-bg)); /* Border color when not hovered */
   --tf-border-transition: 0.2s ease; /* Smooth color transitions for borders */
   --tf-border-width: 2px; /* Width of borders */
