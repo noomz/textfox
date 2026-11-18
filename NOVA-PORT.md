@@ -1982,3 +1982,28 @@ Bounds:
 
 - C open in §T.35; until then `--tf-theme-images` 1 over a mid-tone image on macOS can put the URL bar text under 4.5:1.
 - Windows and macOS are VMs (KVM, Tart), not physical displays; the Tart VM renders at dpr 2.
+
+## T36 faster painted checks (issue #1)
+
+User decisions (2026-11-18): known-bad control once per theme; a second macOS VM splitting suites.
+
+Harness:
+
+- `ff_themes.suite_runs` builds T15's and T20's run list (V23): every good config on every combination of Nova state (and, in T20, layout); the known-bad control once per theme, on a combination rotating across themes; with no theme, on every combination. It raises if any theme would go without a control.
+- Run counts: T15 `--themes art` 48 → 40, `--themes every` 156 → 130; T20 `--themes default` 48 → 36, `--themes every` 312 → 234; no theme unchanged (T15 6).
+- T15 gains `--nova false|true` (as T20 has), so a suite without themes can be split by Nova state.
+- `run-split.py` deals a suite's themes to several hosts (no theme: by Nova state), starts each share detached over SSH, polls for its exit code, fetches its log, and passes only when every share exits 0. `--sync` copies chrome/, user.js and the harness first.
+- macOS: `paint_display.mac_onscreen_owners` (CoreGraphics through ctypes) lists on-screen windows; `MacDisplay.capture` fails at once when a Notification Center window sits above layer 0, i.e. a banner is up. Found because a "See what's new in macOS 27" Tips banner, translucent and over the navbar, aborted two split shares ("navbar: painted box … 2850 wide … wrong surface measured", the same box each time; kept frames showed the banner). Desktop widgets are Notification Center windows at layer 0 and do not count. The banner cannot be removed from SSH (Accessibility permission, SIP-protected `tipsd`); the user dismissed it in the VMs' windows.
+
+VMs (Tart, Apple M4 Max host): `tf-t34-mac` renamed `mac_jr` (192.168.64.6); `mac_jr2` cloned from it (192.168.64.7; clone 0.07 s, about 1 GB new disk). Both run headed (`tart run`, a window each on the host) under `caffeinate`; screen 2880×1800.
+
+Proof (Firefox 160.0, build `20261104181552`):
+
+- Mutation (Linux): the second theme's known-bad run fed the defaults config (`--theme` compact dark, compact light): exit 1, "known-bad config.css not detected on" all 9 surfaces at nova=True; run order shows the rotation (compact dark's control with Nova off, compact light's with Nova on).
+- Linux, headed Sway: T15 `--themes art` 40 runs, 1684 s, exit 0; T20 `--themes default` 36 runs, 2303 s, exit 0 (23 surfaces).
+- macOS, T15 `--themes art` split on `mac_jr` and `mac_jr2` at once: 2 shares × 20 runs, 21.0 min, exit 0 (9 surfaces each). Before T36, on one VM: 48 runs, about 45 min (T34's final artnone). About 2.1× faster.
+
+Bounds:
+
+- In T20, a suite of fewer than four themes leaves some Nova-and-layout combinations without their own control run (V23 asks one per theme).
+- A notification banner still stops a macOS run; the harness now names it instead of misreporting a surface.

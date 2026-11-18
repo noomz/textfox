@@ -19,6 +19,8 @@ command line, so it may be a launcher with arguments (a nix-portable store path)
 Captures are binary PPM files. `diff` compares two captures in pure Python, so
 macOS and Windows need no ImageMagick.
 """
+import ctypes
+import ctypes.util
 import os
 from pathlib import Path
 import runpy
@@ -65,6 +67,40 @@ def rgb_from_bgra(buffer, width, height, stride, top_down):
         target[0::3], target[1::3], target[2::3] = line[2::4], line[1::4], line[0::4]
         out[row * width * 3:(row + 1) * width * 3] = target
     return out
+
+
+def mac_onscreen_owners():
+    """(owner name, layer) of the windows on screen (macOS, CoreGraphics through ctypes), front to back."""
+    cg = ctypes.cdll.LoadLibrary(ctypes.util.find_library('CoreGraphics'))
+    cf = ctypes.cdll.LoadLibrary(ctypes.util.find_library('CoreFoundation'))
+    vp, index_t, utf8 = ctypes.c_void_p, ctypes.c_long, 0x08000100
+    cg.CGWindowListCopyWindowInfo.restype = vp
+    cg.CGWindowListCopyWindowInfo.argtypes = [ctypes.c_uint32, ctypes.c_uint32]
+    cf.CFArrayGetCount.restype, cf.CFArrayGetCount.argtypes = index_t, [vp]
+    cf.CFArrayGetValueAtIndex.restype, cf.CFArrayGetValueAtIndex.argtypes = vp, [vp, index_t]
+    cf.CFDictionaryGetValue.restype, cf.CFDictionaryGetValue.argtypes = vp, [vp, vp]
+    cf.CFStringCreateWithCString.restype = vp
+    cf.CFStringCreateWithCString.argtypes = [vp, ctypes.c_char_p, ctypes.c_uint32]
+    cf.CFStringGetCString.restype = ctypes.c_bool
+    cf.CFStringGetCString.argtypes = [vp, ctypes.c_char_p, index_t, ctypes.c_uint32]
+    cf.CFNumberGetValue.restype, cf.CFNumberGetValue.argtypes = ctypes.c_bool, [vp, index_t, vp]
+    cf.CFRelease.argtypes = [vp]
+    key = cf.CFStringCreateWithCString(None, b'kCGWindowOwnerName', utf8)
+    layer_key = cf.CFStringCreateWithCString(None, b'kCGWindowLayer', utf8)
+    windows = cg.CGWindowListCopyWindowInfo(1 | 16, 0)  # on screen only, no desktop elements
+    owners, buffer = [], ctypes.create_string_buffer(512)
+    try:
+        for i in range(cf.CFArrayGetCount(windows)):
+            info = cf.CFArrayGetValueAtIndex(windows, i)
+            name, layer = cf.CFDictionaryGetValue(info, key), ctypes.c_int32()
+            cf.CFNumberGetValue(cf.CFDictionaryGetValue(info, layer_key), 3, ctypes.byref(layer))  # SInt32
+            owners.append((buffer.value.decode() if name and cf.CFStringGetCString(name, buffer, 512, utf8)
+                           else '', layer.value))
+    finally:
+        cf.CFRelease(windows)
+        cf.CFRelease(key)
+        cf.CFRelease(layer_key)
+    return owners
 
 
 def read_bmp(path):
@@ -280,6 +316,12 @@ class MacDisplay(Display):
         return super().bind(m)
 
     def capture(self, path):
+        # A notification banner is a Notification Center window above normal windows (its desktop
+        # widgets sit below them); it shows at the top right, over Firefox, and is translucent, so
+        # the pixels under it follow Firefox's (a Tips banner after a VM restart: navbar box 2850 px
+        # wide, T36).
+        if any(owner == 'Notification Center' and layer > 0 for owner, layer in mac_onscreen_owners()):
+            raise RuntimeError('a notification banner is on screen over Firefox; dismiss it and rerun')
         bmp = self.directory / 'capture.bmp'
         region = ','.join(str(round(self.points[k])) for k in ('x', 'y', 'width', 'height'))
         result = subprocess.run(['screencapture', '-x', '-t', 'bmp', '-R', region, str(bmp)],

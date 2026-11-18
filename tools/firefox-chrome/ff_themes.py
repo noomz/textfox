@@ -98,6 +98,21 @@ def hold_still(m, art):
         time.sleep(1)
 
 
+def suite_runs(themes, combos, configs, control='known-bad'):
+    """A painted suite's runs (theme, *combo, config), per V23: every good config on every combo
+    (Nova state, layout), the control once per theme on a combo rotating across themes, and with
+    no theme on every combo."""
+    runs = [(theme, *combo, kind)
+            for i, theme in enumerate(themes or [None])
+            for j, combo in enumerate(combos)
+            for kind in configs
+            if kind != control or theme is None or j == i % len(combos)]
+    unchecked = set(themes or [None]) - {run[0] for run in runs if run[-1] == control}
+    if control in configs and unchecked:
+        raise RuntimeError(f'V23: no {control} run for {sorted(map(str, unchecked))}')
+    return runs
+
+
 def parse(spec):
     """'ID[:light|dark]' -> (id, scheme or None); unknown themes fail."""
     theme, _, scheme = spec.partition(':')

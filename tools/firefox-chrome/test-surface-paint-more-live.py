@@ -29,8 +29,9 @@ page.
 
 Cases: shipped defaults, a sentinel config.css (or `--config FILE`), and a
 known-bad config.css (text the color of the background, borders gone, a
-proportional font). Every surface must fail the known-bad case. Exits 0 or 1,
-never inconclusive.
+proportional font). Every surface must fail the known-bad case, which runs once
+per theme on a Nova state and layout rotating across themes, and on every one
+with no theme (V23). Exits 0 or 1, never inconclusive.
 
 `--theme ID[:light|dark]` (repeatable) or `--themes default|every` runs every
 case with that Firefox theme active, as test-surface-paint-live.py does (V15).
@@ -550,7 +551,7 @@ def main():
         env = os.environ.copy()
         sway = start_sway(directory, env)
         try:
-            runs = [(t, n, la, k) for t in themes or [None] for n in novas for la in layouts for k in configs]
+            runs = ff_themes.suite_runs(themes, [(n, la) for n in novas for la in layouts], configs)
             for theme, nova, layout, kind in runs:
                 config = configs[kind]
                 meta, records, found = launch(env, nova, layout, config, kind, theme, args.art)

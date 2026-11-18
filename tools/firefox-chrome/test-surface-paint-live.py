@@ -29,7 +29,9 @@ browser Nova states. Cases: the shipped defaults, a sentinel config.css with
 distinct colors (or `--config FILE` in its place), and a known-bad config.css
 that hides text and borders. Every surface must pass the good cases and fail the
 known-bad case; a check that misses the known-bad config, or unstable captures,
-fail the run. Exits 0 or 1, never inconclusive.
+fail the run. The known-bad case runs once per theme, on the Nova state
+alternating across themes, and in both Nova states with no theme (V23). Exits 0
+or 1, never inconclusive.
 
 Sizes in device pixels (size slack, border search depth, least text pixels)
 scale with devicePixelRatio, so a Retina capture is held to the same bar.
@@ -732,6 +734,8 @@ def main():
                         'classic and Nova), every theme-picker theme in both schemes, or art (image themes, nova-ash)')
     parser.add_argument('--art', choices=tuple(ff_themes.ART_CONFIG), default='none',
                         help='turn --tf-theme-images or --tf-theme-gradient on (V19)')
+    parser.add_argument('--nova', choices=['false', 'true'], action='append',
+                        help='limit to a browser Nova state (run-split.py splits a suite this way)')
     parser.add_argument('--high-contrast', action='store_true',
                         help='Windows only: run with real OS high contrast on (High Contrast Black)')
     args = parser.parse_args()
@@ -744,6 +748,8 @@ def main():
                            'art': ff_themes.ART_THEMES, None: []}[args.themes]
     for spec in themes:
         ff_themes.parse(spec)
+    novas = [(n == 'true',) for n in args.nova] if args.nova else [(False,), (True,)]
+    states = ('both browser Nova states' if len(novas) == 2 else f'browser Nova {str(novas[0][0]).lower()}')
     configs = dict(CONFIGS)
     if args.config:
         del configs['sentinel']
@@ -758,7 +764,7 @@ def main():
         try:
             if hc:
                 hc['set_high_contrast'](args.high_contrast)
-            for theme, nova, kind in [(t, n, k) for t in themes or [None] for n in (False, True) for k in configs]:
+            for theme, nova, kind in ff_themes.suite_runs(themes, novas, configs):
                 config = configs[kind]
                 meta, records, found = run(display, nova, config, kind,
                                             high_contrast=args.high_contrast if hc else None,
@@ -802,11 +808,11 @@ def main():
         f' with Firefox themes {", ".join(themes)}' if themes else '') + (
         ' with the default new tab (widgets, stories, weather)' if args.newtab_defaults else '')
     if args.high_contrast:
-        print(f'PASS: {len(surfaces)} surfaces paint readable text and new-tab borders on {where} in both browser '
-              f'Nova states ({good}); the known-bad config.css fails the rest, high contrast kept readable: '
+        print(f'PASS: {len(surfaces)} surfaces paint readable text and new-tab borders on {where} in {states} '
+              f'({good}); the known-bad config.css fails the rest, high contrast kept readable: '
               + '; '.join(f'nova={n}: {", ".join(k) or "none"}' for n, k in hc_kept.items()))
         return 0
-    print(f'PASS: {len(surfaces)} surfaces paint textfox styling on {where} in both browser Nova states ({good}); '
+    print(f'PASS: {len(surfaces)} surfaces paint textfox styling on {where} in {states} ({good}); '
           'the known-bad config.css fails every one')
     return 0
 
