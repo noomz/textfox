@@ -103,3 +103,9 @@ box#vertical-tabs {
 tabs {
   text-transform: var(--tf-text-transform);
 }
+
+/* Firefox 160 macOS fades unselected labels to 0.6; no label color stays readable at that
+   on a mid-tone theme frame (B26, V21). textfox shows every label at full opacity. */
+.tabbrowser-tab .tab-label-container {
+  opacity: 1 !important;
+}

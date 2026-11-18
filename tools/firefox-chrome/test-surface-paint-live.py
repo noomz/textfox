@@ -89,6 +89,7 @@ import socket
 import subprocess
 import sys
 import tempfile
+import traceback
 import time
 
 from ff_inspect import connect
@@ -112,6 +113,7 @@ SLACK = 48         # px a surface may paint beyond its element box (section titl
 # popup's rounded corners one unit differently between frames. Below TOLERANCE, so such noise
 # cannot make a surface pass or fail (test-a11y-paint-live.py's StableCapture does the same).
 CONTROL_NOISE = 2
+HIDDEN_SHOTS = 4  # captures of the surface hidden, until two in a row agree (B28)
 ART_MIN_PIXELS = 100  # pixels (scaled by dpr squared) where the art must paint under a box
 ART_SHOWN = 0.6       # share of those a box must leave showing: text and controls cover the rest
 # Windows: a file Firefox's last child still holds must not fail the run (Python 3.10+ only; macOS ships 3.9).
@@ -243,6 +245,14 @@ out.dom = {width:r.width, height:r.height};
 return out;
 """
 
+# Product of opacities from an unselected tab's label up to its tab (V21).
+LABEL_OPACITY_JS = r"""
+const label = document.querySelector('.tabbrowser-tab:not([selected]) .tab-label');
+let opacity = 1;
+for (let e = label; e && e.localName !== 'tab'; e = e.parentElement) opacity *= parseFloat(getComputedStyle(e).opacity);
+return Math.round(opacity * 1000) / 1000;
+"""
+
 NEWTAB_MARK_JS = PARSE_JS + r"""
 for (const old of document.querySelectorAll('[data-tf-paint-probe]')) old.removeAttribute('data-tf-paint-probe');
 for (const selector of arguments[0]) {
@@ -354,6 +364,10 @@ class Capture:
         # Over theme art (V19) a large image rasterizes 1 unit differently where a region
         # repaints; such noise must not join a surface's painted pixels.
         self.noise = 0
+        # The painted box ignores such noise for every surface, popups too: one art pixel a unit
+        # off under the findbar stretched URL bar results 379 px to 561 (B29). A popup's box
+        # comes from its border, so faint --tf-bg over faint art cannot shrink it.
+        self.box_noise = 0
 
     def shoot(self, css, content):
         self.m.execute_async_script(CONTENT_STYLE_JS if content else CHROME_STYLE_JS,
@@ -383,7 +397,17 @@ class Capture:
         hide = '{ visibility: hidden !important; }'
         base = self.shoot('', content)
         control = self.shoot('', content)
+        # On Linux Wayland a just-opened popup can keep its painted frame through the first
+        # style change (Topo! Black, B28), so the hidden capture counts once two in a row agree.
         hidden = self.shoot(f'{selector} {hide}', content)
+        for _ in range(HIDDEN_SHOTS - 1):
+            again = self.shoot(f'{selector} {hide}', content)
+            settled = not diff(hidden, again, noise=CONTROL_NOISE)[0]
+            hidden = again
+            if settled:
+                break
+        else:
+            raise UnstableCapture(f'{name}: hidden capture never settled')
         text = self.shoot(f'{text_selector} {hide}', content) if text_selector else None
         restored = self.shoot('', content)
         stem = self.directory / f'mask-{self.shots}'
@@ -392,6 +416,8 @@ class Capture:
         if any(controls.values()):
             raise UnstableCapture(f'{name}: captures unstable {controls}')
         changed, box = diff(base, hidden, f'{stem}-{name}.pgm', self.noise)
+        if self.box_noise > self.noise:
+            box = diff(base, hidden, noise=self.box_noise)[1]
         return {'image': Image(base, self.size), 'box': box, 'changed': changed,
                 'text': Image(text, self.size) if text else None, 'hidden': Image(hidden, self.size)}
 
@@ -634,11 +660,18 @@ def run(display, nova, config, kind, high_contrast=None, newtab_defaults=False, 
                     raise RuntimeError(f'{name}: {selector} missing')
                 # Only over art: a popup's --tf-bg can sit within noise of faint art behind it.
                 capture.noise = CONTROL_NOISE if meta['art']['expected'] and not opener else 0
+                capture.box_noise = CONTROL_NOISE if meta['art']['expected'] else 0
                 shot = capture.surface(name, selector, text_selector)
-                capture.noise = 0
+                capture.noise = capture.box_noise = 0
                 record, failures[name] = judge(name, shot, colors, border_var=border_var, dpr=display.dpr,
                                                readable_only=bool(high_contrast),
                                                art=meta['art']['expected'] and not opener)
+                if name == 'tabs':
+                    # V21: textfox owns the unselected label's opacity; Firefox 160 fades it to 0.6 on
+                    # macOS, which no label color survives on a mid-tone theme frame (B26).
+                    record['labelOpacity'] = m.execute_script(LABEL_OPACITY_JS, sandbox='system')
+                    if record['labelOpacity'] != 1:
+                        failures[name].append(f'tabs unselected label paints at opacity {record["labelOpacity"]}, not 1')
                 records.append(record)
 
             missing_art = art_under_some(records)
@@ -782,5 +815,6 @@ if __name__ == '__main__':
     try:
         sys.exit(main())
     except Exception as error:  # an untrustworthy run is a failure, never inconclusive
+        traceback.print_exc()
         print(f'FAIL: {error}', file=sys.stderr)
         sys.exit(1)

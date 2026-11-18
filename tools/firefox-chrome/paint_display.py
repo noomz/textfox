@@ -186,17 +186,19 @@ class Display:
                 process.kill()
                 process.wait()
             return
+        # macOS answers EPERM, not ESRCH, once only exiting or zombie members remain (B30): none
+        # of them can still write the profile, so both mean the group is done.
         for sig, timeout in ((signal.SIGTERM, 15), (signal.SIGKILL, 10)):
             try:
                 os.killpg(group, sig)
-            except ProcessLookupError:
+            except (ProcessLookupError, PermissionError):
                 break
             deadline = time.monotonic() + timeout
             while time.monotonic() < deadline:
                 process.poll()
                 try:
                     os.killpg(group, 0)
-                except ProcessLookupError:
+                except (ProcessLookupError, PermissionError):
                     break  # group empty
                 time.sleep(.2)
             else:

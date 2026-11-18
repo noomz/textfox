@@ -252,8 +252,9 @@ class Run:
                 raise RuntimeError(f'{name}: {skip} missing')
         # Only over art: a popup's --tf-bg can sit within noise of faint art behind it.
         self.capture.noise = _paint['CONTROL_NOISE'] if self.art and over_art else 0
+        self.capture.box_noise = _paint['CONTROL_NOISE'] if self.art else 0  # B29
         shot = self.capture.surface(name, selector, text_selector)
-        self.capture.noise = 0
+        self.capture.noise = self.capture.box_noise = 0
         box = shot['box']
         # Client rects are used as compositor pixels; Wayland's mozInnerScreenX counts the CSD shadow, so
         # check placement directly: the skipped web content must sit inside the surface's painted box.

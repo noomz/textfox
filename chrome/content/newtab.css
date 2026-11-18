@@ -89,6 +89,8 @@
   /* links */
   .top-site-outer {
     .tile {
+      /* Firefox resets the tile to the OS scheme; textfox's colors follow the page's (B25) */
+      color-scheme: inherit !important;
       box-shadow: none !important;
       border-radius: var(--tf-rounding) !important;
       border: var(--tf-border-width) solid var(--newtab-border-color) !important;

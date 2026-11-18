@@ -398,7 +398,7 @@ def main():
         display = paint_display.open_display(Path(directory) / 'sway', dict(os.environ))
         try:
             for art, theme, nova in setups:
-                animated = theme == ff_themes.STARFIELD
+                animated = bool(theme) and ff_themes.parse(theme)[0] == ff_themes.STARFIELD
                 record, problems = check(display, directory, chrome, baseline, art, theme, nova, animated)
                 print(json.dumps(record), flush=True)
                 failures += [f'{art} theme={theme} nova={nova}: {p}' for p in problems]

@@ -1944,3 +1944,41 @@ Bounds:
   - `check-option-wiring.py` (29 options), `check-option-parity.py` (headless), `check-config-defaults.py`, `nixfmt-tree --ci`: exit 0.
 - T20 `--themes every`, options 0, at `373f274` (no CSS or harness change since `c612d6c`; Firefox 160.0 build `20261104181552`, Linux Sway, headed; `TMPDIR=~/.cache/tfx`): 312 runs (26 setups × both Nova states × classic and revamp × defaults, sentinel, known-bad), 2026-11-16 15:34–20:21. Exit 0: 23 surfaces paint textfox styling with defaults and sentinel; the known-bad config fails every one. A first attempt was stopped at 84 runs (0 failures) by the session's low-memory reaper, not by the test.
 - T33 closes on its Linux claim. Moved to §T.34 (needs other hosts): macOS and Windows reruns of the shared T15 judge (V13) and the real Nova gradient on macOS.
+
+## T34 T33 gates on macOS and Windows (issue #1)
+
+Reruns of the shared T15 judge (`test-surface-paint-live.py`, V13), headed, both browser Nova states, Firefox 160.0 build `20261104181552` on every host:
+
+- Linux: Sway, the T26 setup.
+- Windows: Windows 11 Enterprise Evaluation 10.0.26200, a KVM guest (runs start as an interactive scheduled task for user `tf`).
+- macOS: 27.2 (26B123), a Tart VM (`tf-t34-mac`) on an Apple M4 Max host, screen 3840×1920 (artnone's final run: 3840×2160, after the host slept; the window size is set by the harness).
+
+Red at `666eecd` (T33 CSS and harness):
+
+- A (B25), macOS and Windows: Purple starfield's new-tab tile has no `--newtab-border-color` border, both Nova states, defaults and sentinel, with and without `--art`. Firefox's `activity-stream.css` resets `.top-site-outer .tile` to `color-scheme: initial`, so the tile follows the OS scheme, not the page's. Linux passed only because its OS scheme matched.
+- B (B26), macOS: Rosy Sky defaults, tabs text 0 pixels at 4.5:1 (floor 120 at dpr 2), with and without `--art`. Firefox 160 on macOS fades unselected tab labels to opacity 0.6 (B17); on Rosy Sky's mid-tone frame (204,112,133) no label color survives that.
+- C (B27), macOS only, `--art images`: Rosy Sky URL bar text 194 → 105/109 pixels at 4.5:1 (floor 120); the 80% scrim lets 20% of the art through. nova-ash light with sentinel, tabs text 759 → 0 (the B fade, fixed with B).
+
+Fixes:
+
+- A: `chrome/content/newtab.css` `.top-site-outer .tile { color-scheme: inherit !important }`. `ff_themes.ART_THEMES` now runs each image theme with the OS scheme light and dark (`:light`/`:dark` set `ui.systemUsesDarkTheme`; V20), which turns A red on Linux too.
+- B: `chrome/tabs.css` `.tabbrowser-tab .tab-label-container { opacity: 1 !important }`. T15 records the product of opacities from an unselected tab's label up to its tab and fails below 1 (V21).
+- C: not fixed. A URL bar pill painting `--textfox-scrim` passed the text check on macOS but covered half the navbar's art (202k of 407k pixels, under the 60% floor); the user rejected the look, since Rosy Sky's own URL bar is a light pink field with black text. Moved to §T.35: map a theme's own color pairs onto textfox surfaces (§V V22), mapping table first.
+- Harness, found on the way:
+  - B28 (Linux Wayland): a just-opened popup (Topo! Black, no art) keeps its painted frame through the first style change; the hidden capture now repeats until two in a row agree (`HIDDEN_SHOTS` 4).
+  - B29 (over art): one art pixel a unit off under the findbar stretched a popup's painted box (Windows Rosy Sky URL bar results 379 → 561 px, an abort; likely the earlier macOS URL bar results aborts). The box diff now ignores `CONTROL_NOISE` over art for every surface (T15 and T20); replayed on the saved frames: 379 px.
+  - B30 (macOS): `paint_display.stop_firefox` treated `os.killpg(group, 0)` EPERM as an error; macOS answers EPERM once only exiting or zombie members remain, so artnone aborted twice. EPERM now means the group is done.
+  - An exception in T15's `main` prints its traceback before `FAIL`.
+  - `test-theme-art-live.py` reads the starfield from a `theme:scheme` spec.
+
+Green on the final CSS and harness (B28-B30), five suites per host: `plain` (no theme), `default` (`--themes default`), `artnone` (`--themes art`, options 0), `images` (`--art images --themes art`), `gradient` (`--art gradient`):
+
+- Linux: all five exit 0. T20 `--art images` (23 surfaces, 96 runs) exit 0.
+- Windows: all five exit 0. `images` aborted once (findbar restored 145 px on the known-bad Purple light run, an unstable capture); two reruns exit 0.
+- macOS: `plain`, `default`, `gradient` and `artnone` exit 0 (artnone: 48 runs, 9 surfaces). Real Nova gradient (`--tf-theme-gradient` 1 with macOS's own `--toolbox-background-gradient`, not the Linux stand-in): exit 0. `images`: A and B pass; only C fails (Rosy Sky urlbar-text 105–110 pixels, both Nova states × both OS schemes), carried by §T.35.
+- Earlier macOS artnone attempts: two EPERM aborts (B30), one stopped when the VM host slept (screen 3840×1920 → 2880×1740 mid-run).
+
+Bounds:
+
+- C open in §T.35; until then `--tf-theme-images` 1 over a mid-tone image on macOS can put the URL bar text under 4.5:1.
+- Windows and macOS are VMs (KVM, Tart), not physical displays; the Tart VM renders at dpr 2.

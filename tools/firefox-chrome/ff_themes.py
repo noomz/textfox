@@ -57,7 +57,10 @@ EVERY_THEME = ([f'{t}:{s}' for t in NOVA for s in ('light', 'dark')] +
                ['firefox-compact-dark@mozilla.org:dark', 'firefox-compact-light@mozilla.org:light',
                 'firefox-alpenglow@mozilla.org:light', 'firefox-alpenglow@mozilla.org:dark'])
 # Setups with art (V19): the three image themes, and a Nova theme's two variants (gradients).
-ART_THEMES = [*IMAGES, 'nova-ash@mozilla.org:dark', 'nova-ash@mozilla.org:light']
+# An image theme has no light/dark variant, so each runs with the OS scheme light and dark (V20):
+# Firefox resets some content elements' color-scheme, which then follow the OS, not the theme (B25).
+ART_THEMES = [*(f'{t}:{s}' for t in IMAGES for s in ('light', 'dark')),
+              'nova-ash@mozilla.org:dark', 'nova-ash@mozilla.org:light']
 
 # `--art` on the painted harnesses (V19): config.css lines and prefs per mode. `images` turns
 # --tf-theme-images on; `gradient` turns --tf-theme-gradient on and, because Linux's native
@@ -164,7 +167,12 @@ def apply(m, spec):
             problems.append(f'in-app theme not in effect as {IN_APP[theme]}')
     elif not (state['active'] and state['lwtheme'] and state['accent']):
         problems.append('theme not in effect')
-    if scheme and not problems and state['dark'] != (scheme == 'dark'):
+    # An image theme's colors set chrome's scheme; its spec's scheme is the OS's (V20).
+    if scheme and not problems and theme in IMAGES:
+        state['os_dark'] = m.execute_script("return Services.prefs.getIntPref('ui.systemUsesDarkTheme', -1)") == 1
+        if state['os_dark'] != (scheme == 'dark'):
+            problems.append(f'OS color scheme not {scheme}')
+    elif scheme and not problems and state['dark'] != (scheme == 'dark'):
         problems.append(f'color scheme not {scheme}')
     if problems:
         raise RuntimeError(f'theme {spec}: {problems}: {state}')
