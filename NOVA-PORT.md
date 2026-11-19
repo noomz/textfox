@@ -2030,3 +2030,40 @@ Not counted:
 - "Software Update Available" banners on both VMs stopped one run at the first capture (the T36 banner check); the user dismissed them.
 
 Bounds: Windows is not run with `--layout revamp`. T20 still judges vertical tabs (and the sidebar) on Linux only.
+
+## T35 Firefox theme colors on textfox surfaces (issue #1)
+
+Mapping table first (`T35-THEME-MAP.md`, `theme-color-map.py`, commit `95d58b7`). User decisions (2026-11-18): the accent takes `tab_line` only where it reaches 3:1 against the frame, else `--toolbarbutton-icon-fill`; the focused URL bar is not mapped; precedence is a switch, `--tf-theme-colors` (1 maps theme pairs, 0 the look before T35), plus per-surface `--tf-<surface>-bg/-fg` that `config.css` can set.
+
+CSS (commit `42b4988`):
+
+- Firefox 160 has no CSS `if()`. `tools/firefox-chrome/gen-theme-css.py` writes `chrome/theme.css`: each pair's background is composited in srgb over the paint under it, and its text over that; both luminances are packed into one xyz-d65 color; the 4.5:1 test (3:1 for the accent) becomes the alpha of black, times `--tf-theme-colors`; premultiplied `color-mix()` picks the theme color or the fallback. Intermediates are `@property <color>` so each computes once.
+- A pair's block matches only when the theme sets its background key (`:root[lwtheme][style*="--key:"]`). Unset or failing pairs fall back to `--tf-bg`/`--tf-fg`; the URL bar falls back to the navbar pair.
+- `:root` overrides that hid the theme's values moved to `:root > *` and `:root:not([lwtheme])`.
+- Over theme art (V19) the boxes drop their paint, so the navbar and sidebar take the window pair; the URL bar field keeps the theme's own field and text where that pair passes, else `--tf-bg`/`--tf-fg` (`--textfox-urlbar-art-bg/-fg`). This closes B27's URL bar: over Rosy Sky's art the field paints the theme's pink with black text instead of a scrim pill. A user's own `--tf-navbar-*`, `--tf-sidebar-*` and URL bar text are ignored over art.
+- V4: new options in `defaults.css`, `options.nix`, `configCss`, README; `wrapTextfox` includes `theme.css`.
+
+Harness:
+
+- T15 and T20 record each surface's background variable and judge it against `theme-color-map.textfox_pairs` (V22 oracle; `art=` for boxes over art).
+- The known-bad config hides each surface's own text pair, on `body` too, since the art blocks override `:root`.
+- The navbar is judged around the URL bar field (Topo! Black's field and Nova's private-window field fill most of it).
+- `test-titles-paint-live.py` and `test-sidebar-theme-live.py` read `color(srgb 0-1 …)`, Firefox's serialization of `color-mix()` results, as 0-1 (the titles check had read it as 0-255; the sidebar check compared strings).
+- `test-theme-art-live.py` runs with `--baseline HEAD`: its default baseline `c2c4b79` already differed by 2071 pixels before T35.
+
+Green, both browser Nova states, five T15 suites per host (`plain`, `default`, `artnone`, `images`, `gradient`, as T34):
+
+- Linux (Sway, Firefox 160.0.1 build `20261116130455`): T15 no theme, `--themes every`, `--themes art`, `--art gradient`; T20 no theme, default, art; T27 default and art; art harness and `--identity` vs HEAD; a11y, sidebar-theme, container probes. Exit 0. Static: `gen-theme-css.py --check`, cascade, config-defaults, option wiring (40) and parity (12), nixfmt.
+- Windows (the T34 guest, Firefox 160.0 build `20261104181552`): all five exit 0.
+- macOS (`mac_jr`, `mac_jr2`, Firefox 160.0 build `20261104181552`): split by `run-split.py`, `plain`, `default`, `artnone`, `images` exit 0. `gradient` split by Nova state failed on the Nova-off share alone ("Firefox had no such art in any run": without browser Nova there is no gradient, as the check intends); unsplit on `mac_jr2`, 6 runs, 6.3 min, exit 0. Splitting a no-theme `--art gradient` suite by Nova state cannot pass; run it whole.
+
+Not counted:
+
+- Linux: one T20 known-bad miss on about:support's font, a flake (rerun exit 0); `grim` failures when `/tmp` (16 GB tmpfs) filled. Firefox leaves a 4.3 MB `tmp-*.xpi` copy of `newtab@mozilla.org` in `/tmp` on each test profile start; about 990 had piled up.
+- macOS: "Software Update Available" banners stopped the first runs on both VMs. Cleared over SSH: `launchctl disable gui/<uid>/com.apple.SoftwareUpdateNotificationManager` and `…/com.apple.tipsd`, kill both, delete their rows from the `usernoted` database, restart `usernoted` and `NotificationCenter`.
+
+Bounds:
+
+- Purple starfield's popup pair sits at about 4.53:1, just over the gate.
+- Linux ran 160.0.1, Windows and macOS 160.0.
+- Windows and macOS are VMs; vertical tabs (`--layout revamp`) and T20/T27 were not rerun there.
