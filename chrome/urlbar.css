@@ -28,9 +28,37 @@
   border: var(--border-width) solid var(--tf-accent) !important;
   border-radius: 0 0 var(--tf-rounding) var(--tf-rounding);
 }
-#urlbar[open] > .urlbarView > .urlbarView-results {
+/* The open results attach flush to the field on any urlbar-family input
+   (address bar, searchbar, smartbar): no top border between the two surfaces. */
+.urlbar[open] > .urlbarView > .urlbarView-results {
   border-top: unset !important;
 }
 #urlbar:not([noresults]) > .urlbarView > .search-one-offs:not([hidden]) {
   border-top: var(--border-width) solid var(--tf-accent) !important;
+}
+/* The URL field's own frame (Firefox's outline on .urlbar-input-container)
+   must not double-draw inside the navbar border; the navbar box is the frame. */
+.urlbar-input-container {
+  outline: none !important;
+  border: none !important;
+}
+
+/* The separate search bar (#searchbar-new / #searchbar in the toolbar set) is
+   a flex child of the nav-bar and paints its own frame: a pill with a pink
+   outline and its own radius. Inside the navbar box that double-draws and
+   misaligns the two borders; the navbar box is the single frame. */
+#searchbar,
+#searchbar-new,
+#search-container {
+  background-color: var(--textfox-urlbar-box) !important;
+  border: none !important;
+  border-radius: unset !important;
+  box-shadow: unset !important;
+  outline: none !important;
+}
+/* Keep the focus ring on the search bar like the address bar does (Nova
+   draws the focused field as a border; the rule above removed it). */
+#searchbar:focus-within,
+#searchbar-new:focus-within {
+  outline: var(--focus-outline-width, 2px) solid var(--toolbar-field-border-color-focus) !important;
 }
