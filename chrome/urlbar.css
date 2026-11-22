@@ -28,6 +28,26 @@
   border: var(--border-width) solid var(--tf-accent) !important;
   border-radius: 0 0 var(--tf-rounding) var(--tf-rounding);
 }
+/* Nova's popover normally meets the input inside the toolbar. Join the two
+   painted frames at the navbar's bottom border instead. */
+@media -moz-pref("browser.nova.enabled") {
+  #nav-bar {
+    anchor-name: --textfox-navbar;
+  }
+  #nav-bar #urlbar[popover-open] > .urlbar-background {
+    anchor-name: --textfox-field;
+    outline-offset: calc(-1 * var(--focus-outline-width, 2px));
+    clip-path: none !important;
+  }
+  #nav-bar #urlbar > .urlbarView:popover-open {
+    position-anchor: --textfox-navbar !important;
+    position-area: block-end span-all !important;
+    top: calc(-1 * var(--border-width)) !important;
+    left: anchor(--textfox-field left) !important;
+    right: anchor(--textfox-field right) !important;
+    margin: 0 !important;
+  }
+}
 /* The open results attach flush to the field on any urlbar-family input
    (address bar, searchbar, smartbar): no top border between the two surfaces. */
 .urlbar[open] > .urlbarView > .urlbarView-results {

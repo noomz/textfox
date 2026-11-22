@@ -24,6 +24,7 @@ def check(nova):
         (profile / 'chrome' / 'config.css').write_text(
             ':root { --tf-accent: rgb(19, 83, 137); --tf-border-width: 3px; --tf-text-transform: uppercase; }\n')
         prefs = {'marionette.port': port, 'browser.nova.enabled': nova,
+                 'sidebar.verticalTabs': nova, 'sidebar.revamp': nova,
                  'toolkit.legacyUserProfileCustomizations.stylesheets': True,
                  'browser.shell.checkDefaultBrowser': False}
         (profile / 'user.js').write_text(''.join(
@@ -95,7 +96,13 @@ def check(nova):
                 const anchor = document.getElementById('urlbar').parentNode;
                 const anchorStyle = getComputedStyle(anchor);
                 const anchorRect = anchor.getBoundingClientRect();
-                return {anchor:{id:anchor.id, urlbarTag:document.getElementById('urlbar').localName,
+                const field = document.querySelector('#urlbar > .urlbar-background');
+                const bg = field.getBoundingClientRect(), panel = view.getBoundingClientRect();
+                const nav = document.getElementById('nav-bar');
+                const seam = nav.getBoundingClientRect().bottom - parseFloat(getComputedStyle(nav).borderBottomWidth);
+                return {seam:{left:panel.left-bg.left, right:panel.right-bg.right, top:panel.top-seam,
+                      fieldEnd:bg.bottom-seam, radius:parseFloat(getComputedStyle(field).borderTopLeftRadius)},
+                    anchor:{id:anchor.id, urlbarTag:document.getElementById('urlbar').localName,
                       hostPopoverOpen:document.getElementById('urlbar').matches(':popover-open'),
                       hostPopoverAttribute:document.getElementById('urlbar').hasAttribute('popover-open'),
                       panelPopoverOpen:gURLBar.panel.matches(':popover-open'),
@@ -108,6 +115,11 @@ def check(nova):
                     viewBorderTopColor:vs.borderTopColor};
                 """, sandbox='system')
             print(json.dumps({'firefox': metadata, 'result': result}), flush=True)
+            if nova:
+                seam = result['seam']
+                if (any(abs(seam[key]) > 0.5 for key in ('left', 'right', 'top'))
+                        or seam['fieldEnd'] < 0 or seam['radius'] <= 0):
+                    raise RuntimeError(f'Nova field and navbar do not meet the open results: {seam}')
             if not result['anchor']['hostPopoverAttribute'] or not result['anchor']['panelPopoverOpen']:
                 raise RuntimeError(f'URL bar results popover did not open: {result["anchor"]}')
             if result['resultsBorderTopWidth'] != '0px':
