@@ -78,6 +78,11 @@ body:has(#pause:checked) .field { animation-play-state: paused; }
 .scale { height: 18px; margin: 14px 0 4px; background: var(--spectrum); }
 .caption { color: #c3c0bd; }
 footer { margin-top: 2rem; color: #c3c0bd; }
+section h2 { font-size: 2rem; margin-top: 2rem; }
+button, summary { font: inherit; cursor: pointer; }
+button { background: #eeeae1; color: #191a1d; padding: .65em 1em; border: 0; }
+details { margin-block: 1em; }
+pre { overflow-x: auto; }
 @media (max-width: 540px) { .workspace { grid-template-columns: 5rem minmax(0,1fr); } aside { padding: 8px 3px; } article { padding-inline: 10px; } .caption { gap: .4em; } }
 </style>
 </head>
@@ -87,7 +92,7 @@ footer { margin-top: 2rem; color: #c3c0bd; }
 <h1>Thermal Atlas</h1>
 <p>Choose a temperature ramp, then see how it moves across the new-tab page. Turn on the UI background to carry the same effect into the tabs, address bar, and sidebar.</p>
 <fieldset><legend>Choose a palette</legend>
-<label><input type="radio" name="palette" checked>Aurora</label>
+<label><input type="radio" name="palette" id="aurora" checked>Aurora</label>
 <label><input type="radio" name="palette" id="lichen">Lichen</label>
 <label><input type="radio" name="palette" id="cinder">Cinder</label>
 </fieldset>
@@ -114,6 +119,18 @@ footer { margin-top: 2rem; color: #c3c0bd; }
 </div>
 <div class="scale" aria-hidden="true"></div><figcaption class="caption"><span>01 / Cold</span><span>02 / Temperate</span><span>03 / Hot</span></figcaption>
 </figure>
-</main><footer><span>Textfox Nova</span><span>HTML theme study · Not installed</span></footer>
+<section aria-labelledby="export-heading">
+<h2 id="export-heading">Take it to Firefox.</h2>
+<p>Export this palette, background, playback setting, and UI choice as a CSS preset for an existing Textfox installation. Nothing is installed automatically.</p>
+<button id="download" type="button">Download Textfox preset (.css)</button>
+<details><summary>Install or remove the preset</summary>
+<ol><li>In Firefox, open <code>about:support</code> and open your profile folder.</li>
+<li>Save the downloaded file as <code>chrome/thermal-atlas.css</code>.</li>
+<li>Add the line below at the top of <code>chrome/config.css</code>, before other rules. Create the file if it doesn’t exist; keep any existing settings.</li></ol>
+<pre>@import url("thermal-atlas.css");</pre>
+<p>Fully quit and reopen Firefox. To undo, remove the import and restart. These steps are for a writable Textfox profile, not a Nix-managed config. The preset doesn’t switch your tab layout.</p>
+</details></section>
+</main><footer><span>Textfox Nova</span><span>Thermal Atlas · Preset generator</span></footer>
+<script src="preset.js"></script>
 </body>
 </html>
