@@ -40,12 +40,16 @@ article { padding: clamp(18px,4vw,44px); position: relative; overflow: hidden; i
 article::after { content: ''; position: absolute; z-index: -1; width: 78%; height: 180%; right: -27%; top: -48%; transform: rotate(-24deg); background: var(--spectrum); opacity: .65; mask-image: repeating-radial-gradient(ellipse at center,transparent 0 8px,black 9px 10px,transparent 11px 16px); }
 h2 { font: italic 400 clamp(2.1rem, 6vw, 4.7rem)/1.04 Georgia, serif; letter-spacing: -.045em; margin: .35em 0 .45em; }
 article small, article h2 span { background: #15161b; }
-/* Keep the browser controls still. Only the new-tab artwork moves. */
+.toolbar, aside { position: relative; isolation: isolate; overflow: hidden; }
+.ui-field { display: none; opacity: .48; }
+body:has(#ui:checked) .ui-field { display: block; }
+body:has(#ui:checked) .toolbar { background: #171820; }
+body:has(#ui:checked) .address { background: color-mix(in srgb,var(--surface) 84%,transparent); }
 .field { position: absolute; inset: -18%; z-index: -1; pointer-events: none; }
 body:has(input[name=plate]:not(#contours):checked) article::after { display: none; }
 body:has(#grain:checked) .field {
   background: repeating-linear-gradient(117deg, var(--cold), var(--mid) 23%, var(--hot) 47%, var(--mid) 70%, var(--cold) 92%);
-  background-size: 180% 100%; animation: grain-drift 16s ease-in-out infinite alternate;
+  background-size: 180% 100%; animation: grain-drift 5s linear -1s infinite alternate;
 }
 body:has(#grain:checked) .field::after {
   content: ''; position: absolute; inset: 0; opacity: .32; mix-blend-mode: multiply;
@@ -53,17 +57,21 @@ body:has(#grain:checked) .field::after {
 }
 body:has(#lava:checked) .field {
   background: radial-gradient(ellipse 26% 45% at 67% 60%, var(--hot) 8%, transparent 76%), radial-gradient(ellipse 34% 59% at 40% 80%, var(--mid) 15%, transparent 84%), radial-gradient(ellipse at 70% 105%, var(--cold), transparent 63%);
-  animation: convection 8s ease-in-out infinite alternate;
+  animation: convection 5s ease-in-out -2s infinite alternate;
 }
 body:has(#halo:checked) .field {
   background: radial-gradient(ellipse 48% 78% at 66% 94%, transparent 26%, color-mix(in srgb,var(--hot) 65%,transparent) 39%, var(--mid) 47%, color-mix(in srgb,var(--cold) 60%,transparent) 56%, transparent 76%);
-  transform-origin: 66% 94%; animation: halo-breathe 7s ease-in-out infinite alternate;
+  transform-origin: 66% 94%; animation: halo-breathe 4s ease-in-out -1s infinite alternate;
 }
 @keyframes grain-drift { to { background-position: 100% 0; } }
 @keyframes convection { from { transform: translate(-5%,7%) skewX(-10deg); } to { transform: translate(5%,-8%) skewX(12deg) scaleY(1.18); } }
 @keyframes halo-breathe { from { transform: scale(.85); } to { transform: scale(1.32); } }
 body:has(#pause:checked) .field { animation-play-state: paused; }
-@media (prefers-reduced-motion: reduce) { .window .field { animation: none !important; } }
+.motion-note { display: none; }
+@media (prefers-reduced-motion: reduce) {
+  body:has(#auto:checked) .field { animation-play-state: paused; }
+  body:has(#auto:checked) .motion-note { display: block; }
+}
 .scale { height: 18px; margin: 14px 0 4px; background: var(--spectrum); }
 .caption { color: #c3c0bd; }
 footer { margin-top: 2rem; color: #c3c0bd; }
@@ -74,24 +82,32 @@ footer { margin-top: 2rem; color: #c3c0bd; }
 <header><b>textfox / nova</b><small>Color studies &nbsp; Nº 01</small></header>
 <main>
 <h1>Thermal Atlas</h1>
-<p>Choose a temperature ramp, then see how it moves across the new-tab page. The browser frame holds the same colors still for comparison.</p>
+<p>Choose a temperature ramp, then see how it moves across the new-tab page. Turn on the UI background to carry the same effect into the tabs, address bar, and sidebar.</p>
 <fieldset><legend>Choose a palette</legend>
 <label><input type="radio" name="palette" checked>Aurora</label>
 <label><input type="radio" name="palette" id="lichen">Lichen</label>
 <label><input type="radio" name="palette" id="cinder">Cinder</label>
 </fieldset>
-<fieldset><legend>New-tab background</legend>
+<fieldset><legend>Background style</legend>
 <label><input type="radio" name="plate" id="contours">Still contours</label>
 <label><input type="radio" name="plate" id="grain" checked>Grain drift</label>
 <label><input type="radio" name="plate" id="lava">Lava flow</label>
 <label><input type="radio" name="plate" id="halo">Halo pulse</label>
-<label><input type="checkbox" id="pause">Pause motion</label>
+<label><input type="checkbox" id="ui">Apply to browser UI too</label>
+</fieldset>
+<fieldset><legend>Motion playback</legend>
+<label><input type="radio" name="playback" id="auto" checked>Follow system</label>
+<label><input type="radio" name="playback" id="play">Play</label>
+<label><input type="radio" name="playback" id="pause">Pause</label>
+<small class="motion-note">Your system requests reduced motion. Select Play to preview animation.</small>
 </fieldset>
 <figure aria-label="Textfox Nova browser mockup and its color scale">
 <div class="window">
+<div class="toolbar"><div class="field ui-field" aria-hidden="true"></div>
 <div class="tabs"><strong>01 · Atlas</strong><span>02 · Notes</span><span aria-hidden="true">＋</span></div>
 <div class="nav"><span aria-hidden="true">← →</span><div class="address">⌕ &nbsp; about:newtab</div><span aria-hidden="true">≡</span></div>
-<div class="workspace"><aside><small>Bookmarks</small><b>› Field atlas</b><span>· Archive</span></aside>
+</div>
+<div class="workspace"><aside><div class="field ui-field" aria-hidden="true"></div><small>Bookmarks</small><b>› Field atlas</b><span>· Archive</span></aside>
 <article><div class="field" aria-hidden="true"></div><small>Field notes / 001</small><h2><span>Thermal<br>contours.</span></h2><small>Isotherm plate &nbsp; A–01</small></article></div>
 </div>
 <div class="scale" aria-hidden="true"></div><figcaption class="caption"><span>01 / Cold</span><span>02 / Temperate</span><span>03 / Hot</span></figcaption>
