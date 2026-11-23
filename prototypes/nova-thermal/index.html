@@ -24,17 +24,15 @@ body:has(#lichen:checked) figure { --cold: #77cac2; --mid: #b4d68b; --hot: #f9ac
 body:has(#cinder:checked) figure { --cold: #a2b3f5; --mid: #e789a4; --hot: #ffd38b; }
 figure { --spectrum: linear-gradient(105deg,var(--cold),var(--mid),var(--hot)); --frame: color-mix(in srgb,var(--cold) 13%,#101115); --surface: color-mix(in srgb,var(--mid) 10%,#101115); --line: color-mix(in srgb,var(--cold) 40%,#191a20); }
 .window { background: linear-gradient(115deg,var(--frame),var(--surface) 54%,color-mix(in srgb,var(--hot) 16%,#101115)); padding: 12px; border: 1px solid var(--line); }
-.tabs, .nav { display: flex; align-items: center; gap: 8px; }
-.tabs { font-size: .82rem; }
-.tabs span { padding: 5px 10px; }
-.tabs strong { border: 1px solid var(--line); border-top: 3px solid var(--mid); padding: 5px 14px; background: var(--surface); }
+.nav { display: flex; align-items: center; gap: 8px; }
 .nav { margin: 9px 0; color: var(--cold); }
 .address, aside, article { border: 1px solid var(--line); background: var(--surface); }
 .address { flex: 1; padding: 6px 12px; color: #e8e6e1; font-size: .85rem; }
 .workspace { display: grid; grid-template-columns: minmax(130px, 21%) 1fr; gap: 9px; }
 aside { padding: 15px 12px; font-size: .82rem; }
-aside b, aside span { display: block; padding: 4px 0; }
-aside b { color: var(--cold); }
+aside ul { list-style: none; margin: 0; padding: 0; }
+aside li { padding: 6px; border-inline-start: 3px solid transparent; }
+aside [aria-current] { border-color: var(--mid); background: var(--surface); font-weight: bold; }
 aside small { display: block; margin-bottom: 12px; }
 article { padding: clamp(18px,4vw,44px); position: relative; overflow: hidden; isolation: isolate; background: #15161b; }
 article::after { content: ''; position: absolute; z-index: -1; width: 78%; height: 180%; right: -27%; top: -48%; transform: rotate(-24deg); background: var(--spectrum); opacity: .65; mask-image: repeating-radial-gradient(ellipse at center,transparent 0 8px,black 9px 10px,transparent 11px 16px); }
@@ -75,7 +73,7 @@ body:has(#pause:checked) .field { animation-play-state: paused; }
 .scale { height: 18px; margin: 14px 0 4px; background: var(--spectrum); }
 .caption { color: #c3c0bd; }
 footer { margin-top: 2rem; color: #c3c0bd; }
-@media (max-width: 540px) { .workspace { grid-template-columns: 1fr; } aside { display: flex; align-items: baseline; gap: .8em; flex-wrap: wrap; padding: 5px 10px; } aside small { margin: 0; } .tabs span { padding-inline: 3px; } .caption { gap: .4em; } }
+@media (max-width: 540px) { .workspace { grid-template-columns: 5rem minmax(0,1fr); } aside { padding: 8px 3px; } article { padding-inline: 10px; } .caption { gap: .4em; } }
 </style>
 </head>
 <body>
@@ -104,10 +102,9 @@ footer { margin-top: 2rem; color: #c3c0bd; }
 <figure aria-label="Textfox Nova browser mockup and its color scale">
 <div class="window">
 <div class="toolbar"><div class="field ui-field" aria-hidden="true"></div>
-<div class="tabs"><strong>01 · Atlas</strong><span>02 · Notes</span><span aria-hidden="true">＋</span></div>
 <div class="nav"><span aria-hidden="true">← →</span><div class="address">⌕ &nbsp; about:newtab</div><span aria-hidden="true">≡</span></div>
 </div>
-<div class="workspace"><aside><div class="field ui-field" aria-hidden="true"></div><small>Bookmarks</small><b>› Field atlas</b><span>· Archive</span></aside>
+<div class="workspace"><aside aria-label="Vertical tabs"><div class="field ui-field" aria-hidden="true"></div><small>Tabs</small><ul><li aria-current="page">Atlas</li><li>Notes</li></ul></aside>
 <article><div class="field" aria-hidden="true"></div><small>Field notes / 001</small><h2><span>Thermal<br>contours.</span></h2><small>Isotherm plate &nbsp; A–01</small></article></div>
 </div>
 <div class="scale" aria-hidden="true"></div><figcaption class="caption"><span>01 / Cold</span><span>02 / Temperate</span><span>03 / Hot</span></figcaption>
