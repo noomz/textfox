@@ -58,12 +58,17 @@ body:has(#lava:checked) .field {
   animation: convection 5s ease-in-out -2s infinite alternate;
 }
 body:has(#halo:checked) .field {
-  background: radial-gradient(ellipse 48% 78% at 66% 94%, transparent 26%, color-mix(in srgb,var(--hot) 65%,transparent) 39%, var(--mid) 47%, color-mix(in srgb,var(--cold) 60%,transparent) 56%, transparent 76%);
-  transform-origin: 66% 94%; animation: halo-breathe 4s ease-in-out -1s infinite alternate;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 33% 60% at 63% 102%, var(--hot), transparent 100%),
+    radial-gradient(ellipse 34% 66% at 37% 69%, color-mix(in srgb,var(--cold) 68%,transparent), transparent 100%),
+    radial-gradient(ellipse 45% 83% at 54% 72%, var(--mid), transparent 100%);
+  transform-origin: 50% 100%; animation: halo-breathe 5s ease-in-out -1.5s infinite alternate;
 }
 @keyframes grain-drift { to { background-position: 100% 0; } }
 @keyframes convection { from { transform: translate(-5%,7%) skewX(-10deg); } to { transform: translate(5%,-8%) skewX(12deg) scaleY(1.18); } }
-@keyframes halo-breathe { from { transform: scale(.85); } to { transform: scale(1.32); } }
+@keyframes halo-breathe { from { transform: scale(.92,.82); opacity: .50; } to { transform: scale(1.1,1.12); opacity: .95; } }
+body:has(#halo:checked) .ui-field { filter: brightness(.55); }
 body:has(#pause:checked) .field { animation-play-state: paused; }
 .motion-note { display: none; }
 @media (prefers-reduced-motion: reduce) {
