@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Thermal Atlas · Textfox Nova</title>
+<style>
+:root { color-scheme: dark; background: #101115; color: #efece5; font: 15px/1.55 ui-monospace, monospace; }
+* { box-sizing: border-box; }
+body { margin: auto; max-width: 1060px; padding: clamp(18px, 5vw, 65px); }
+header, footer, .caption { display: flex; justify-content: space-between; gap: 1rem; align-items: baseline; flex-wrap: wrap; }
+header, footer { padding-block: 12px; border-block-start: 1px solid #48484e; }
+small, .caption, footer, legend { font-size: .76rem; letter-spacing: .09em; text-transform: uppercase; }
+h1 { font: 500 clamp(3.2rem, 10vw, 7.6rem)/1 Georgia, serif; letter-spacing: -.065em; margin: .35em 0 .12em; }
+p { color: #c3c0bd; margin: .5rem 0 1.8rem; max-width: 66ch; }
+fieldset { padding: 0; border: 0; margin: 0 0 1.4rem; }
+legend { margin-bottom: .55rem; }
+label { display: inline-flex; align-items: center; padding: 7px 12px; margin: 0 2px 6px 0; border: 1px solid #56575c; cursor: pointer; }
+input { accent-color: #eee; margin: 0 .55rem 0 0; }
+label:has(:checked) { background: #eeeae1; color: #191a1d; }
+label:focus-within { outline: 2px solid #fff; outline-offset: 3px; }
+figure { margin: 0; --cold: #7ddbed; --mid: #b398fa; --hot: #ff9568; }
+body:has(#lichen:checked) figure { --cold: #77cac2; --mid: #b4d68b; --hot: #f9ac59; }
+body:has(#cinder:checked) figure { --cold: #a2b3f5; --mid: #e789a4; --hot: #ffd38b; }
+figure { --spectrum: linear-gradient(105deg,var(--cold),var(--mid),var(--hot)); --frame: color-mix(in srgb,var(--cold) 13%,#101115); --surface: color-mix(in srgb,var(--mid) 10%,#101115); --line: color-mix(in srgb,var(--cold) 40%,#191a20); }
+.window { background: linear-gradient(115deg,var(--frame),var(--surface) 54%,color-mix(in srgb,var(--hot) 16%,#101115)); padding: 12px; border: 1px solid var(--line); }
+.tabs, .nav { display: flex; align-items: center; gap: 8px; }
+.tabs { font-size: .82rem; }
+.tabs span { padding: 5px 10px; }
+.tabs strong { border: 1px solid var(--line); border-top: 3px solid var(--mid); padding: 5px 14px; background: var(--surface); }
+.nav { margin: 9px 0; color: var(--cold); }
+.address, aside, article { border: 1px solid var(--line); background: var(--surface); }
+.address { flex: 1; padding: 6px 12px; color: #e8e6e1; font-size: .85rem; }
+.workspace { display: grid; grid-template-columns: minmax(130px, 21%) 1fr; gap: 9px; }
+aside { padding: 15px 12px; font-size: .82rem; }
+aside b, aside span { display: block; padding: 4px 0; }
+aside b { color: var(--cold); }
+aside small { display: block; margin-bottom: 12px; }
+article { padding: clamp(18px,4vw,44px); position: relative; overflow: hidden; isolation: isolate; background: #15161b; }
+article::after { content: ''; position: absolute; z-index: -1; width: 78%; height: 180%; right: -27%; top: -48%; transform: rotate(-24deg); background: var(--spectrum); opacity: .65; mask-image: repeating-radial-gradient(ellipse at center,transparent 0 8px,black 9px 10px,transparent 11px 16px); }
+h2 { font: italic 400 clamp(2.1rem, 6vw, 4.7rem)/1.04 Georgia, serif; letter-spacing: -.045em; margin: .35em 0 .45em; }
+article small, article h2 span { background: #15161b; }
+.scale { height: 18px; margin: 14px 0 4px; background: var(--spectrum); }
+.caption { color: #c3c0bd; }
+footer { margin-top: 2rem; color: #c3c0bd; }
+@media (max-width: 540px) { .workspace { grid-template-columns: 1fr; } aside { display: flex; align-items: baseline; gap: .8em; flex-wrap: wrap; padding: 5px 10px; } aside small { margin: 0; } .tabs span { padding-inline: 3px; } .caption { gap: .4em; } }
+</style>
+</head>
+<body>
+<header><b>textfox / nova</b><small>Color studies &nbsp; Nº 01</small></header>
+<main>
+<h1>Thermal Atlas</h1>
+<p>One browser window, three thermal signatures. Follow each ramp from the cool sidebar through the active tab to the warm edge of the frame.</p>
+<fieldset><legend>Choose a palette</legend>
+<label><input type="radio" name="palette" checked>Aurora</label>
+<label><input type="radio" name="palette" id="lichen">Lichen</label>
+<label><input type="radio" name="palette" id="cinder">Cinder</label>
+</fieldset>
+<figure aria-label="Textfox Nova browser mockup and its color scale">
+<div class="window">
+<div class="tabs"><strong>01 · Atlas</strong><span>02 · Notes</span><span aria-hidden="true">＋</span></div>
+<div class="nav"><span aria-hidden="true">← →</span><div class="address">⌕ &nbsp; about:newtab</div><span aria-hidden="true">≡</span></div>
+<div class="workspace"><aside><small>Bookmarks</small><b>› Field atlas</b><span>· Archive</span></aside>
+<article><small>Field notes / 001</small><h2><span>Thermal<br>contours.</span></h2><small>Isotherm plate &nbsp; A–01</small></article></div>
+</div>
+<div class="scale" aria-hidden="true"></div><figcaption class="caption"><span>01 / Cold</span><span>02 / Temperate</span><span>03 / Hot</span></figcaption>
+</figure>
+</main><footer><span>Textfox Nova</span><span>HTML theme study · Not installed</span></footer>
+</body>
+</html>
