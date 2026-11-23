@@ -80,6 +80,7 @@ body:has(#pause:checked) .field { animation-play-state: paused; }
 footer { margin-top: 2rem; color: #c3c0bd; }
 section h2 { font-size: 2rem; margin-top: 2rem; }
 button, summary { font: inherit; cursor: pointer; }
+nav a { color: #efece5; text-underline-offset: 3px; }
 button { background: #eeeae1; color: #191a1d; padding: .65em 1em; border: 0; }
 details { margin-block: 1em; }
 pre { overflow-x: auto; }
@@ -121,8 +122,14 @@ pre { overflow-x: auto; }
 </figure>
 <section aria-labelledby="export-heading">
 <h2 id="export-heading">Take it to Firefox.</h2>
-<p>Export this palette, background, playback setting, and UI choice as a CSS preset for an existing Textfox installation. Nothing is installed automatically.</p>
-<button id="download" type="button">Download Textfox preset (.css)</button>
+<p>Choose a Firefox theme. Each package has its own colors and a still Halo header. The packages work without Textfox and don’t change your tab layout.</p>
+<nav aria-label="Unsigned Firefox theme downloads"><a download href="themes/aurora.xpi">Aurora .xpi</a> · <a download href="themes/lichen.xpi">Lichen .xpi</a> · <a download href="themes/cinder.xpi">Cinder .xpi</a></nav>
+<details open><summary>Try an unsigned theme</summary>
+<p>Save a package, then open <code>about:debugging#/runtime/this-firefox</code>, choose <strong>Load Temporary Add-on</strong>, and select the file. If your browser tries to install the link directly, use Save Link As instead. The temporary theme is removed when Firefox restarts. Permanent installation in Firefox Release requires a Mozilla-signed package; these downloads are unsigned.</p>
+<p>Textfox hides Firefox theme artwork by default. To show the Halo behind the window, set <code>--tf-theme-images: 1;</code> inside your existing <code>:root</code> rule in <code>chrome/config.css</code> and restart Firefox.</p></details>
+<h3>Optional: animated Textfox preset</h3>
+<p>For an existing Textfox installation, export the exact palette, background style, playback setting, and UI choice from the preview instead.</p>
+<button id="download" type="button">Download animated Textfox preset (.css)</button>
 <details><summary>Install or remove the preset</summary>
 <ol><li>In Firefox, open <code>about:support</code> and open your profile folder.</li>
 <li>Save the downloaded file as <code>chrome/thermal-atlas.css</code>.</li>
