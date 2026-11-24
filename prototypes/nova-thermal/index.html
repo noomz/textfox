@@ -43,11 +43,11 @@ article small, article h2 span { background: #15161b; }
 body:has(#ui:checked) .ui-field { display: block; }
 body:has(#ui:checked) .toolbar { background: #171820; }
 body:has(#ui:checked) .address { background: color-mix(in srgb,var(--surface) 84%,transparent); }
-.field { position: absolute; inset: -18%; z-index: -1; pointer-events: none; }
+.field { position: absolute; inset: 0; z-index: -1; pointer-events: none; }
 body:has(input[name=plate]:not(#contours):checked) article::after { display: none; }
 body:has(#grain:checked) .field {
   background: repeating-linear-gradient(117deg, var(--cold), var(--mid) 23%, var(--hot) 47%, var(--mid) 70%, var(--cold) 92%);
-  background-size: 180% 100%; animation: grain-drift 5s linear -1s infinite alternate;
+  background-position: left bottom; background-size: 145% 120%;
 }
 body:has(#grain:checked) .field::after {
   content: ''; position: absolute; inset: 0; opacity: .32; mix-blend-mode: multiply;
@@ -55,24 +55,30 @@ body:has(#grain:checked) .field::after {
 }
 body:has(#lava:checked) .field {
   background: radial-gradient(ellipse 26% 45% at 67% 60%, var(--hot) 8%, transparent 76%), radial-gradient(ellipse 34% 59% at 40% 80%, var(--mid) 15%, transparent 84%), radial-gradient(ellipse at 70% 105%, var(--cold), transparent 63%);
-  animation: convection 5s ease-in-out -2s infinite alternate;
+  background-position: left bottom; background-size: 100% 100%;
 }
 body:has(#halo:checked) .field {
-  inset: 0;
   background:
     radial-gradient(ellipse 33% 60% at 63% 102%, var(--hot), transparent 100%),
     radial-gradient(ellipse 34% 66% at 37% 69%, color-mix(in srgb,var(--cold) 68%,transparent), transparent 100%),
     radial-gradient(ellipse 45% 83% at 54% 72%, var(--mid), transparent 100%);
-  transform-origin: 50% 100%; animation: halo-breathe 5s ease-in-out -1.5s infinite alternate;
+  background-position: center bottom; background-size: 100% 100%;
 }
-@keyframes grain-drift { to { background-position: 100% 0; } }
-@keyframes convection { from { transform: translate(-5%,7%) skewX(-10deg); } to { transform: translate(5%,-8%) skewX(12deg) scaleY(1.18); } }
-@keyframes halo-breathe { from { transform: scale(.92,.82); opacity: .50; } to { transform: scale(1.1,1.12); opacity: .95; } }
+/* Same cross-fade as the exported preset: the field holds the first frame, ::before fades in the last. */
+.field::before {
+  content: ''; position: absolute; inset: 0; background: inherit;
+  animation: thermal-fade 5s steps(20) var(--delay) infinite alternate;
+}
+body:has(#contours:checked) .field::before { content: none; }
+body:has(#grain:checked) .field::before { --delay: -1s; background-position: right bottom; background-size: 145% 120%; }
+body:has(#lava:checked) .field::before { --delay: -2s; background-position: right bottom; background-size: 145% 120%; }
+body:has(#halo:checked) .field::before { --delay: -1.5s; background-position: center bottom; background-size: 118% 127%; }
+@keyframes thermal-fade { from { opacity: 0; } to { opacity: 1; } }
 body:has(#halo:checked) .ui-field { filter: brightness(.55); }
-body:has(#pause:checked) .field { animation-play-state: paused; }
+body:has(#pause:checked) .field::before { animation-play-state: paused; }
 .motion-note { display: none; }
 @media (prefers-reduced-motion: reduce) {
-  body:has(#auto:checked) .field { animation-play-state: paused; }
+  body:has(#auto:checked) .field::before { animation-play-state: paused; }
   body:has(#auto:checked) .motion-note { display: block; }
 }
 .scale { height: 18px; margin: 14px 0 4px; background: var(--spectrum); }

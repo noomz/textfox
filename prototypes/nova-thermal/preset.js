@@ -15,28 +15,61 @@ function generatePreset() {
   const dark = 'color-mix(in srgb, ' + color('cold') + ' 13%, #101115)';
   const uiSurfaces = ':root :is(#nav-bar, #TabsToolbar, box#vertical-tabs)';
 
-  function paint(selector, shade) {
+  // Motion is a cross-fade: the surface keeps the first frame and ::after fades the last
+  // frame in and out on the compositor, 4 updates a second. Animating background-position
+  // every frame held the GPU at 40%; each update still redraws the surface, so keep it stepped.
+  function paint(selector, shade, anchors) {
     const veil = `rgb(16 17 21 / ${shade}%)`;
     const layers = `linear-gradient(${veil}, ${veil}), ${grain}${artwork}`;
-    const timing = {grain: '5s linear -1s', lava: '5s ease-in-out -2s', halo: '5s ease-in-out -1.5s'}[plate];
+    const blend = grain ? '\n    background-blend-mode: normal, soft-light, normal;' : '';
+    const timing = {grain: '5s steps(20) -1s', lava: '5s steps(20) -2s', halo: '5s steps(20) -1.5s'}[plate];
     // The grain texture is a tiled SVG; the color artwork fills the entire surface.
     const sizes = size => `100% 100%, ${grain ? '128px 128px, ' : ''}${size}`;
+    const frame = (position, size) => `background-position: ${position} bottom;
+    background-size: ${sizes(size)};`;
+    if (!timing) {
+      return `${selector} {
+    background-color: #15161b !important;
+    background-image: ${layers} !important;${blend}
+    ${frame('center', '100% 100%')}
+  }`;
+    }
     const growth = plate === 'halo' ? '118% 127%' : '145% 120%';
     const name = `thermal-atlas-${plate}`;
+    // Fixed + anchored, so no surface is repositioned: tab titles straddle the border
+    // and would be clipped by box#vertical-tabs' overflow if it became a containing block.
+    const edges = anchors ? `top: calc(anchor(top) + var(--border-width));
+    right: calc(anchor(right) + var(--border-width));
+    bottom: calc(anchor(bottom) + var(--border-width));
+    left: calc(anchor(left) + var(--border-width));` : 'inset: 0;';
+    const names = (anchors || []).map(([surface, anchor]) => `
+  :root ${surface} { anchor-name: ${anchor}; }
+  :root ${surface}::after { position-anchor: ${anchor}; }`).join('');
     return `${selector} {
     background-color: #15161b !important;
-    background-image: ${layers} !important;${grain ? '\n    background-blend-mode: normal, soft-light, normal;' : ''}
-    background-position: center bottom;
-    background-size: ${sizes('100% 100%')};${timing ? `
-    animation: ${name} ${timing} infinite alternate${playback === 'pause' ? ' paused' : ''};` : ''}
-  }${timing ? `
+    background-image: ${layers} !important;${blend}
+    ${frame(plate === 'halo' ? 'center' : 'left', plate === 'grain' ? growth : '100% 100%')}
+    isolation: isolate;
+  }${names}
+  ${selector}::after {
+    content: '';
+    position: fixed;
+    ${edges}
+    z-index: -1;
+    pointer-events: none;
+    border-radius: inherit;
+    background-color: #15161b;
+    background-image: ${layers};${blend}
+    ${frame(plate === 'halo' ? 'center' : 'right', growth)}
+    animation: ${name} ${timing} infinite alternate${playback === 'pause' ? ' paused' : ''};
+  }
   @keyframes ${name} {
-    from { background-position: ${plate === 'halo' ? 'center' : 'left'} bottom; background-size: ${sizes(plate === 'grain' ? growth : '100% 100%')}; }
-    to { background-position: ${plate === 'halo' ? 'center' : 'right'} bottom; background-size: ${sizes(growth)}; }
+    from { opacity: 0; }
+    to { opacity: 1; }
   }${playback === 'auto' ? `
   @media (prefers-reduced-motion: reduce) {
-    ${selector} { animation-play-state: paused !important; }
-  }` : ''}` : ''}`;
+    ${selector}::after { animation-play-state: paused !important; }
+  }` : ''}`;
   }
 
   return `/* Thermal Atlas for Textfox | ${palette} / ${plate} / ${playback} / UI artwork ${ui ? 'on' : 'off'}
@@ -52,7 +85,8 @@ function generatePreset() {
     --tf-border: color-mix(in srgb, ${color('cold')} 40%, #191a20);
     --tf-tab-selected-bg: color-mix(in srgb, ${color('mid')} 18%, #101115);
     --tf-urlbar-bg: color-mix(in srgb, ${color('mid')} 10%, #101115);
-  }${ui ? '\n  ' + paint(uiSurfaces, 72) : ''}
+  }${ui ? '\n  ' + paint(uiSurfaces, 72, [['#nav-bar', '--thermal-atlas-navbar'],
+    ['#TabsToolbar', '--thermal-atlas-tabs'], ['box#vertical-tabs', '--thermal-atlas-vertical-tabs']]) : ''}
  }
 }
 @-moz-document url("about:home"), url("about:newtab") {
