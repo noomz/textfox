@@ -32,7 +32,9 @@ in
 
     config = {
       displayWindowControls = mkEnableOption "window controls.";
-      displayNavButtons = mkEnableOption "back and forward navigation buttons in the Firefox UI.";
+      displayNavButtons = mkEnableOption "back and forward navigation buttons in the Firefox UI." // {
+        default = true;
+      };
       displayUrlbarIcons = mkEnableOption "icons inside url bar.";
       displaySidebarTools = mkEnableOption "sidebar tools section." // {
         default = true;
