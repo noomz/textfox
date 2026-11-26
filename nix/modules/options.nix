@@ -110,6 +110,12 @@ in
         description = "ASCII logo used for new tab page";
       };
 
+      newtabWallpaper = mkOption {
+        type = str;
+        default = "none";
+        description = "CSS image behind the new tab and home page while no Firefox wallpaper is picked in Customize; none shows the theme's new-tab color.";
+      };
+
       background.color = mkOption {
         type = str;
         default = "var(--lwt-accent-color, -moz-dialog)";
@@ -258,6 +264,7 @@ in
           --tf-sidebar-bg: ${cfg.colors.sidebar.background};
           --tf-sidebar-fg: ${cfg.colors.sidebar.text};
           --tf-newtab-logo: "${cfg.newtabLogo}";
+          --tf-newtab-wallpaper: ${cfg.newtabWallpaper};
           --tf-navbar-margin: ${cfg.navbar.margin};
           --tf-navbar-padding: ${cfg.navbar.padding};
           --tf-bookmarks-alignment: ${cfg.bookmarks.alignment};
