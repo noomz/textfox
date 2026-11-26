@@ -383,6 +383,7 @@ The theme ships with a `defaults.css`, this file can be overridden by creating a
   --tf-theme-images: 0; /* If a Firefox theme's images and gradients show behind the window: 0 = hidden, 1 = shown (0 or 1 only) */
   --tf-theme-scrim: 80%; /* With --tf-theme-gradient or --tf-theme-images on: how much --tf-bg washes over the art, 0% = art at full strength, 100% = art hidden. Below 80% text may fall under 4.5:1 contrast on bright art */
   --tf-newtab-logo: "   __            __  ____          \A   / /____  _  __/ /_/ __/___  _  __\A  / __/ _ \\| |/_/ __/ /_/ __ \\| |/_/\A / /_/  __/>  </ /_/ __/ /_/ />  <  \A \\__/\\___/_/|_|\\__/_/  \\____/_/|_|  ";
+  --tf-newtab-wallpaper: none; /* Image behind the new tab and home page while no Firefox wallpaper is picked in Customize, e.g. url("wallpaper.png"); none = the theme's new-tab color */
   --tf-navbar-margin: 8px 8px 2px; /* navbar margin */
   --tf-navbar-padding: 4px; /* navbar padding */
   --tf-bookmarks-alignment: center; /* alignment of bookmarks in the bookmarks toolbar (if you have many bookmarks, left is recommended) */
@@ -398,6 +399,22 @@ you want a `\`, you need to write `\\`. I used [this tool](https://www.patorjk.c
 to create the current logo.
 
 Wanna hide the logo? Simply pass an empty string as the logo.
+
+### Setting a new tab wallpaper
+
+A Firefox theme can only color the new tab page, not put an image on it. To show
+an image, save it in `chrome/` next to `config.css` and point
+`--tf-newtab-wallpaper` at it:
+
+```css
+:root {
+  --tf-newtab-wallpaper: url("wallpaper.png");
+}
+```
+
+A wallpaper picked in the new tab's **Customize** panel takes priority. Choose no
+wallpaper there to see yours. On Nix, set
+`textfox.config.newtabWallpaper = "url(\"${./wallpaper.png}\")";`.
 
 ### Recipes
 
