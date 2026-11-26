@@ -23,14 +23,14 @@ def mix(base, tint, strength):
     return bytes(round(a + (b - a) * strength) for a, b in zip(base, tint))
 
 
-def contours(stops):
+def contours(stops, base='#131620', width=2048, height=192, centre=(1718, 64), reach=1050, opacity=.65):
     # Still isotherm rings like the preview's contour plate: 1px lines every 16px, tinted by the
-    # cold → mid → hot spectrum. Firefox anchors header art to the top right, so the rings centre
-    # there and stay in view behind the tab strip and the see-through toolbar.
-    width, height = 2048, 192
-    cx, cy, reach = width - 330, 64, 1050
-    spacing, line, opacity = 16, 9.5, .65
-    base, ramp = rgb('#131620'), list(stops)
+    # cold → mid → hot spectrum. The defaults draw the header strip: Firefox anchors header art to
+    # the top right, so the rings centre there and stay in view behind the tab strip and the
+    # see-through toolbar.
+    cx, cy = centre
+    spacing, line = 16, 9.5
+    base, ramp = rgb(base), list(stops)
     rows = bytearray()
     for y in range(height):
         rows.append(0)  # PNG scanline filter: none
@@ -53,6 +53,10 @@ def contours(stops):
 def build(name, palette):
     cold, mid, hot = palette
     surface = '#' + mix(rgb('#101115'), rgb(cold), .13).hex()
+    # A Firefox theme cannot paint about:newtab, so each theme also ships a full-page wallpaper on
+    # its ntp_background, for Customize → upload or textfox's --tf-newtab-wallpaper.
+    (OUT / f'{name.lower()}-wallpaper.png').write_bytes(
+        contours(list(map(rgb, palette)), surface, 2560, 1600, centre=(1980, 420), reach=1900, opacity=.4))
     selected = '#' + mix(rgb('#101115'), rgb(mid), .22).hex()
     ink = '#efece5'
     # Let the contour art show behind the address-bar row, as the preview's 'Apply to browser UI too' does.
