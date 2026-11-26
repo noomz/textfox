@@ -412,6 +412,11 @@ an image, save it in `chrome/` next to `config.css` and point
 }
 ```
 
+Any CSS image works, gradients included. The Thermal Atlas themes ship theirs as
+CSS in `prototypes/nova-thermal/themes/<name>-newtab.css`: save one as
+`chrome/thermal-newtab.css` and add `@import url("thermal-newtab.css");` at the
+top of `config.css`.
+
 A wallpaper picked in the new tab's **Customize** panel takes priority. Choose no
 wallpaper there to see yours. On Nix, set
 `textfox.config.newtabWallpaper = "url(\"${./wallpaper.png}\")";`.
