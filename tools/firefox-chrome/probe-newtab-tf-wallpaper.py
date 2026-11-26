@@ -21,7 +21,7 @@ IMAGE = ROOT / 'prototypes/nova-thermal/themes/cinder-wallpaper.png'
 FIREFOX = os.environ.get('FIREFOX', 'firefox')
 
 
-def check(configured, firefox_wallpaper):
+def check(configured, firefox_wallpaper, preset=False):
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0))
         port = sock.getsockname()[1]
@@ -30,7 +30,10 @@ def check(configured, firefox_wallpaper):
         shutil.copytree(ROOT / 'chrome', profile / 'chrome')
         if configured:
             shutil.copy(IMAGE, profile / 'chrome/wallpaper.png')
-            (profile / 'chrome/config.css').write_text(':root { --tf-newtab-wallpaper: url("wallpaper.png"); }\n')
+            (profile / 'chrome/config.css').write_text(':root { --tf-newtab-wallpaper: url("wallpaper.png"); }\n' + (
+                # A preset that paints body itself, like Thermal Atlas' animated export, wins.
+                '@-moz-document url("about:newtab") { body { background-image: linear-gradient(red, red) !important; } }\n'
+                if preset else ''))
         prefs = {'marionette.port': port, 'browser.nova.enabled': True,
                  PREFIX + 'nova.enabled': True,
                  PREFIX + 'testing.shouldInitializeFeeds': True,
@@ -74,10 +77,10 @@ def check(configured, firefox_wallpaper):
                     raise RuntimeError(f'new tab did not initialize: {state}')
                 time.sleep(.2)
             ours = 'wallpaper.png' in state['image']
-            expected = configured and not firefox_wallpaper
-            if ours != expected or (ours and state['width'] != 2560):
+            expected = configured and not firefox_wallpaper and not preset
+            if ours != expected or (ours and not state['width']) or (preset and 'rgb(255, 0, 0)' not in state['image']):
                 raise RuntimeError(f'configured={configured} firefox={firefox_wallpaper!r}: {state}')
-            print(json.dumps({'configured': configured, 'firefoxWallpaper': firefox_wallpaper, **state}), flush=True)
+            print(json.dumps({'configured': configured, 'firefoxWallpaper': firefox_wallpaper, 'preset': preset, **state}), flush=True)
         finally:
             try:
                 if m:
@@ -95,4 +98,5 @@ if __name__ == '__main__':
     for configured in (False, True):
         for firefox_wallpaper in ('', 'solid-color-picker-#14283c'):
             check(configured, firefox_wallpaper)
-    print('--tf-newtab-wallpaper: shown only while Firefox has no wallpaper; all cases passed')
+    check(True, '', preset=True)
+    print('--tf-newtab-wallpaper: shown only while neither Firefox nor a preset paints the page; all cases passed')

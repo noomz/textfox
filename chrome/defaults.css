@@ -50,9 +50,10 @@
    --tf-newtab-wallpaper resolves against the sheet that uses it, and this is the one sheet that
    sits next to config.css in both the manual install and wrapTextfox's single userContent.css.
    Firefox sets --newtab-wallpaper inline on body while a wallpaper is picked in Customize; that
-   choice keeps priority. */
+   choice keeps priority. :where() keeps specificity at zero, so a preset that paints body itself
+   (Thermal Atlas' animated export) wins. */
 @-moz-document url("about:home"), url("about:newtab") {
-  body:not([style*="--newtab-wallpaper:"]) {
+  :where(body:not([style*="--newtab-wallpaper:"])) {
     background-image: var(--tf-newtab-wallpaper) !important;
   }
 }
