@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Rebuild the three unsigned, script-free Firefox themes shipped with Thermal Atlas."""
+"""Rebuild the three unsigned, script-free Firefox themes shipped with Thermal Atlas (still contours)."""
 import json
 import math
 from pathlib import Path
@@ -23,20 +23,25 @@ def mix(base, tint, strength):
     return bytes(round(a + (b - a) * strength) for a, b in zip(base, tint))
 
 
-def halo(stops):
-    # Firefox anchors header art to the top right; keep the light in view on narrow windows.
+def contours(stops):
+    # Still isotherm rings like the preview's contour plate: 1px lines every 16px, tinted by the
+    # cold → mid → hot spectrum. Firefox anchors header art to the top right, so the rings centre
+    # there and stay in view behind the tab strip and the see-through toolbar.
     width, height = 2048, 192
-    lights = [(width-620, 160, 310, 115), (width-375, 176, 240, 135), (width-220, 216, 155, 95)]
-    xs = [[math.exp(-.5*((x-cx)/rx)**2) for x in range(width)] for cx, _, rx, _ in lights]
+    cx, cy, reach = width - 330, 64, 1050
+    spacing, line, opacity = 16, 9.5, .65
+    base, ramp = rgb('#131620'), list(stops)
     rows = bytearray()
     for y in range(height):
-        ys = [.42 * math.exp(-.5*((y-cy)/ry)**2) for _, cy, _, ry in lights]
         rows.append(0)  # PNG scanline filter: none
         for x in range(width):
-            pixel = rgb('#131620')
-            for stop, horizontal, vertical in zip(stops, xs, ys):
-                pixel = mix(pixel, stop, horizontal[x] * vertical)
-            rows.extend(pixel)
+            r = math.hypot(x - cx, (y - cy) * 1.15)
+            # Antialiased ring: full at the line centre, gone 1.25px either side.
+            ring = max(0., 1 - max(0., abs(r % spacing - line) - .5) / .75)
+            fade = min(1., max(0., (reach - r) / 260))
+            t = min(1., max(0., (x - cx + .16 * (y - cy)) / (2 * reach) + .58))
+            lo, hi, k = (ramp[0], ramp[1], t * 2) if t < .5 else (ramp[1], ramp[2], t * 2 - 1)
+            rows.extend(mix(base, mix(lo, hi, k), ring * fade * opacity))
 
     def chunk(tag, data):
         return struct.pack('>I', len(data)) + tag + data + struct.pack('>I', zlib.crc32(tag + data))
@@ -50,14 +55,16 @@ def build(name, palette):
     surface = '#' + mix(rgb('#101115'), rgb(cold), .13).hex()
     selected = '#' + mix(rgb('#101115'), rgb(mid), .22).hex()
     ink = '#efece5'
+    # Let the contour art show behind the address-bar row, as the preview's 'Apply to browser UI too' does.
+    see_through = 'rgba({}, {}, {}, .62)'.format(*bytes.fromhex(surface[1:]))
     slug = name.lower()
     manifest = {
-        'manifest_version': 2, 'name': f'Thermal Atlas · {name}', 'version': '1.0.0',
-        'description': f'A still {name} Halo for Firefox, designed for Textfox Nova.',
+        'manifest_version': 2, 'name': f'Thermal Atlas · {name}', 'version': '1.0.1',
+        'description': f'Still {name} thermal contours for Firefox, designed for Textfox Nova.',
         'browser_specific_settings': {'gecko': {'id': f'thermal-atlas-{slug}@textfox.local'}},
-        'theme': {'images': {'theme_frame': 'halo.png'}, 'colors': {
+        'theme': {'images': {'theme_frame': 'contours.png'}, 'colors': {
             'frame': '#131620', 'tab_background_text': ink, 'tab_selected': selected,
-            'tab_text': ink, 'tab_line': mid, 'toolbar': surface, 'toolbar_text': ink,
+            'tab_text': ink, 'tab_line': mid, 'toolbar': see_through, 'toolbar_text': ink,
             'toolbar_field': '#15161b', 'toolbar_field_text': ink, 'toolbar_field_border_focus': mid,
             'icons': cold, 'icons_attention': hot, 'sidebar': surface, 'sidebar_text': ink,
             'sidebar_highlight': selected, 'sidebar_highlight_text': ink,
@@ -66,7 +73,7 @@ def build(name, palette):
     }
     with ZipFile(OUT / f'{slug}.xpi', 'w') as archive:
         for path, data in [('manifest.json', json.dumps(manifest, indent=2) + '\n'),
-                           ('halo.png', halo(list(map(rgb, palette))))]:
+                           ('contours.png', contours(list(map(rgb, palette))))]:
             archive.writestr(ZipInfo(path), data, compress_type=ZIP_DEFLATED)
 
 
