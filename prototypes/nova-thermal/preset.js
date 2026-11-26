@@ -38,6 +38,8 @@ function generatePreset() {
     const name = `thermal-atlas-${plate}`;
     // Fixed + anchored, so no surface is repositioned: tab titles straddle the border
     // and would be clipped by box#vertical-tabs' overflow if it became a containing block.
+    // anchor-name holds one value per element: #nav-bar reuses textfox's --textfox-navbar,
+    // which the URL bar results anchor to, so this rule cannot take that name away.
     const edges = anchors ? `top: calc(anchor(top) + var(--border-width));
     right: calc(anchor(right) + var(--border-width));
     bottom: calc(anchor(bottom) + var(--border-width));
@@ -85,7 +87,7 @@ function generatePreset() {
     --tf-border: color-mix(in srgb, ${color('cold')} 40%, #191a20);
     --tf-tab-selected-bg: color-mix(in srgb, ${color('mid')} 18%, #101115);
     --tf-urlbar-bg: color-mix(in srgb, ${color('mid')} 10%, #101115);
-  }${ui ? '\n  ' + paint(uiSurfaces, 72, [['#nav-bar', '--thermal-atlas-navbar'],
+  }${ui ? '\n  ' + paint(uiSurfaces, 72, [['#nav-bar', '--textfox-navbar'],
     ['#TabsToolbar', '--thermal-atlas-tabs'], ['box#vertical-tabs', '--thermal-atlas-vertical-tabs']]) : ''}
  }
 }
