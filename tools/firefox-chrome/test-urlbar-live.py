@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check URL bar result borders in disposable Firefox profiles, Nova on and off."""
+"""Check toolbar URL bar geometry and borders, with and without Nova."""
 import json
 import os
 from pathlib import Path
@@ -14,15 +14,41 @@ from ff_inspect import connect
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def check(nova):
+FIELD_GEOMETRY = """
+    const field = document.querySelector('#nav-bar #urlbar > .urlbar-background');
+    const input = document.querySelector('#nav-bar #urlbar > .urlbar-input-container');
+    const nav = document.getElementById('nav-bar');
+    const rect = element => {
+        const {left, top, right, bottom} = element.getBoundingClientRect();
+        return {left, top, right, bottom};
+    };
+    const corners = element => {
+        const s = getComputedStyle(element);
+        return [s.borderTopLeftRadius, s.borderTopRightRadius,
+                s.borderBottomLeftRadius, s.borderBottomRightRadius];
+    };
+    const sampleField = () => {
+        const s = getComputedStyle(field);
+        const bounds = rect(field), bar = rect(nav), ns = getComputedStyle(nav);
+        const outlineOutset = Math.max(0, parseFloat(s.outlineWidth) + parseFloat(s.outlineOffset));
+        return {bounds, input:rect(input), corners:corners(field), outline:s.outlineStyle,
+                gapTop:bounds.top - bar.top - parseFloat(ns.borderTopWidth) - outlineOutset,
+                gapBottom:bar.bottom - parseFloat(ns.borderBottomWidth) - bounds.bottom - outlineOutset};
+    };
+"""
+
+
+def check(nova, radius_override):
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0))
         port = sock.getsockname()[1]
     with tempfile.TemporaryDirectory(prefix='tf-urlbar-') as profile:
         profile = Path(profile)
         shutil.copytree(ROOT / 'chrome', profile / 'chrome')
+        radius = f'--tf-urlbar-radius: {radius_override};' if radius_override is not None else ''
         (profile / 'chrome' / 'config.css').write_text(
-            ':root { --tf-accent: rgb(19, 83, 137); --tf-border-width: 3px; --tf-text-transform: uppercase; }\n')
+            ':root { --tf-accent: rgb(19, 83, 137); --tf-border-width: 3px; '
+            f'--tf-text-transform: uppercase; {radius} }}\n')
         prefs = {'marionette.port': port, 'browser.nova.enabled': nova,
                  'sidebar.verticalTabs': nova, 'sidebar.revamp': nova,
                  'toolkit.legacyUserProfileCustomizations.stylesheets': True,
@@ -53,6 +79,12 @@ def check(nova):
             if placeholder['before']['transform']!='uppercase' or placeholder['control']['transform']!='lowercase':
                 raise RuntimeError(f'URL bar placeholder token control failed: {placeholder}')
             print(json.dumps({'firefox':metadata,'placeholder':placeholder}),flush=True)
+            idle = m.execute_script(FIELD_GEOMETRY + """
+                if (gURLBar.focused || gURLBar.panel.matches(':popover-open')) {
+                    throw new Error('expected the toolbar address field to be idle');
+                }
+                return sampleField();
+                """, sandbox='system')
             m.execute_script("gURLBar.focus(); gURLBar.search('mozilla')", sandbox='system')
             deadline = time.monotonic() + 20
             while not m.execute_script("return !!document.querySelector('#urlbar[open] .urlbarView-results .urlbarView-row')", sandbox='system'):
@@ -88,40 +120,35 @@ def check(nova):
                 raise RuntimeError('one-offs separator remains when URL bar has no results')
             if diagnostic['hidden']['border'] != '0px':
                 raise RuntimeError('hidden one-offs unexpectedly receive separator')
-            result = m.execute_script("""
-                const view = document.querySelector('#urlbar[open] .urlbarView');
-                const results = document.querySelector('#urlbar[open] > .urlbarView > .urlbarView-results');
-                if (!results) throw new Error('URL bar results do not match the themed selector');
+            result = m.execute_script(FIELD_GEOMETRY + """
+                const view = document.querySelector('#nav-bar #urlbar > .urlbarView:popover-open');
+                const results = view?.querySelector(':scope > .urlbarView-results');
+                if (!results || !gURLBar.focused) throw new Error('expected focused URL bar with open results');
                 const vs = getComputedStyle(view), rs = getComputedStyle(results);
-                const anchor = document.getElementById('urlbar').parentNode;
-                const anchorStyle = getComputedStyle(anchor);
-                const anchorRect = anchor.getBoundingClientRect();
-                const field = document.querySelector('#urlbar > .urlbar-background');
-                const bg = field.getBoundingClientRect(), panel = view.getBoundingClientRect();
-                const nav = document.getElementById('nav-bar');
-                const seam = nav.getBoundingClientRect().bottom - parseFloat(getComputedStyle(nav).borderBottomWidth);
-                return {seam:{left:panel.left-bg.left, right:panel.right-bg.right, top:panel.top-seam,
-                      fieldEnd:bg.bottom-seam, radius:parseFloat(getComputedStyle(field).borderTopLeftRadius)},
-                    anchor:{id:anchor.id, urlbarTag:document.getElementById('urlbar').localName,
-                      hostPopoverOpen:document.getElementById('urlbar').matches(':popover-open'),
-                      hostPopoverAttribute:document.getElementById('urlbar').hasAttribute('popover-open'),
-                      panelPopoverOpen:gURLBar.panel.matches(':popover-open'),
-                      inlineHeight:anchor.style.getPropertyValue('--urlbar-container-height').trim(),
-                      computedHeight:anchorStyle.getPropertyValue('--urlbar-container-height').trim(),
-                      measuredHeight:anchorRect.height},
+                const focused = sampleField(), panel = rect(view);
+                return {focused, panel:{left:panel.left-focused.bounds.left,
+                        right:panel.right-focused.bounds.right, top:panel.top-rect(nav).bottom,
+                        corners:corners(view)},
                     rows:results.querySelectorAll('.urlbarView-row').length,
                     resultsBorderTopWidth:rs.borderTopWidth, resultsBorderTopStyle:rs.borderTopStyle,
                     viewBorderTopWidth:vs.borderTopWidth, viewBorderTopStyle:vs.borderTopStyle,
                     viewBorderTopColor:vs.borderTopColor};
                 """, sandbox='system')
-            print(json.dumps({'firefox': metadata, 'result': result}), flush=True)
-            if nova:
-                seam = result['seam']
-                if (any(abs(seam[key]) > 0.5 for key in ('left', 'right', 'top'))
-                        or seam['fieldEnd'] < 0 or seam['radius'] <= 0):
-                    raise RuntimeError(f'Nova field and navbar do not meet the open results: {seam}')
-            if not result['anchor']['hostPopoverAttribute'] or not result['anchor']['panelPopoverOpen']:
-                raise RuntimeError(f'URL bar results popover did not open: {result["anchor"]}')
+            print(json.dumps({'nova': nova, 'radiusOverride': radius_override,
+                              'idle': idle, 'result': result}), flush=True)
+            focused, panel = result['focused'], result['panel']
+            if min(idle['gapTop'], idle['gapBottom'], focused['gapTop'], focused['gapBottom']) <= 0:
+                raise RuntimeError(f'URL field is not inset from the navbar borders: {idle}, {focused}')
+            for box in ('bounds', 'input'):
+                if any(abs(idle[box][edge] - focused[box][edge]) > 0.5 for edge in idle[box]):
+                    raise RuntimeError(f'URL field geometry changed on open: {box} {idle[box]} -> {focused[box]}')
+            if focused['outline'] != 'solid':
+                raise RuntimeError('URL field lost its focus ring')
+            expected_corners = [radius_override or '6px'] * 4
+            if any(box['corners'] != expected_corners for box in (idle, focused, panel)):
+                raise RuntimeError(f'URL field and results must share {expected_corners[0]} corners')
+            if abs(panel['left']) > 0.5 or abs(panel['right']) > 0.5 or panel['top'] < -0.5:
+                raise RuntimeError(f'URL results are misaligned or cover the navbar: {panel}')
             if result['resultsBorderTopWidth'] != '0px':
                 raise RuntimeError('unexpected result separator border')
             if result['viewBorderTopWidth'] != '3px' or result['viewBorderTopStyle'] != 'solid':
@@ -143,4 +170,5 @@ def check(nova):
 
 if __name__ == '__main__':
     for nova in (False, True):
-        check(nova)
+        for radius_override in (None, '0px'):
+            check(nova, radius_override)

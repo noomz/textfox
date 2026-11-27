@@ -13,6 +13,7 @@ ROOT = Path(__file__).resolve().parents[2]
 MANUAL_CONFIG_CSS = ''':root {
   --tf-font-size: 17px;
   --tf-rounding: 4px;
+  --tf-urlbar-radius: 0px;
   --tf-text-transform: uppercase;
   --tf-display-horizontal-tabs: block;
   --tf-display-titles: none;
@@ -29,6 +30,7 @@ MANUAL_CONFIG_CSS = ''':root {
 NIX_OPTIONS = '''{
   textfox.config.font.size = "17px";
   textfox.config.border.radius = "4px";
+  textfox.config.urlbar.radius = "0px";
   textfox.config.textTransform = "uppercase";
   textfox.config.tabs.horizontal.enable = true;
   textfox.config.displayTitles = false;
@@ -91,6 +93,8 @@ def main():
         failures.append('theme colors switch or popup background does not follow configuration')
     if manual['--tf-font-size'] != '17px' or manual['--tf-rounding'] != '4px':
         failures.append('sizes do not follow configuration')
+    if manual['--tf-urlbar-radius'] != '0px':
+        failures.append('URL bar radius does not follow configuration')
     if manual['--tf-newtab-logo-rendered'] != '"hi"':
         failures.append(f'new-tab logo renders {manual["--tf-newtab-logo-rendered"]!r}')
     if failures:

@@ -206,6 +206,12 @@ in
         };
       };
 
+      urlbar.radius = mkOption {
+        type = str;
+        default = "6px";
+        description = "CSS length for the corner radius of the toolbar address field and its results. Use 0px for square corners.";
+      };
+
       bookmarks.alignment = mkOption {
         type = str;
         default = "center";
@@ -257,6 +263,7 @@ in
           --tf-navbar-fg: ${cfg.colors.navbar.text};
           --tf-urlbar-bg: ${cfg.colors.urlbar.background};
           --tf-urlbar-fg: ${cfg.colors.urlbar.text};
+          --tf-urlbar-radius: ${cfg.urlbar.radius};
           --tf-tab-selected-bg: ${cfg.colors.tabSelected.background};
           --tf-tab-selected-fg: ${cfg.colors.tabSelected.text};
           --tf-popup-bg: ${cfg.colors.popup.background};

@@ -28,28 +28,31 @@
   border: var(--border-width) solid var(--tf-accent) !important;
   border-radius: 0 0 var(--tf-rounding) var(--tf-rounding);
 }
-/* Nova's popover normally meets the input inside the toolbar. Join the two
-   painted frames at the navbar's bottom border instead. */
-@media -moz-pref("browser.nova.enabled") {
-  #nav-bar {
-    anchor-name: --textfox-navbar;
+#nav-bar {
+  anchor-name: --textfox-navbar;
+}
+#nav-bar #urlbar {
+  /* Keep Firefox's open-state overhang and input growth out of the toolbar. */
+  --urlbar-background-overhang-open: 0px !important;
+  --urlbar-input-growth-open-inline: 0px !important;
+  --urlbar-input-growth-open-block: 0px !important;
+
+  > .urlbar-background {
+    border-radius: var(--tf-urlbar-radius) !important;
   }
-  #nav-bar #urlbar[popover-open] > .urlbar-background {
-    anchor-name: --textfox-field;
-    outline-offset: calc(-1 * var(--focus-outline-width, 2px));
+  &[popover-open] > .urlbar-background {
+    /* The joint background's overlap and clip don't apply to a separate popup. */
+    inset-block-end: 0 !important;
     clip-path: none !important;
   }
-  #nav-bar #urlbar > .urlbarView:popover-open {
-    position-anchor: --textfox-navbar !important;
-    position-area: block-end span-all !important;
-    top: calc(-1 * var(--border-width)) !important;
-    left: anchor(--textfox-field left) !important;
-    right: anchor(--textfox-field right) !important;
+  > .urlbarView:popover-open {
+    --urlbarview-margin-inline: 0px !important;
+    top: anchor(--textfox-navbar bottom) !important;
     margin: 0 !important;
+    border-radius: var(--tf-urlbar-radius) !important;
   }
 }
-/* The open results attach flush to the field on any urlbar-family input
-   (address bar, searchbar, smartbar): no top border between the two surfaces. */
+/* The popup frame supplies the top border, not the results list. */
 .urlbar[open] > .urlbarView > .urlbarView-results {
   border-top: unset !important;
 }

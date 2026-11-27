@@ -259,6 +259,7 @@ All configuration options are optional and can be set as this example shows (rea
           margin = "8px 8px 2px";
           padding = "4px";
         };
+        urlbar.radius = "0px"; # Square corners on the toolbar address field and its results.
         bookmarks = {
           alignment = "left";
         };
@@ -360,6 +361,7 @@ The theme ships with a `defaults.css`, this file can be overridden by creating a
   --tf-navbar-fg: var(--textfox-navbar-fg, var(--tf-fg)); /* Text on --tf-navbar-bg; theme: toolbar_text */
   --tf-urlbar-bg: var(--textfox-urlbar-bg, var(--tf-navbar-bg)); /* URL bar, search field and URL bar results background; theme: toolbar_field */
   --tf-urlbar-fg: var(--textfox-urlbar-fg, var(--tf-navbar-fg)); /* Text on --tf-urlbar-bg; theme: toolbar_field_text */
+  --tf-urlbar-radius: 6px; /* Toolbar address field and results corner radius; 0px for square corners */
   --tf-tab-selected-bg: var(--textfox-tab-selected-bg, color-mix(in hsl, var(--tf-fg) 8%, var(--tf-bg))); /* Selected tab background; theme: tab_selected */
   --tf-tab-selected-fg: var(--textfox-tab-selected-fg, var(--tf-fg)); /* Text on --tf-tab-selected-bg; theme: tab_text */
   --tf-popup-bg: var(--textfox-popup-bg, var(--tf-bg)); /* Menu and panel background; theme: popup */
