@@ -71,12 +71,14 @@ def check(nova, icons):
                 if (!results) throw new Error('URL bar results missing');
                 const v = getComputedStyle(view), r = getComputedStyle(results);
                 return {rows:results.querySelectorAll('.urlbarView-row').length,
-                        borderWidth:v.borderTopWidth, borderStyle:v.borderTopStyle,
-                        borderColor:v.borderTopColor, separatorWidth:r.borderTopWidth};
+                        borderWidth:v.borderLeftWidth, borderStyle:v.borderLeftStyle,
+                        borderColor:v.borderLeftColor, dividerWidth:v.borderTopWidth,
+                        separatorWidth:r.borderTopWidth};
                 """, sandbox='system')
             print(json.dumps({'firefox': meta, 'result': result}), flush=True)
             if (result['borderWidth'] != '3px' or result['borderStyle'] != 'solid'
-                    or result['borderColor'] != 'rgb(19, 83, 137)' or result['separatorWidth'] != '0px'):
+                    or result['borderColor'] != 'rgb(19, 83, 137)' or result['dividerWidth'] != '1px'
+                    or result['separatorWidth'] != '0px'):
                 raise RuntimeError('private URL bar does not preserve configured result borders')
             if m.execute_script('return gBrowser.selectedBrowser.currentURI.spec', sandbox='system') == 'about:blank':
                 raise RuntimeError('navigation fixture already at destination')

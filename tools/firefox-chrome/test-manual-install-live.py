@@ -104,10 +104,11 @@ def check(browser_styles, profile, port):
             time.sleep(.1)
         result = m.execute_script("""
             const s = getComputedStyle(document.querySelector('#urlbar[open] .urlbarView'));
-            return {borderWidth:s.borderTopWidth, borderColor:s.borderTopColor};
+            return {borderWidth:s.borderLeftWidth, borderColor:s.borderLeftColor, dividerWidth:s.borderTopWidth};
             """, sandbox='system')
         print(json.dumps({'case': 'manual', 'firefox': meta, 'urlbar': result}), flush=True)
-        if browser_styles and result != {'borderWidth': '3px', 'borderColor': 'rgb(19, 83, 137)'}:
+        if browser_styles and result != {'borderWidth': '3px', 'borderColor': 'rgb(19, 83, 137)',
+                                         'dividerWidth': '1px'}:
             raise RuntimeError('manual installation did not honor configured URL bar styles')
         m.execute_script('gBrowser.selectedTab = gBrowser.addTrustedTab("about:preferences")', sandbox='system')
         m.set_context('content')

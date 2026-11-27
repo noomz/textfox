@@ -393,6 +393,11 @@ The theme ships with a `defaults.css`, this file can be overridden by creating a
 
 ```
 
+The toolbar address field and its results share a frame when results open.
+`--tf-urlbar-radius` rounds the outer corners. Set it to `0px` for square corners.
+The frame uses `--tf-border-width`, but the divider between the field and results
+is always 1 CSS pixel. Both use `--tf-accent`.
+
 ### Changing the new tab logo
 
 The new tab logo can be any string you want, to create a string with line breaks
